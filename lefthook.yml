@@ -1,0 +1,87 @@
+# Lefthook configuration — https://lefthook.dev
+#
+# Invoked via the `lefthook` devDependency in package.json. Install once with:
+#   bunx lefthook install
+#
+# Scoping principles:
+#   - TS hooks run only against staged TS/JSON/Vue files.
+#   - Go hooks run only against staged .go files.
+#   - golangci-lint uses --new-from-rev HEAD so it reports only issues
+#     introduced by the staged changes (doesn't fail on pre-existing noise).
+#   - The secrets scan is the last line of defense against committing PEM/key
+#     material; CI has a stricter scan as well.
+
+min_version: 1.7.0
+
+# Conventional Commits enforcement — release-please parses the commit history
+# on main to decide the next semver bump (see .github/workflows/release-please.yml
+# and commitlint.config.mjs). A non-conforming commit message breaks that
+# signal, so we reject it before it lands in git.
+commit-msg:
+  commands:
+    commitlint:
+      tags: lint
+      run: bunx commitlint --edit {1}
+
+pre-commit:
+  parallel: true
+  commands:
+    biome:
+      tags: format lint typescript
+      glob: "*.{ts,tsx,js,jsx,mjs,cjs,json,vue}"
+      run: bunx biome check --no-errors-on-unmatched --files-ignore-unknown=true {staged_files}
+
+    gofmt:
+      tags: format go
+      glob: "*.go"
+      # gofmt -l prints unformatted file names; if the output is non-empty, fail.
+      run: |
+        unformatted=$(gofmt -l {staged_files})
+        if [ -n "$unformatted" ]; then
+          echo "gofmt: the following files need formatting:"
+          echo "$unformatted"
+          echo "Run: gofmt -w <file>"
+          exit 1
+        fi
+
+    golangci-lint:
+      tags: lint go
+      glob: "*.go"
+      # --new-from-rev HEAD limits findings to lines changed in the working tree
+      # vs. HEAD, matching the staged delta for most workflows. The Go module
+      # lives at the repo root (see design.md § Monorepo layout), so no `cd` is
+      # needed — `./...` walks `licensing/` and `cmd/` from the working dir.
+      run: golangci-lint run --new-from-rev HEAD --timeout=2m ./...
+
+    secrets-pem:
+      tags: security
+      # Scan every staged file (no glob filter) for PEM markers and obvious
+      # private-key indicators. Fixture keys live under fixtures/keys/** and
+      # are permitted — everything else is rejected.
+      exclude:
+        - "fixtures/keys/**"
+        - ".gitignore"
+        - "lefthook.yml"
+      run: |
+        bad=$(grep -l -E 'BEGIN (RSA |EC |DSA |OPENSSH |ENCRYPTED )?PRIVATE KEY|BEGIN PGP PRIVATE KEY BLOCK' {staged_files} 2>/dev/null || true)
+        if [ -n "$bad" ]; then
+          echo "Refusing to commit: PEM private-key marker detected in:"
+          echo "$bad"
+          echo "If this is intentional fixture material, place it under fixtures/keys/."
+          exit 1
+        fi
+
+pre-push:
+  parallel: false
+  commands:
+    interop:
+      # The cross-language interop fixture suite. Wired fully at task 12.4
+      # (GitHub Actions interop.yml). Until task 12.1 lands, this command is a
+      # no-op that still enforces the hook is installed; flip to `fail` once
+      # the harness exists so regressions can't be pushed.
+      run: |
+        if [ -x tools/interop/run.sh ]; then
+          tools/interop/run.sh
+        else
+          echo "interop harness not yet implemented (task 12.1); skipping."
+        fi

@@ -1,0 +1,38 @@
+{
+  "name": "licensing-monorepo",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Monorepo: TypeScript and Go ports of laravel-licensing, plus Nuxt admin UI.",
+  "packageManager": "bun@1.3.12",
+  "workspaces": [
+    "typescript",
+    "admin",
+    "examples/ts",
+    "tools/fixture-generator",
+    "tools/interop"
+  ],
+  "scripts": {
+    "check": "biome check .",
+    "fmt": "biome format --write .",
+    "lint": "biome lint .",
+    "build": "bun run --filter='@licensing/sdk' build",
+    "test": "bun run --filter='@licensing/sdk' test",
+    "typecheck": "bun run --filter='@licensing/sdk' typecheck",
+    "version:sync": "node scripts/sync-versions.mjs",
+    "version:check": "node scripts/sync-versions.mjs --check",
+    "commitlint": "commitlint --edit"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.4.11",
+    "@commitlint/cli": "^20.5.0",
+    "@commitlint/config-conventional": "^20.5.0",
+    "@types/node": "25.6.0",
+    "lefthook": "2.1.5",
+    "tsdown": "0.21.7",
+    "typescript": "6.0.2"
+  },
+  "engines": {
+    "bun": ">=1.3.12",
+    "node": ">=22"
+  }
+}

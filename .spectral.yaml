@@ -1,0 +1,16 @@
+# Spectral ruleset for the licensing OpenAPI document.
+# CI invokes: spectral lint openapi/**/*.yaml --fail-severity=warn
+extends:
+  - spectral:oas
+
+rules:
+  # info.contact is a nice-to-have but not a blocker for a pre-release internal spec.
+  info-contact: off
+  # operation-tag-defined is off because we reference tags inline without a top-level definition
+  # block for every tag; we only list the ones that need description.
+  operation-tag-defined: off
+  # We intentionally do not describe our error codes as enums in schemas (they are strings
+  # validated against the core error taxonomy). The default 'oas3-valid-schema-example' rule
+  # would catch schema misuse on examples we haven't added yet.
+  operation-description: warn
+  operation-operationId: error

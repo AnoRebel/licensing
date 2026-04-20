@@ -1,0 +1,38 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "release-type": "simple",
+  "bump-minor-pre-major": true,
+  "bump-patch-for-minor-pre-major": false,
+  "separate-pull-requests": false,
+  "include-v-in-tag": true,
+  "pull-request-title-pattern": "release: v${version}",
+  "pull-request-header": "This PR was prepared automatically by release-please. Merging it will cut a new release of @licensing/sdk (npm + jsr.io) and github.com/AnoRebel/licensing (pkg.go.dev) in lockstep. See docs/versioning.md for the full flow.",
+  "changelog-sections": [
+    { "type": "feat", "section": "Added", "hidden": false },
+    { "type": "fix", "section": "Fixed", "hidden": false },
+    { "type": "perf", "section": "Performance", "hidden": false },
+    { "type": "refactor", "section": "Changed", "hidden": false },
+    { "type": "docs", "section": "Documentation", "hidden": false },
+    { "type": "build", "section": "Build", "hidden": true },
+    { "type": "ci", "section": "CI", "hidden": true },
+    { "type": "chore", "section": "Chore", "hidden": true },
+    { "type": "test", "section": "Tests", "hidden": true },
+    { "type": "revert", "section": "Reverted", "hidden": false }
+  ],
+  "packages": {
+    ".": {
+      "component": "licensing",
+      "changelog-path": "CHANGELOG.md",
+      "extra-files": [
+        { "type": "generic", "path": "VERSION" },
+        "licensing/version.go",
+        { "type": "json", "path": "typescript/package.json", "jsonpath": "$.version" },
+        { "type": "json", "path": "typescript/jsr.json", "jsonpath": "$.version" },
+        { "type": "json", "path": "admin/package.json", "jsonpath": "$.version" },
+        { "type": "json", "path": "examples/ts/package.json", "jsonpath": "$.version" },
+        { "type": "json", "path": "tools/fixture-generator/package.json", "jsonpath": "$.version" },
+        { "type": "json", "path": "tools/interop/package.json", "jsonpath": "$.version" }
+      ]
+    }
+  }
+}

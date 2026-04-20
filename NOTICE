@@ -1,0 +1,35 @@
+licensing
+Copyright (c) 2026 Ano Rebel (https://github.com/AnoRebel)
+
+This project is a clean-room reimplementation. It was written from scratch in
+TypeScript and Go without reference to the source code of the projects listed
+below; only their public documentation, README files, and published behavioral
+contracts were consulted.
+
+Design inspiration — no code derived:
+
+  - masterix21/laravel-licensing
+    https://github.com/masterix21/laravel-licensing
+    (PHP, Laravel-specific)
+
+  - masterix21/laravel-licensing-client
+    https://github.com/masterix21/laravel-licensing-client
+    (PHP, Laravel-specific)
+
+  - masterix21/laravel-licensing-filament-manager
+    (PHP, Filament-specific admin UI)
+
+The token format used here ("LIC1") is unique to this project and is NOT
+wire-compatible with the `laravel-licensing` token format. A future `LIC2`
+revision MAY adopt a PASETO-compatible envelope; the version prefix is
+reserved for exactly this kind of forward compatibility.
+
+The cryptographic primitives (Ed25519 via RFC 8032, RSASSA-PSS via RFC 8017,
+HMAC-SHA-256 via RFC 2104) are implemented via each language's standard
+library. Canonical JSON serialization follows the rules normatively specified
+in `fixtures/README.md`.
+
+Trademarks: "Laravel" is a trademark of Taylor Otwell. "Filament" is a
+trademark of its respective owner. Their use here is nominative — to describe
+the packages this project was inspired by — and implies no endorsement or
+affiliation.

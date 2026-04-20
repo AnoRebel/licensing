@@ -1,0 +1,135 @@
+# golangci-lint v2 configuration.
+# Schema: https://golangci-lint.run/usage/configuration/
+#
+# Run locally:
+#   cd golang && golangci-lint run ./...
+#
+# Enabled linters mirror the task-list contract (1.7) plus a few v2 extras that
+# pair cleanly with the core set. Formatters (gofmt, goimports) live under the
+# dedicated `formatters` section in v2; `run.go` pins the toolchain floor.
+
+version: "2"
+
+run:
+  timeout: 3m
+  tests: true
+  # Match the Go module's declared minimum; bumped only when go.mod bumps.
+  go: "1.26"
+
+linters:
+  default: none
+  enable:
+    - govet
+    - staticcheck
+    - revive
+    - errcheck
+    - gosec
+    - unused
+    - ineffassign
+
+  settings:
+    govet:
+      enable-all: true
+      disable:
+        # Shadowing is noisy in table-driven tests; rely on review instead.
+        - shadow
+
+    staticcheck:
+      # Keep defaults; staticcheck's v2 bundle already includes former
+      # gosimple / stylecheck checks under the SA/ST/QF prefixes.
+      checks:
+        - all
+
+    revive:
+      severity: warning
+      rules:
+        - name: blank-imports
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: dot-imports
+        - name: error-return
+        - name: error-strings
+        - name: error-naming
+        - name: exported
+          arguments:
+            - "checkPrivateReceivers"
+            - "disableStutteringCheck"
+        - name: if-return
+        - name: increment-decrement
+        - name: var-naming
+        - name: var-declaration
+        - name: package-comments
+        - name: range
+        - name: receiver-naming
+        - name: time-naming
+        - name: unexported-return
+        - name: indent-error-flow
+        - name: errorf
+        - name: empty-block
+        - name: superfluous-else
+        - name: unused-parameter
+          disabled: true  # too noisy for interface implementations
+        - name: unreachable-code
+        - name: redefines-builtin-id
+
+    errcheck:
+      # Don't require checking deferred Close() on readers, but do check
+      # deferred Close() on writers (data-loss risk). The `exclude-functions`
+      # list is the v2 way to express this.
+      exclude-functions:
+        - (io.Closer).Close
+        - (*os.File).Close
+        - (*bytes.Buffer).WriteString
+        - (*bytes.Buffer).WriteByte
+        - (*strings.Builder).WriteString
+        - (*strings.Builder).WriteByte
+        - (*strings.Builder).WriteRune
+
+    gosec:
+      excludes:
+        # G104: errcheck handles unchecked errors; don't double-report.
+        - G104
+        # G115: integer overflow — too many false positives at call sites that
+        # are already bounded by contract.
+        - G115
+
+  exclusions:
+    generated: lax
+    presets:
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    rules:
+      # Test files can be chatty; relax a few checks there.
+      - path: _test\.go
+        linters:
+          - gosec
+          - errcheck
+          - revive
+      # Fixture generators legitimately write files with broad perms in tests.
+      - path: tools/
+        linters:
+          - gosec
+    paths:
+      - vendor
+      - third_party
+      - (^|/)fixtures/
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      # Group imports: stdlib, third-party, local.
+      local-prefixes:
+        - github.com/AnoRebel/licensing
+  exclusions:
+    generated: lax
+    paths:
+      - vendor
+      - third_party
+
+issues:
+  max-same-issues: 0
+  max-issues-per-linter: 0

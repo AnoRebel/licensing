@@ -1,0 +1,109 @@
+# ---------- Node / Bun / TypeScript ----------
+node_modules/
+dist/
+build/
+coverage/
+.nyc_output/
+*.tsbuildinfo
+.tsbuildinfo
+.turbo/
+.bun/
+.cache/
+
+# Bun-specific
+# (bun.lock IS committed; bun's internal caches are not)
+
+# ---------- Nuxt / Vite (admin UI) ----------
+.nuxt/
+.output/
+.nitro/
+.vite/
+.data/
+
+# ---------- Go ----------
+# Compiled binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+# Test binary, built with `go test -c`
+*.test
+# Output of `go tool cover`
+*.out
+# Go workspace sum file (go.work itself IS committed if used)
+go.work.sum
+# Local vendor directory (we are module-mode, no vendoring)
+vendor/
+# Delve / other debug artifacts
+__debug_bin*
+
+# ---------- Secrets & keys (NEVER commit) ----------
+# Project-wide secret patterns. Fixture keys under fixtures/keys/** are
+# intentionally whitelisted below — they are sample keys, not production.
+*.pem
+*.key
+*.p8
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.hex
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Whitelist committed fixture key material (sample-only, documented as such)
+!fixtures/keys/**/*.pem
+!fixtures/keys/**/*.hex
+
+# ---------- Tool state ----------
+# golangci-lint
+.golangci-cache/
+# biome
+.biome-cache/
+# lefthook local overrides
+lefthook-local.yml
+
+# ---------- Editors / IDEs / Agent workspaces ----------
+.idea/
+.vscode/
+!.vscode/settings.json
+!.vscode/extensions.json
+.claude/
+.opencode/
+
+# ---------- Local-only research scratch & agent prompts ----------
+# Original research brief used to bootstrap the project + local agent
+# instructions; not part of the published source tree.
+init.md
+CLAUDE.md
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# ---------- OS junk ----------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# ---------- Logs & misc ----------
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+pnpm-debug.log*
+
+# ---------- Local runtime data ----------
+# Default token-store path used by @licensing/client examples
+.licensing/
