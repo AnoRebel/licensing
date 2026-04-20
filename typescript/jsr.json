@@ -1,0 +1,35 @@
+{
+  "name": "@licensing/sdk",
+  "version": "0.1.0",
+  "license": "Apache-2.0",
+  "exports": {
+    ".": "./src/index.ts",
+    "./canonical-json": "./src/canonical-json.ts",
+    "./base64url": "./src/base64url.ts",
+    "./lic1": "./src/lic1.ts",
+    "./errors": "./src/errors.ts",
+    "./encrypted-pkcs8": "./src/encrypted-pkcs8.ts",
+    "./id": "./src/id.ts",
+    "./key-hierarchy": "./src/key-hierarchy.ts",
+    "./crypto": "./src/crypto/index.ts",
+    "./crypto/ed25519": "./src/crypto/ed25519.ts",
+    "./crypto/rsa": "./src/crypto/rsa.ts",
+    "./crypto/hmac": "./src/crypto/hmac.ts",
+    "./client": "./src/client/index.ts",
+    "./http": "./src/http/index.ts",
+    "./http/adapters/hono": "./src/http/adapters/hono.ts",
+    "./http/adapters/express": "./src/http/adapters/express.ts",
+    "./http/adapters/fastify": "./src/http/adapters/fastify.ts",
+    "./http/adapters/node": "./src/http/adapters/node.ts",
+    "./storage": "./src/storage/index.ts",
+    "./storage/memory": "./src/storage/memory/index.ts",
+    "./storage/postgres": "./src/storage/postgres/index.ts",
+    "./storage/postgres/migrations": "./src/storage/postgres/migrations.ts",
+    "./storage/sqlite": "./src/storage/sqlite/index.ts",
+    "./storage/sqlite/migrations": "./src/storage/sqlite/migrations.ts"
+  },
+  "publish": {
+    "include": ["src/", "migrations/", "README.md", "LICENSE", "NOTICE", "jsr.json"],
+    "exclude": ["src/**/*.test.ts", "tests/"]
+  }
+}

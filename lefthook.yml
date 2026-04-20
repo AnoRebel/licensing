@@ -55,18 +55,32 @@ pre-commit:
 
     secrets-pem:
       tags: security
-      # Scan every staged file (no glob filter) for PEM markers and obvious
-      # private-key indicators. Fixture keys live under fixtures/keys/** and
-      # are permitted — everything else is rejected.
+      # Scan staged files for *embedded* private-key material. A real PEM key
+      # has a BEGIN line followed (within a few lines) by a line of pure base64
+      # of length >= 40. Source that merely *references* the PEM armor strings
+      # (docstrings, template literals that emit PEM, tests that parse PEM)
+      # does not match this pattern.
+      #
+      # Fixture keys under fixtures/keys/** are intentionally whitelisted —
+      # they are documented sample keys, not production material.
       exclude:
         - "fixtures/keys/**"
         - ".gitignore"
         - "lefthook.yml"
       run: |
-        bad=$(grep -l -E 'BEGIN (RSA |EC |DSA |OPENSSH |ENCRYPTED )?PRIVATE KEY|BEGIN PGP PRIVATE KEY BLOCK' {staged_files} 2>/dev/null || true)
+        bad=""
+        for f in {staged_files}; do
+          [ -f "$f" ] || continue
+          # Look for a BEGIN PRIVATE KEY / PGP marker immediately followed
+          # (within 3 lines) by a run of base64 content of length >= 40.
+          # `grep -Pz` (perl-mode, null-joined) lets us match across lines.
+          if grep -Pzq '(?s)-----BEGIN ((RSA |EC |DSA |OPENSSH |ENCRYPTED )?PRIVATE KEY|PGP PRIVATE KEY BLOCK)-----[^\n]*\n([^\n]*\n){0,3}[A-Za-z0-9+/=]{40,}' "$f" 2>/dev/null; then
+            bad="$bad $f"
+          fi
+        done
         if [ -n "$bad" ]; then
-          echo "Refusing to commit: PEM private-key marker detected in:"
-          echo "$bad"
+          echo "Refusing to commit: embedded PEM private-key material detected in:"
+          for f in $bad; do echo "  $f"; done
           echo "If this is intentional fixture material, place it under fixtures/keys/."
           exit 1
         fi
