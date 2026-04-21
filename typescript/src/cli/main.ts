@@ -32,16 +32,10 @@ import type { KeyAlg, LicenseKey, UUIDv7 } from '../types.ts';
 import { JsonFileKeyStore } from './json-keystore.ts';
 
 /**
- * All three signature backends are compiled in. Collapsing the former
- * `@licensing/crypto-*` packages into `@licensing/sdk` eliminates the
- * dynamic `import()` dance that previously lived in `backend-loader.ts`,
- * which could not be made reliably resolvable across bun workspaces AND
- * published-to-npm installs without opening a supply-chain footgun (CWD-
- * relative resolution). This is the same structure as the Go port's
- * single-module layout.
+ * All three signature backends are compiled in for the CLI.
  *
  * Tree-shaking: downstream consumers that only verify tokens don't need
- * this map — they import from `@licensing/sdk/crypto/ed25519` (or the
+ * this map — they import from `@anorebel/licensing/crypto/ed25519` (or the
  * specific backend) and register it into their own `AlgorithmRegistry`.
  * The CLI is the one caller that genuinely needs all three.
  */
@@ -52,7 +46,7 @@ const DEFAULT_BACKENDS: ReadonlyMap<KeyAlg, SignatureBackend> = new Map<KeyAlg, 
 ]);
 
 export const USAGE: string = `\
-licensing-keys — root/signing key management for @licensing/sdk
+licensing-keys — root/signing key management for @anorebel/licensing
 
 USAGE
   licensing-keys <command> [options]

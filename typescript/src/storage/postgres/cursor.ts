@@ -1,7 +1,7 @@
 /**
  * Cursor encoding for the Postgres adapter.
  *
- * Identical encoding to `@licensing/sdk/storage/memory/cursor.ts` — both adapters
+ * Identical encoding to `@anorebel/licensing/storage/memory/cursor.ts` — both adapters
  * expose the SAME opaque cursor format, so a cursor minted by one adapter
  * can be decoded by the other. (In practice nobody shuffles cursors between
  * adapters, but the invariant lets a migration from memory → postgres reuse

@@ -1,6 +1,6 @@
 /**
- * Shared storage contract. Every adapter (`@licensing/sdk/storage/memory`,
- * `@licensing/sdk/storage/postgres`, `@licensing/sdk/storage/sqlite`) implements
+ * Shared storage contract. Every adapter (`@anorebel/licensing/storage/memory`,
+ * `@anorebel/licensing/storage/postgres`, `@anorebel/licensing/storage/sqlite`) implements
  * {@link Storage}. The core lifecycle/state-machine code depends only on
  * this interface, never on a specific adapter.
  *

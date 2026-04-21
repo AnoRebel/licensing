@@ -58,7 +58,7 @@ interface ErrorEnvelope {
  * non-success outcome.
  *
  * Why we build our own instead of using a library: the client should add
- * zero runtime dependencies beyond `@licensing/sdk`. A 60-line `fetch`
+ * zero runtime dependencies beyond `@anorebel/licensing`. A 60-line `fetch`
  * wrapper saves us a supply-chain edge and keeps bundle size honest for
  * browser consumers that might embed this someday.
  */

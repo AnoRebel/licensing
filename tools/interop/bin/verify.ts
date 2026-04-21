@@ -25,7 +25,7 @@
  * raw bytes (no PEM). Asymmetric algs keep the high-level path.
  */
 
-import { errors } from '@licensing/sdk';
+import { errors } from '@anorebel/licensing';
 import {
   AlgorithmRegistry,
   ed25519Backend,
@@ -34,8 +34,8 @@ import {
   type KeyRecord,
   rsaPssBackend,
   type SignatureBackend,
-} from '@licensing/sdk/crypto';
-import { decodeUnverified, verify } from '@licensing/sdk/lic1';
+} from '@anorebel/licensing/crypto';
+import { decodeUnverified, verify } from '@anorebel/licensing/lic1';
 
 import { runCli } from '../src/io.ts';
 import { type KeyAlg, type KeyRef, loadFixtureKey } from '../src/keys.ts';

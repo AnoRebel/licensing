@@ -3,13 +3,13 @@
  * can `.use('/api/licensing/v1/*', fn)` onto an existing app.
  *
  * Hono peer dep is optional — we import types only and use the runtime
- * objects the caller injects. This keeps `@licensing/sdk/http` from
+ * objects the caller injects. This keeps `@anorebel/licensing/http` from
  * pulling Hono into consumers who only wanted Express.
  *
  * Usage:
  *
  *   import { Hono } from 'hono';
- *   import { toHonoHandler } from '@licensing/sdk/http/adapters/hono';
+ *   import { toHonoHandler } from '@anorebel/licensing/http/adapters/hono';
  *
  *   const app = new Hono();
  *   app.all('/api/licensing/v1/*', toHonoHandler(router));

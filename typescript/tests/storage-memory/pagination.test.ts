@@ -18,7 +18,7 @@
 
 import { beforeEach, describe, expect, it } from 'bun:test';
 
-import { createAdvancingClock, createFixedClock } from '@licensing/sdk';
+import { createAdvancingClock, createFixedClock } from '@anorebel/licensing';
 
 import { MemoryStorage } from '../../src/storage/memory/index.ts';
 

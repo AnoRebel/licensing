@@ -20,13 +20,13 @@
  * the interop loop.
  */
 
-import { canonicalize } from '@licensing/sdk/canonical-json';
+import { canonicalize } from '@anorebel/licensing/canonical-json';
 import {
   ed25519Backend,
   hmacBackend,
   rsaPssBackend,
   type SignatureBackend,
-} from '@licensing/sdk/crypto';
+} from '@anorebel/licensing/crypto';
 
 import { runCli } from '../src/io.ts';
 import { type KeyAlg, type KeyRef, loadFixtureKey } from '../src/keys.ts';

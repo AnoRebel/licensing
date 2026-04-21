@@ -1,7 +1,7 @@
 /**
  * Postgres adapter's view of the canonical schema.
  *
- * This mirrors `MEMORY_SCHEMA` in `@licensing/sdk/storage/memory` exactly — both
+ * This mirrors `MEMORY_SCHEMA` in `@anorebel/licensing/storage/memory` exactly — both
  * adapters are describing the SAME entities with the SAME fields. The
  * difference is purely where/how it's stored (Postgres native types vs
  * JS Maps). The schema-parity test accepts either adapter and diffs against

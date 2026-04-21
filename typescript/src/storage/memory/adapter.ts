@@ -553,7 +553,9 @@ export class MemoryStorage implements Storage {
 
   async withTransaction<T>(fn: (tx: StorageTx) => Promise<T>): Promise<T> {
     if (this.txDepth > 0) {
-      throw new Error('nested transactions are not supported by @licensing/sdk/storage/memory');
+      throw new Error(
+        'nested transactions are not supported by @anorebel/licensing/storage/memory',
+      );
     }
     this.txDepth++;
     const snapshot = cloneState(this.state);

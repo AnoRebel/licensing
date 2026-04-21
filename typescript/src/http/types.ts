@@ -7,7 +7,7 @@
  * and the adapter handles all the plumbing.
  */
 
-/** Plain JSON value type. Matches `@licensing/sdk`'s `JSONValue` but kept
+/** Plain JSON value type. Matches `@anorebel/licensing`'s `JSONValue` but kept
  *  local to avoid coupling consumers of the http-handlers surface to that
  *  type when all they do is pass a JSON body through. */
 export type JsonValue =

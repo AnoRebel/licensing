@@ -1,7 +1,7 @@
 # TypeScript examples
 
-End-to-end runnable snippets for `@licensing/sdk` (issuer) and
-`@licensing/sdk/client` (offline-first consumer).
+End-to-end runnable snippets for `@anorebel/licensing` (issuer) and
+`@anorebel/licensing/client` (offline-first consumer).
 
 > Go examples live under [`examples/go/`](../go/) — they run against the
 > Go module at the repo root (`github.com/AnoRebel/licensing`).
@@ -11,7 +11,7 @@ End-to-end runnable snippets for `@licensing/sdk` (issuer) and
 ```bash
 cd /path/to/licensing
 bun install
-bun run build    # builds @licensing/sdk + @licensing/sdk/client dist/
+bun run build    # builds @anorebel/licensing + @anorebel/licensing/client dist/
 ```
 
 ## Files

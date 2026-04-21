@@ -9,7 +9,7 @@
  * Usage:
  *
  *   import express from 'express';
- *   import { toExpressHandler } from '@licensing/sdk/http/adapters/express';
+ *   import { toExpressHandler } from '@anorebel/licensing/http/adapters/express';
  *
  *   const app = express();
  *   app.all('/api/licensing/v1/*', toExpressHandler(router));

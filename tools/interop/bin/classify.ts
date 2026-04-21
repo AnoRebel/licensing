@@ -33,7 +33,7 @@
  * with ok=false — classification failures are successful runs.
  */
 
-import { LicensingClientError, validate } from '@licensing/sdk/client';
+import { LicensingClientError, validate } from '@anorebel/licensing/client';
 import {
   AlgorithmRegistry,
   ed25519Backend,
@@ -41,7 +41,7 @@ import {
   KeyAlgBindings,
   type KeyRecord,
   rsaPssBackend,
-} from '@licensing/sdk/crypto';
+} from '@anorebel/licensing/crypto';
 
 import { runCli } from '../src/io.ts';
 import { type KeyAlg, type KeyRef, loadFixtureKey } from '../src/keys.ts';

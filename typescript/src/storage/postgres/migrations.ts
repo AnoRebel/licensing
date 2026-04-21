@@ -13,7 +13,7 @@
  *
  * Usage:
  *   import { Pool } from 'pg';
- *   import { applyMigrations } from '@licensing/sdk/storage/postgres/migrations';
+ *   import { applyMigrations } from '@anorebel/licensing/storage/postgres/migrations';
  *   const pool = new Pool({ connectionString: process.env.DATABASE_URL });
  *   await applyMigrations(pool);
  *

@@ -2,14 +2,14 @@
   "name": "@licensing/examples-ts",
   "version": "0.1.0-rc.0",
   "private": true,
-  "description": "Runnable TypeScript examples for @licensing/sdk and @licensing/sdk/client.",
+  "description": "Runnable TypeScript examples for @anorebel/licensing and @anorebel/licensing/client.",
   "type": "module",
   "scripts": {
     "issue": "bun run issue-and-verify.ts",
     "client": "bun run client-flow.ts"
   },
   "dependencies": {
-    "@licensing/sdk": "workspace:*"
+    "@anorebel/licensing": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "1.3.12"

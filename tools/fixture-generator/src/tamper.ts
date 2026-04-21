@@ -24,7 +24,7 @@
  * bytewise corruption of signed material.
  */
 
-import { decode as b64urlDecode } from '@licensing/sdk/base64url';
+import { decode as b64urlDecode } from '@anorebel/licensing/base64url';
 
 import { type GeneratedToken, generateRaw } from './generate.ts';
 import type { TamperSpec, ValidInputs } from './types.ts';

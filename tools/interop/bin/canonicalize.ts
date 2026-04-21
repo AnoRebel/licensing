@@ -20,7 +20,7 @@
  * The batch path keeps Bun startup amortized across thousands of payloads.
  */
 
-import { canonicalize } from '@licensing/sdk/canonical-json';
+import { canonicalize } from '@anorebel/licensing/canonical-json';
 
 import { runCli } from '../src/io.ts';
 

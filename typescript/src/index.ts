@@ -1,5 +1,5 @@
 // Public barrel. Re-exports are intentional — downstream consumers may
-// import from '@licensing/sdk' or from the narrower subpath entries
+// import from '@anorebel/licensing' or from the narrower subpath entries
 // declared in package.json `exports`.
 
 export * from './canonical-json.ts';

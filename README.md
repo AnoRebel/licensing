@@ -6,7 +6,7 @@ round-trip — from either TypeScript or Go, with a shared token format and a
 Nuxt-based admin console for the control plane.[^origin]
 
 The two ports are byte-compatible: a license issued by the Go module verifies
-under `@licensing/sdk` and vice versa, enforced by cross-language interop tests
+under `@anorebel/licensing` and vice versa, enforced by cross-language interop tests
 in CI. Both expose the same building blocks — key hierarchy, issuer lifecycle,
 HTTP handlers, pluggable storage (memory, Postgres, SQLite) — so you can pick
 the runtime that fits your stack without rewriting the licensing layer.
@@ -17,7 +17,7 @@ the runtime that fits your stack without rewriting the licensing layer.
 
 ```
 licensing/
-├─ typescript/         # @licensing/sdk (single package, subpath exports)
+├─ typescript/         # @anorebel/licensing (single package, subpath exports)
 │  └─ src/                       # /crypto/{ed25519,rsa,hmac}, /client, /http,
 │                                # /storage/{memory,postgres,sqlite}, /cli
 ├─ licensing/                    # Go module github.com/AnoRebel/licensing
@@ -47,7 +47,7 @@ licensing/
 - **Pluggable storage.** Memory, Postgres (pgx/v5 + `pg`), and SQLite
   (`bun:sqlite` + `modernc.org/sqlite`) adapters, all satisfying the same
   schema-parity tests.
-- **Framework-agnostic HTTP.** `@licensing/sdk/http` ships optional
+- **Framework-agnostic HTTP.** `@anorebel/licensing/http` ships optional
   Hono/Express/Fastify adapters; the Go `licensing/http` package ships
   `http.Handler` constructors that drop into echo/chi/gorilla/stdlib.
 - **Shared OpenAPI contract.** `openapi/licensing-admin.yaml` is the single
@@ -76,8 +76,8 @@ import {
   registerUsage,
   type KeyAlg,
   type SignatureBackend,
-} from '@licensing/sdk';
-import { MemoryStorage } from '@licensing/sdk/storage/memory';
+} from '@anorebel/licensing';
+import { MemoryStorage } from '@anorebel/licensing/storage/memory';
 
 const clock = createAdvancingClock('2026-04-19T10:00:00.000000Z');
 const storage = new MemoryStorage({ clock });

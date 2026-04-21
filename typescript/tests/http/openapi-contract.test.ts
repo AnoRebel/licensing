@@ -34,12 +34,12 @@ import {
   type LicenseScope,
   type SignatureBackend,
   type Storage,
-} from '@licensing/sdk';
-import { MemoryStorage } from '@licensing/sdk/storage/memory';
-import { PostgresStorage } from '@licensing/sdk/storage/postgres';
-import { applyMigrations as applyPgMigrations } from '@licensing/sdk/storage/postgres/migrations';
-import { SqliteStorage } from '@licensing/sdk/storage/sqlite';
-import { applyMigrations as applySqliteMigrations } from '@licensing/sdk/storage/sqlite/migrations';
+} from '@anorebel/licensing';
+import { MemoryStorage } from '@anorebel/licensing/storage/memory';
+import { PostgresStorage } from '@anorebel/licensing/storage/postgres';
+import { applyMigrations as applyPgMigrations } from '@anorebel/licensing/storage/postgres/migrations';
+import { SqliteStorage } from '@anorebel/licensing/storage/sqlite';
+import { applyMigrations as applySqliteMigrations } from '@anorebel/licensing/storage/sqlite/migrations';
 import { Pool } from 'pg';
 
 import { adminRoutes } from '../../src/http/admin-handlers.ts';
@@ -338,7 +338,7 @@ for (const backend of BACKENDS) {
         const { license } = await seed(storage);
         // createLicense → pending; suspend requires an active license so
         // activate it first (registerUsage flips pending→active).
-        const { registerUsage } = await import('@licensing/sdk');
+        const { registerUsage } = await import('@anorebel/licensing');
         await registerUsage(storage, CLOCK, {
           license_id: license.id,
           fingerprint: 'c'.repeat(64),
@@ -446,7 +446,7 @@ for (const backend of BACKENDS) {
       const { s: storage, cleanup } = await backend.make();
       try {
         const { license } = await seed(storage);
-        const { registerUsage } = await import('@licensing/sdk');
+        const { registerUsage } = await import('@anorebel/licensing');
         await registerUsage(storage, CLOCK, {
           license_id: license.id,
           fingerprint: 'd'.repeat(64),

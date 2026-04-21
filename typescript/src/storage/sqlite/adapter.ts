@@ -1,5 +1,5 @@
 /**
- * SQLite storage adapter for @licensing/sdk.
+ * SQLite storage adapter for @anorebel/licensing.
  *
  * ## Architecture
  *
@@ -800,7 +800,9 @@ export class SqliteStorage implements Storage {
 
   async withTransaction<T>(fn: (tx: StorageTx) => Promise<T>): Promise<T> {
     if (this.#inTransaction) {
-      throw new Error('nested transactions are not supported by @licensing/sdk/storage/sqlite');
+      throw new Error(
+        'nested transactions are not supported by @anorebel/licensing/storage/sqlite',
+      );
     }
     // `BEGIN IMMEDIATE` acquires the RESERVED lock up front so concurrent
     // writers queue at BEGIN rather than mid-tx (avoids SQLITE_BUSY on the

@@ -12,7 +12,7 @@
  *     `BucketStore` interface.
  *   - `Retry-After` is computed from the time until one token refills,
  *     expressed as integer seconds (RFC 9110 §10.2.3 integer form —
- *     matches the client's parser in `@licensing/sdk/client`).
+ *     matches the client's parser in `@anorebel/licensing/client`).
  */
 
 import { err } from './envelope.ts';

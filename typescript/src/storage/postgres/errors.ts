@@ -1,5 +1,5 @@
 /**
- * Postgres error → `@licensing/sdk` error mapping.
+ * Postgres error → `@anorebel/licensing` error mapping.
  *
  * The core's error taxonomy is storage-agnostic; this module translates
  * Postgres's SQLSTATE codes + constraint-name clues into the core's

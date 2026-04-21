@@ -1,7 +1,7 @@
 /**
- * `@licensing/sdk/client` — public surface.
+ * `@anorebel/licensing/client` — public surface.
  *
- * Offline-first consumer of LIC1 tokens issued by `@licensing/sdk`:
+ * Offline-first consumer of LIC1 tokens issued by `@anorebel/licensing`:
  *
  *   - {@link validate}/{@link peek}           — offline validation (no network)
  *   - {@link activate}                        — first-time online activation

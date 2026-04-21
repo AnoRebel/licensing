@@ -16,7 +16,7 @@
     },
     "admin": {
       "name": "@licensing/admin",
-      "version": "0.1.0",
+      "version": "0.1.0-rc.0",
       "dependencies": {
         "@date-fns/tz": "^1.4.1",
         "@formkit/auto-animate": "^0.9.0",
@@ -55,9 +55,9 @@
     },
     "examples/ts": {
       "name": "@licensing/examples-ts",
-      "version": "0.1.0",
+      "version": "0.1.0-rc.0",
       "dependencies": {
-        "@licensing/sdk": "workspace:*",
+        "@anorebel/licensing": "workspace:*",
       },
       "devDependencies": {
         "@types/bun": "1.3.12",
@@ -65,12 +65,12 @@
     },
     "tools/fixture-generator": {
       "name": "@licensing/fixture-generator",
-      "version": "0.1.0",
+      "version": "0.1.0-rc.0",
       "bin": {
         "licensing-fixtures": "./bin/licensing-fixtures.ts",
       },
       "dependencies": {
-        "@licensing/sdk": "workspace:*",
+        "@anorebel/licensing": "workspace:*",
       },
       "devDependencies": {
         "@types/bun": "^1.3.12",
@@ -79,7 +79,7 @@
     },
     "tools/interop": {
       "name": "@licensing/interop",
-      "version": "0.1.0",
+      "version": "0.1.0-rc.0",
       "bin": {
         "interop-sign": "./bin/sign.ts",
         "interop-verify": "./bin/verify.ts",
@@ -87,14 +87,14 @@
         "interop-classify": "./bin/classify.ts",
       },
       "dependencies": {
-        "@licensing/sdk": "workspace:*",
+        "@anorebel/licensing": "workspace:*",
       },
     },
     "typescript": {
-      "name": "@licensing/sdk",
-      "version": "0.1.0",
+      "name": "@anorebel/licensing",
+      "version": "0.1.0-rc.0",
       "bin": {
-        "licensing-keys": "./bin/licensing-keys.js",
+        "licensing-keys": "bin/licensing-keys.js",
       },
       "devDependencies": {
         "@types/bun": "^1.3.12",
@@ -118,6 +118,8 @@
   },
   "packages": {
     "@adonisjs/hash": ["@adonisjs/hash@9.1.1", "", { "dependencies": { "@phc/format": "^1.0.0", "@poppinss/utils": "^6.9.3" }, "peerDependencies": { "argon2": "^0.31.2 || ^0.41.0 || ^0.43.0", "bcrypt": "^5.1.1 || ^6.0.0" }, "optionalPeers": ["argon2", "bcrypt"] }, "sha512-ZkRguwjAp4skKvKDdRAfdJ2oqQ0N7p9l3sioyXO1E8o0WcsyDgEpsTQtuVNoIdMiw4sn4gJlmL3nyF4BcK1ZDQ=="],
+
+    "@anorebel/licensing": ["@anorebel/licensing@workspace:typescript"],
 
     "@antfu/install-pkg": ["@antfu/install-pkg@1.1.0", "", { "dependencies": { "package-manager-detector": "^1.3.0", "tinyexec": "^1.0.1" } }, "sha512-MGQsmw10ZyI+EJo45CdSER4zEb+p31LpDAFp2Z3gkSd1yqVZGi0Ebx++YTEMonJy4oChEMLsxZ64j8FH6sSqtQ=="],
 
@@ -384,8 +386,6 @@
     "@licensing/fixture-generator": ["@licensing/fixture-generator@workspace:tools/fixture-generator"],
 
     "@licensing/interop": ["@licensing/interop@workspace:tools/interop"],
-
-    "@licensing/sdk": ["@licensing/sdk@workspace:typescript"],
 
     "@mapbox/node-pre-gyp": ["@mapbox/node-pre-gyp@2.0.3", "", { "dependencies": { "consola": "^3.2.3", "detect-libc": "^2.0.0", "https-proxy-agent": "^7.0.5", "node-fetch": "^2.6.7", "nopt": "^8.0.0", "semver": "^7.5.3", "tar": "^7.4.0" }, "bin": { "node-pre-gyp": "bin/node-pre-gyp" } }, "sha512-uwPAhccfFJlsfCxMYTwOdVfOz3xqyj8xYL3zJj8f0pb30tLohnnFPhLuqp4/qoEz8sNxe4SESZedcBojRefIzg=="],
 

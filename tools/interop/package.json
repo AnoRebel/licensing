@@ -12,6 +12,6 @@
     "interop-classify": "./bin/classify.ts"
   },
   "dependencies": {
-    "@licensing/sdk": "workspace:*"
+    "@anorebel/licensing": "workspace:*"
   }
 }

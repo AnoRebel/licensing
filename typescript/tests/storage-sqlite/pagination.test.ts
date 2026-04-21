@@ -19,7 +19,7 @@
 import { Database } from 'bun:sqlite';
 import { beforeEach, describe, expect, it } from 'bun:test';
 
-import { createAdvancingClock, createFixedClock } from '@licensing/sdk';
+import { createAdvancingClock, createFixedClock } from '@anorebel/licensing';
 import { SqliteStorage } from '../../src/storage/sqlite/index.ts';
 import { applyMigrations } from '../../src/storage/sqlite/migrations.ts';
 

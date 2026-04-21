@@ -4,8 +4,8 @@
  * Typical wiring:
  *
  *   import { clientRoutes, createRouter, bearerAuth, sharedSecretVerifier,
- *            rateLimit } from '@licensing/sdk/http';
- *   import { createHonoApp } from '@licensing/sdk/http/adapters/hono';
+ *            rateLimit } from '@anorebel/licensing/http';
+ *   import { createHonoApp } from '@anorebel/licensing/http/adapters/hono';
  *
  *   const router = createRouter(
  *     clientRoutes(ctx, '/api/licensing/v1'),

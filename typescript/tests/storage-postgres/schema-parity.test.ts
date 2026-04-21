@@ -19,8 +19,8 @@
 
 import { describe, expect, it } from 'bun:test';
 
-import type { SchemaDescription } from '@licensing/sdk/storage';
-import { MEMORY_SCHEMA } from '@licensing/sdk/storage/memory';
+import type { SchemaDescription } from '@anorebel/licensing/storage';
+import { MEMORY_SCHEMA } from '@anorebel/licensing/storage/memory';
 import type { Pool } from 'pg';
 
 import { POSTGRES_SCHEMA, PostgresStorage } from '../../src/storage/postgres/index.ts';

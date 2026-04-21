@@ -51,9 +51,9 @@ import type { KeyAlg, KeyRole, KeyState, LicenseKey, UUIDv7 } from './types.ts';
 // -------- KeyStore contract --------
 
 /** Minimal persistence contract for `LicenseKey` records. Production
- *  adapters live in `@licensing/storage-*`; the core ships an in-memory
- *  implementation for tests and key-hierarchy flows that don't need
- *  durability yet. */
+ *  adapters live in `@anorebel/licensing/storage/*` subpaths; the core
+ *  ships an in-memory implementation for tests and key-hierarchy flows
+ *  that don't need durability yet. */
 export interface KeyStore {
   put(record: LicenseKey): Promise<void>;
   get(id: UUIDv7): Promise<LicenseKey | null>;

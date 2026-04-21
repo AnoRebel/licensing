@@ -1,7 +1,7 @@
 /**
  * Typed error hierarchy for the licensing issuer core.
  *
- * Every thrown error in `@licensing/sdk` (and the sibling crypto / storage
+ * Every thrown error in `@anorebel/licensing` (and the sibling crypto / storage
  * packages) is a subclass of `LicensingError`. Consumers can discriminate via
  * the `.code` string — stable across versions and matched 1:1 with the Go
  * sentinel-error identifiers in `github.com/AnoRebel/licensing`.

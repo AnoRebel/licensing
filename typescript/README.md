@@ -1,4 +1,4 @@
-# @licensing/sdk
+# @anorebel/licensing
 
 Offline-capable software licensing for TypeScript runtimes. Issue signed
 license tokens, bind them to a device fingerprint, and verify them with no
@@ -15,17 +15,17 @@ tokens are byte-compatible across both ports at the same version.
 ## Install
 
 ```bash
-bun add @licensing/sdk
+bun add @anorebel/licensing
 # or
-npm install @licensing/sdk
+npm install @anorebel/licensing
 # or
-deno add jsr:@licensing/sdk
+deno add jsr:@anorebel/licensing
 ```
 
 Optional peers, installed only when you use the matching storage adapter:
 
 ```bash
-bun add pg                  # for @licensing/sdk/storage/postgres
+bun add pg                  # for @anorebel/licensing/storage/postgres
 # (Bun's built-in bun:sqlite is used by the SQLite adapter — no install needed)
 ```
 
@@ -33,27 +33,27 @@ bun add pg                  # for @licensing/sdk/storage/postgres
 
 | Import                                            | What you get                                                           |
 | ------------------------------------------------- | ---------------------------------------------------------------------- |
-| `@licensing/sdk`                            | Issuer primitives: lifecycle, license/scope/template/token services.   |
-| `@licensing/sdk/canonical-json`             | Deterministic stringify used by LIC1 and the interop fixtures.         |
-| `@licensing/sdk/base64url`                  | RFC 4648 §5 encoder/decoder (unpadded).                                |
-| `@licensing/sdk/lic1`                       | Low-level encode/decode of the `LIC1.<h>.<p>.<s>` envelope.            |
-| `@licensing/sdk/crypto`                     | `AlgorithmRegistry`, `KeyAlgBindings`, `SignatureBackend` types.       |
-| `@licensing/sdk/crypto/ed25519`             | Ed25519 backend.                                                       |
-| `@licensing/sdk/crypto/rsa`                 | RSA-PSS (RS256/RS384/RS512) backend.                                   |
-| `@licensing/sdk/crypto/hmac`                | HMAC-SHA-256 backend (symmetric — use carefully).                      |
-| `@licensing/sdk/encrypted-pkcs8`            | PBES2 (PBKDF2-HMAC-SHA-256 + AES-256-GCM) wrap/unwrap.                 |
-| `@licensing/sdk/errors`                     | Stable error codes shared with the HTTP surface.                       |
-| `@licensing/sdk/client`                     | Offline-first consumer: activate / validate / heartbeat / refresh.     |
-| `@licensing/sdk/http`                       | Framework-agnostic HTTP handlers; Hono / Express / Fastify adapters.   |
-| `@licensing/sdk/http/adapters/hono`         | `toHonoHandler` factory.                                               |
-| `@licensing/sdk/http/adapters/express`      | `toExpressHandler` factory.                                            |
-| `@licensing/sdk/http/adapters/fastify`      | `toFastifyHandler` factory.                                            |
-| `@licensing/sdk/storage`                    | `Storage` interface + schema descriptions.                             |
-| `@licensing/sdk/storage/memory`             | In-memory adapter (tests + ephemeral runtimes).                        |
-| `@licensing/sdk/storage/postgres`           | Postgres adapter using `pg`.                                           |
-| `@licensing/sdk/storage/postgres/migrations`| `applyMigrations(pool)` — ships the Postgres schema migration runner.  |
-| `@licensing/sdk/storage/sqlite`             | SQLite adapter using `bun:sqlite` (WAL + foreign keys enabled).        |
-| `@licensing/sdk/storage/sqlite/migrations`  | `applyMigrations(db)` for SQLite.                                      |
+| `@anorebel/licensing`                            | Issuer primitives: lifecycle, license/scope/template/token services.   |
+| `@anorebel/licensing/canonical-json`             | Deterministic stringify used by LIC1 and the interop fixtures.         |
+| `@anorebel/licensing/base64url`                  | RFC 4648 §5 encoder/decoder (unpadded).                                |
+| `@anorebel/licensing/lic1`                       | Low-level encode/decode of the `LIC1.<h>.<p>.<s>` envelope.            |
+| `@anorebel/licensing/crypto`                     | `AlgorithmRegistry`, `KeyAlgBindings`, `SignatureBackend` types.       |
+| `@anorebel/licensing/crypto/ed25519`             | Ed25519 backend.                                                       |
+| `@anorebel/licensing/crypto/rsa`                 | RSA-PSS (RS256/RS384/RS512) backend.                                   |
+| `@anorebel/licensing/crypto/hmac`                | HMAC-SHA-256 backend (symmetric — use carefully).                      |
+| `@anorebel/licensing/encrypted-pkcs8`            | PBES2 (PBKDF2-HMAC-SHA-256 + AES-256-GCM) wrap/unwrap.                 |
+| `@anorebel/licensing/errors`                     | Stable error codes shared with the HTTP surface.                       |
+| `@anorebel/licensing/client`                     | Offline-first consumer: activate / validate / heartbeat / refresh.     |
+| `@anorebel/licensing/http`                       | Framework-agnostic HTTP handlers; Hono / Express / Fastify adapters.   |
+| `@anorebel/licensing/http/adapters/hono`         | `toHonoHandler` factory.                                               |
+| `@anorebel/licensing/http/adapters/express`      | `toExpressHandler` factory.                                            |
+| `@anorebel/licensing/http/adapters/fastify`      | `toFastifyHandler` factory.                                            |
+| `@anorebel/licensing/storage`                    | `Storage` interface + schema descriptions.                             |
+| `@anorebel/licensing/storage/memory`             | In-memory adapter (tests + ephemeral runtimes).                        |
+| `@anorebel/licensing/storage/postgres`           | Postgres adapter using `pg`.                                           |
+| `@anorebel/licensing/storage/postgres/migrations`| `applyMigrations(pool)` — ships the Postgres schema migration runner.  |
+| `@anorebel/licensing/storage/sqlite`             | SQLite adapter using `bun:sqlite` (WAL + foreign keys enabled).        |
+| `@anorebel/licensing/storage/sqlite/migrations`  | `applyMigrations(db)` for SQLite.                                      |
 
 ## Quickstart: issuer
 
@@ -63,9 +63,9 @@ import {
   generateRootKey, issueInitialSigningKey,
   NewAlgorithmRegistry, NewKeyAlgBindings,
   systemClock,
-} from '@licensing/sdk';
-import { ed25519 } from '@licensing/sdk/crypto/ed25519';
-import { MemoryStorage } from '@licensing/sdk/storage/memory';
+} from '@anorebel/licensing';
+import { ed25519 } from '@anorebel/licensing/crypto/ed25519';
+import { MemoryStorage } from '@anorebel/licensing/storage/memory';
 
 const store = new MemoryStorage();
 const clock = systemClock();
@@ -100,7 +100,7 @@ the full end-to-end flow including public-key verification.
 
 ```ts
 import { activate, sendOneHeartbeat, deactivate, MemoryTokenStore }
-  from '@licensing/sdk/client';
+  from '@anorebel/licensing/client';
 
 const store = new MemoryTokenStore();
 const { license_id, usage_id } = await activate('LK-DEMO-0000-0000', {

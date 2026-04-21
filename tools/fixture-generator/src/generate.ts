@@ -5,7 +5,7 @@
  *                     expected_token.txt }
  *
  * Builds a LIC1 token *manually* (canonicalize → base64url → sign → join)
- * rather than going through `@licensing/sdk`'s `lic1.encode` helper. Two
+ * rather than going through `@anorebel/licensing`'s `lic1.encode` helper. Two
  * reasons:
  *   1. The tamper generator reuses this exact path and needs to emit tokens
  *      that the core would refuse to encode (unknown fields, missing claims,
@@ -13,21 +13,21 @@
  *   2. Byte-for-byte control over what lands on disk. The fixture contract
  *      is byte-equality; we don't want any helper layer to massage output.
  *
- * All the crypto still comes from `@licensing/sdk/crypto` — we are not
+ * All the crypto still comes from `@anorebel/licensing/crypto` — we are not
  * reimplementing signing. We *are* reimplementing the envelope glue, and
  * the assertion in `verifyAgainstCore()` at the bottom closes the loop: the
  * resulting token MUST parse-and-verify through `lic1.verify` before we
  * write it to disk. If it doesn't, generation fails loud.
  */
 
-import { canonicalize } from '@licensing/sdk/canonical-json';
+import { canonicalize } from '@anorebel/licensing/canonical-json';
 import {
   ed25519Backend,
   hmacBackend,
   rsaPssBackend,
   type SignatureBackend,
-} from '@licensing/sdk/crypto';
-import { decodeUnverified } from '@licensing/sdk/lic1';
+} from '@anorebel/licensing/crypto';
+import { decodeUnverified } from '@anorebel/licensing/lic1';
 
 import { loadKey } from './keys.ts';
 import type { KeyAlg, ValidInputs } from './types.ts';

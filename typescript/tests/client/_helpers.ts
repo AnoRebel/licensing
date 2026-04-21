@@ -3,9 +3,9 @@
  * RPC tests don't have to reimplement the LIC1 pipeline.
  */
 
-import { AlgorithmRegistry, KeyAlgBindings, type KeyRecord } from '@licensing/sdk/crypto';
-import { ed25519Backend } from '@licensing/sdk/crypto/ed25519';
-import { type LIC1Header, encode as lic1Encode } from '@licensing/sdk/lic1';
+import { AlgorithmRegistry, KeyAlgBindings, type KeyRecord } from '@anorebel/licensing/crypto';
+import { ed25519Backend } from '@anorebel/licensing/crypto/ed25519';
+import { type LIC1Header, encode as lic1Encode } from '@anorebel/licensing/lic1';
 
 export interface ForgedToken {
   readonly token: string;

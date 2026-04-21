@@ -13,7 +13,7 @@ import {
   MemoryTokenStore,
   refresh,
   sendOneHeartbeat,
-} from '@licensing/sdk/client';
+} from '@anorebel/licensing/client';
 
 // --- Mock transport ---------------------------------------------------------
 //

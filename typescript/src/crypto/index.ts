@@ -6,7 +6,7 @@
  *   - All three bundled backends (ed25519, rsa-pss, hmac) as named exports
  *
  * Consumers who only need one alg should import the narrower subpath entry
- * (`@licensing/sdk/crypto/ed25519` etc.) so the other backends stay out of
+ * (`@anorebel/licensing/crypto/ed25519` etc.) so the other backends stay out of
  * their bundle — ESM tree-shaking already does this via named imports, but
  * the subpath form is clearer intent.
  */

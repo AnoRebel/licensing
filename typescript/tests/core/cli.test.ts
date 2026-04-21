@@ -1,7 +1,7 @@
 /**
  * `licensing-keys` CLI tests.
  *
- * Backends (ed25519 / rs256-pss / hs256) are compiled into `@licensing/sdk`
+ * Backends (ed25519 / rs256-pss / hs256) are compiled into `@anorebel/licensing`
  * and wired up statically in `src/cli/main.ts` — no dynamic resolution, no
  * per-test backend injection needed. Tests call `run()` in-process with
  * stubbed argv/env/IO channels so we assert exit codes, stdout lines, and

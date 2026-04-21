@@ -1,5 +1,5 @@
 {
-  "name": "@licensing/sdk",
+  "name": "@anorebel/licensing",
   "version": "0.1.0-rc.0",
   "description": "Offline-capable licensing toolkit: canonical JSON, LIC1 signed tokens, key hierarchy, issuer lifecycle, HTTP handlers, client activation flow, and storage adapters — all in a single package mirroring the Go module layout.",
   "keywords": [

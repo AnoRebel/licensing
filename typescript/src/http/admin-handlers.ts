@@ -17,7 +17,7 @@
  *
  * Wire-shape responsibility:
  *   The core domain types (`License`, `Scope`, etc.) are already defined in
- *   `@licensing/sdk`. The OpenAPI schemas match those shapes 1:1 except:
+ *   `@anorebel/licensing`. The OpenAPI schemas match those shapes 1:1 except:
  *     - Keys on the wire MUST omit `private_pem_enc` (the encrypted private
  *       key — never surfaced in admin reads). The `keyToWire` helper strips it.
  *     - Licenses MAY include a derived `active_usages` count. We compute it
@@ -916,7 +916,7 @@ export function adminRoutes(ctx: AdminHandlerContext, prefix = ''): readonly Rou
   ];
 }
 
-// Re-export types so consumers don't have to spelunk in @licensing/sdk for
+// Re-export types so consumers don't have to spelunk in @anorebel/licensing for
 // unused symbols. Stays lint-clean by actually importing them above.
 export type { AuditLogEntry, License, LicenseScope, LicenseTemplate, LicenseUsage };
 

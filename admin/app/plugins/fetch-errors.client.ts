@@ -11,7 +11,7 @@
  *   2. Normalise the upstream error envelope. The licensing API emits
  *      `{ success: false, error: { code, message } }`; we surface
  *      `error.code` on the FetchError so UI code can `switch` on stable
- *      identifiers (see `@licensing/sdk` error taxonomy) instead of
+ *      identifiers (see `@anorebel/licensing` error taxonomy) instead of
  *      regexing message strings.
  *
  * Hook name comes from nuxt-open-fetch: `openFetch:onResponseError:<client>`

@@ -7,7 +7,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import type { PemKeyMaterial, RawKeyMaterial } from '@licensing/sdk/crypto';
+import type { PemKeyMaterial, RawKeyMaterial } from '@anorebel/licensing/crypto';
 
 import type { KeyAlg, KeyRef } from './types.ts';
 

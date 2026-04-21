@@ -21,8 +21,8 @@ import {
   type KeyRecord,
   type SignatureBackend,
   type KeyAlg,
-} from '@licensing/sdk';
-import { MemoryStorage } from '@licensing/sdk/storage/memory';
+} from '@anorebel/licensing';
+import { MemoryStorage } from '@anorebel/licensing/storage/memory';
 
 async function main() {
   // Clock that advances deterministically — used for iat/exp and id gen.

@@ -1,5 +1,5 @@
 /**
- * SQLite error → `@licensing/sdk` error mapping.
+ * SQLite error → `@anorebel/licensing` error mapping.
  *
  * bun:sqlite throws `SQLiteError` with a `code` like `SQLITE_CONSTRAINT_UNIQUE`
  * and a message naming the index (`UNIQUE constraint failed: licenses.license_key`).

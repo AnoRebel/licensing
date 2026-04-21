@@ -12,7 +12,7 @@
  *
  * Usage:
  *   import { Database } from 'bun:sqlite';
- *   import { applyMigrations } from '@licensing/sdk/storage/sqlite/migrations';
+ *   import { applyMigrations } from '@anorebel/licensing/storage/sqlite/migrations';
  *   const db = new Database('licensing.db');
  *   db.run('PRAGMA journal_mode = WAL');
  *   db.run('PRAGMA foreign_keys = ON');

@@ -15,7 +15,7 @@
 
 import { describe, expect, it } from 'bun:test';
 
-import { MemoryStorage } from '@licensing/sdk/storage/memory';
+import { MemoryStorage } from '@anorebel/licensing/storage/memory';
 
 import {
   activate,

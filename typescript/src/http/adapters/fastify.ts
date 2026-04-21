@@ -6,7 +6,7 @@
  * Usage:
  *
  *   import Fastify from 'fastify';
- *   import { toFastifyHandler } from '@licensing/sdk/http/adapters/fastify';
+ *   import { toFastifyHandler } from '@anorebel/licensing/http/adapters/fastify';
  *
  *   const app = Fastify();
  *   app.all('/api/licensing/v1/*', toFastifyHandler(router));

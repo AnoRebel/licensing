@@ -19,11 +19,11 @@
 import { Database } from 'bun:sqlite';
 import { afterAll, describe, expect, it } from 'bun:test';
 
-import { MemoryStorage } from '@licensing/sdk/storage/memory';
-import { PostgresStorage } from '@licensing/sdk/storage/postgres';
-import { applyMigrations as applyPgMigrations } from '@licensing/sdk/storage/postgres/migrations';
-import { SqliteStorage } from '@licensing/sdk/storage/sqlite';
-import { applyMigrations as applySqliteMigrations } from '@licensing/sdk/storage/sqlite/migrations';
+import { MemoryStorage } from '@anorebel/licensing/storage/memory';
+import { PostgresStorage } from '@anorebel/licensing/storage/postgres';
+import { applyMigrations as applyPgMigrations } from '@anorebel/licensing/storage/postgres/migrations';
+import { SqliteStorage } from '@anorebel/licensing/storage/sqlite';
+import { applyMigrations as applySqliteMigrations } from '@anorebel/licensing/storage/sqlite/migrations';
 import { Pool } from 'pg';
 
 import {

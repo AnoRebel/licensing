@@ -10,8 +10,8 @@
 import { Database } from 'bun:sqlite';
 import { describe, expect, it } from 'bun:test';
 
-import type { SchemaDescription } from '@licensing/sdk/storage';
-import { MEMORY_SCHEMA } from '@licensing/sdk/storage/memory';
+import type { SchemaDescription } from '@anorebel/licensing/storage';
+import { MEMORY_SCHEMA } from '@anorebel/licensing/storage/memory';
 
 import { SQLITE_SCHEMA, SqliteStorage } from '../../src/storage/sqlite/index.ts';
 

@@ -1,5 +1,5 @@
 /**
- * Postgres storage adapter for @licensing/sdk.
+ * Postgres storage adapter for @anorebel/licensing.
  *
  * ## Architecture
  *
@@ -738,7 +738,9 @@ export class PostgresStorage implements Storage {
 
   async withTransaction<T>(fn: (tx: StorageTx) => Promise<T>): Promise<T> {
     if (this.#inTransaction) {
-      throw new Error('nested transactions are not supported by @licensing/sdk/storage/postgres');
+      throw new Error(
+        'nested transactions are not supported by @anorebel/licensing/storage/postgres',
+      );
     }
     if (!('connect' in this.#q)) {
       // Should be impossible given the type guards, but be explicit.

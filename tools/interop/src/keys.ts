@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import type { KeyRecord, RawKeyMaterial } from '@licensing/sdk/crypto';
+import type { KeyRecord, RawKeyMaterial } from '@anorebel/licensing/crypto';
 
 export type KeyAlg = 'ed25519' | 'rs256-pss' | 'hs256';
 export type KeyRef = 'ed25519' | 'rsa' | 'hmac';

@@ -15,9 +15,9 @@
     "check": "biome check .",
     "fmt": "biome format --write .",
     "lint": "biome lint .",
-    "build": "bun run --filter='@licensing/sdk' build",
-    "test": "bun run --filter='@licensing/sdk' test",
-    "typecheck": "bun run --filter='@licensing/sdk' typecheck",
+    "build": "bun run --filter='@anorebel/licensing' build",
+    "test": "bun run --filter='@anorebel/licensing' test",
+    "typecheck": "bun run --filter='@anorebel/licensing' typecheck",
     "version:sync": "node scripts/sync-versions.mjs",
     "version:check": "node scripts/sync-versions.mjs --check",
     "commitlint": "commitlint --edit"
