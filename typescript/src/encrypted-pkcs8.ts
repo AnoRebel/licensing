@@ -88,7 +88,7 @@ const OBJECT_IDENTIFIER = 0x06;
 const INTEGER = 0x02;
 const NULL = 0x05;
 
-function oid(dotted: string): Uint8Array {
+function oidBody(dotted: string): Uint8Array {
   const parts = dotted.split('.').map((s) => Number.parseInt(s, 10));
   if (parts.length < 2 || parts.some((n) => !Number.isFinite(n) || n < 0)) {
     throw new Error(`bad OID: ${dotted}`);
@@ -106,7 +106,29 @@ function oid(dotted: string): Uint8Array {
     for (let i = 0; i < base128.length - 1; i++) (base128[i] as number) |= 0x80;
     body.push(...base128);
   }
-  return tlv(OBJECT_IDENTIFIER, Uint8Array.from(body));
+  return Uint8Array.from(body);
+}
+
+function oid(dotted: string): Uint8Array {
+  return tlv(OBJECT_IDENTIFIER, oidBody(dotted));
+}
+
+// Pre-encoded OID bodies used by `unwrapEncryptedPkcs8`'s profile check.
+// We compare the raw OID bytes (not a parsed dotted string) because
+// byte-equality is both faster and impossible to fool with leading-zero
+// re-encodings — BER allows alternate encodings that an attacker could
+// use to route a profile check around a string comparison.
+const OID_PBES2 = oidBody('1.2.840.113549.1.5.13');
+const OID_PBKDF2 = oidBody('1.2.840.113549.1.5.12');
+const OID_HMAC_SHA256 = oidBody('1.2.840.113549.2.9');
+const OID_AES256_GCM = oidBody('2.16.840.1.101.3.4.1.46');
+
+function oidEquals(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false;
+  }
+  return true;
 }
 
 function der_integer(n: number): Uint8Array {
@@ -285,17 +307,13 @@ export function unwrapEncryptedPkcs8(encryptedPem: string, passphrase: string): 
   expectTag(iterTlv, INTEGER, 'iter');
   const keyLenTlv = parseTlv(pbkdf2Params.content, saltTlv.total + iterTlv.total);
   expectTag(keyLenTlv, INTEGER, 'keylen');
+  const prfAlg = parseTlv(pbkdf2Params.content, saltTlv.total + iterTlv.total + keyLenTlv.total);
+  expectTag(prfAlg, SEQUENCE, 'pbkdf2-prf');
+  const prfOid = parseTlv(prfAlg.content, 0);
+  expectTag(prfOid, OBJECT_IDENTIFIER, 'pbkdf2-prf-oid');
 
   const iter = bufToUint(iterTlv.content);
   const keyLen = bufToUint(keyLenTlv.content);
-  if (keyLen !== KEY_LEN) {
-    throw errors.tokenMalformed(`encrypted PKCS#8: expected keyLen=${KEY_LEN}, got ${keyLen}`);
-  }
-  if (iter < 100_000) {
-    // Reject unreasonably low iteration counts even if a third party ever
-    // produces such an envelope. Our own emitter uses 600k.
-    throw errors.tokenMalformed(`encrypted PKCS#8: iteration count ${iter} too low`);
-  }
 
   // Enc params.
   const encOid = parseTlv(encAlg.content, 0);
@@ -307,8 +325,31 @@ export function unwrapEncryptedPkcs8(encryptedPem: string, passphrase: string): 
   const tagLenTlv = parseTlv(encParams.content, nonceTlv.total);
   expectTag(tagLenTlv, INTEGER, 'gcm-taglen');
   const tagLen = bufToUint(tagLenTlv.content);
-  if (tagLen !== GCM_TAG_LEN) {
-    throw errors.tokenMalformed(`encrypted PKCS#8: expected tagLen=${GCM_TAG_LEN}, got ${tagLen}`);
+
+  // Enforce the fixed profile. All profile-mismatch failures collapse to
+  // the same opaque `KeyDecryptionFailed` error so an attacker with only
+  // an error-log channel can't distinguish "wrong passphrase" from
+  // "crafted downgrade envelope" — these are all "this envelope cannot be
+  // opened with this key," full stop. Structural DER failures above keep
+  // their TokenMalformed class because those are clearly "this isn't an
+  // encrypted-PKCS#8 envelope at all."
+  //
+  // This mirrors the Go side (licensing/encrypted_pkcs8.go:220-233). Before
+  // B13 the TS side read the OID bytes and discarded them, so an attacker
+  // who could craft an envelope with PBKDF2-HMAC-SHA-1 or a non-GCM cipher
+  // could get it accepted as long as the ciphertext happened to decrypt —
+  // a weakened-KDF downgrade.
+  const profileOK =
+    oidEquals(pbes2Oid.content, OID_PBES2) &&
+    oidEquals(pbkdf2Oid.content, OID_PBKDF2) &&
+    oidEquals(prfOid.content, OID_HMAC_SHA256) &&
+    oidEquals(encOid.content, OID_AES256_GCM) &&
+    keyLen === KEY_LEN &&
+    iter >= 100_000 &&
+    tagLen === GCM_TAG_LEN &&
+    nonceTlv.content.length === GCM_NONCE_LEN;
+  if (!profileOK) {
+    throw errors.keyDecryptionFailed();
   }
 
   // Re-derive and decrypt.
