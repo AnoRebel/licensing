@@ -53,56 +53,123 @@ licensing/
 
 ```bash
 bun install
-bun run --filter '@licensing/sdk' build
-bun run --filter '@licensing/sdk' test
+cd typescript
+bun run build
+bun test
 ```
 
-Minimal issuer flow (once packages land in phase 3–5):
+Minimal issuer flow (see `examples/ts/issue-and-verify.ts` for the full script):
 
 ```ts
-import { createIssuer } from '@licensing/sdk';
-import { ed25519 } from '@licensing/crypto-ed25519';
-import { memoryStorage } from '@licensing/sdk/storage/memory';
+import {
+  createAdvancingClock,
+  createLicense,
+  ed25519Backend,
+  generateRootKey,
+  issueInitialSigningKey,
+  issueToken,
+  registerUsage,
+  type KeyAlg,
+  type SignatureBackend,
+} from '@licensing/sdk';
+import { MemoryStorage } from '@licensing/sdk/storage/memory';
 
-const issuer = await createIssuer({
-  storage: memoryStorage(),
-  crypto: { ed25519 },
-  activeKid: 'k1',
+const clock = createAdvancingClock('2026-04-19T10:00:00.000000Z');
+const storage = new MemoryStorage({ clock });
+const backends = new Map<KeyAlg, SignatureBackend>([['ed25519', ed25519Backend]]);
+
+const root = await generateRootKey(storage, clock, backends, {
+  scope_id: null,
+  alg: 'ed25519',
+  passphrase: 'root-pw',
 });
 
-const license = await issuer.createLicense({ scopeId: 's1', seats: 3 });
-const token = await issuer.issueToken(license, { ttlSeconds: 3600 });
+const signing = await issueInitialSigningKey(storage, clock, backends, {
+  scope_id: null,
+  alg: 'ed25519',
+  rootKid: root.kid,
+  rootPassphrase: 'root-pw',
+  signingPassphrase: 'sign-pw',
+});
+
+const license = await createLicense(storage, clock, {
+  scope_id: null,
+  template_id: null,
+  licensable_type: 'User',
+  licensable_id: 'user-42',
+  max_usages: 3,
+});
+
+const { usage, license: active } = await registerUsage(storage, clock, {
+  license_id: license.id,
+  fingerprint: 'a'.repeat(64),
+});
+
+const { token } = await issueToken(storage, clock, backends, {
+  license: active,
+  usage,
+  ttlSeconds: 3600,
+  alg: 'ed25519',
+  signingPassphrase: 'sign-pw',
+});
 ```
 
 ## Quickstart — Go
 
 ```bash
-cd golang
 go test ./...
 ```
 
 ```go
 import (
-    "github.com/AnoRebel/licensing"
-    "github.com/AnoRebel/licensing/crypto/ed25519"
-    "github.com/AnoRebel/licensing/storage/memory"
+    lic "github.com/AnoRebel/licensing/licensing"
+    "github.com/AnoRebel/licensing/licensing/crypto/ed25519"
+    "github.com/AnoRebel/licensing/licensing/storage/memory"
 )
 
-issuer, _ := licensing.NewIssuer(licensing.Config{
-    Storage:   memory.New(),
-    Backends:  []licensing.Backend{ed25519.Backend()},
-    ActiveKID: "k1",
-})
+clk := lic.SystemClock{}
+store := memory.New(memory.Options{})
+registry := lic.NewAlgorithmRegistry()
+_ = registry.Register(ed25519.New())
 
-lic, _ := issuer.CreateLicense(ctx, licensing.NewLicense{ScopeID: "s1", Seats: 3})
-tok, _ := issuer.IssueToken(ctx, lic, licensing.TokenOpts{TTL: time.Hour})
+root, _ := lic.GenerateRootKey(store, clk, registry, lic.GenerateRootKeyInput{
+    Alg: lic.AlgEd25519, Passphrase: "root-pw",
+}, lic.KeyIssueOptions{})
+
+signing, _ := lic.IssueInitialSigningKey(store, clk, registry, lic.IssueInitialSigningKeyInput{
+    Alg:               lic.AlgEd25519,
+    RootKid:           root.Kid,
+    RootPassphrase:    "root-pw",
+    SigningPassphrase: "sign-pw",
+}, lic.KeyIssueOptions{})
+
+license, _ := lic.CreateLicense(store, clk, lic.CreateLicenseInput{
+    LicensableType: "User", LicensableID: "user-42",
+    Status: lic.LicenseStatusActive, MaxUsages: 3,
+}, lic.CreateLicenseOptions{})
+
+usage, _ := lic.RegisterUsage(store, clk, lic.RegisterUsageInput{
+    LicenseID:   license.ID,
+    Fingerprint: strings.Repeat("a", 64),
+}, lic.RegisterUsageOptions{})
+
+tok, _ := lic.IssueToken(store, clk, registry, lic.IssueTokenInput{
+    License:           license,
+    Usage:             usage.Usage,
+    TTLSeconds:        3600,
+    Alg:               lic.AlgEd25519,
+    SigningPassphrase: "sign-pw",
+})
+_ = signing
+_ = tok
 ```
 
 ## Admin UI
 
 ```bash
 bun install
-bun run --filter '@licensing/admin' dev
+cd admin
+bun run dev
 ```
 
 The admin UI is a fully typed Nuxt 4 app consuming `openapi/licensing-admin.yaml`

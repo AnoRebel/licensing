@@ -10,9 +10,9 @@ pkg.go.dev. A single entry below describes all three.
 
 ## [Unreleased]
 
-## [0.1.0] — 2026-04-20
+## [0.1.0-rc.0] — 2026-04-21
 
-Initial public release. Clean-room TS + Go port of
+Initial public release candidate. Clean-room TS + Go port of
 [`masterix21/laravel-licensing`](https://github.com/masterix21/laravel-licensing)
 with a framework-agnostic admin UI (Nuxt 4 + shadcn-nuxt).
 
