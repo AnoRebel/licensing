@@ -1,7 +1,7 @@
 // Package http provides framework-agnostic HTTP handlers for the licensing
 // issuer client and admin endpoints.
 //
-// Mirrors @licensing/http-handlers on the TypeScript side. Handlers implement
+// Mirrors @anorebel/licensing/http on the TypeScript side. Handlers implement
 // the stdlib net/http.Handler interface, so they compose cleanly with every
 // Go web framework in common use. Response envelopes and status codes are
 // contract-conformant with openapi/licensing-admin.yaml.

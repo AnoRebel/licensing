@@ -1,7 +1,7 @@
 package main
 
 // `licensing-keys` CLI entrypoint — root/signing key management for
-// @licensing/core and github.com/AnoRebel/licensing.
+// @anorebel/licensing and github.com/AnoRebel/licensing.
 //
 // Mirrors typescript/packages/core/src/cli/main.ts. Subcommands:
 //

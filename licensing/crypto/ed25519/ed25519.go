@@ -2,7 +2,7 @@
 //
 // Uses the Go standard library (crypto/ed25519, crypto/x509, encoding/pem).
 // No third-party curve library is pulled in — auditors only need to trust
-// the Go runtime. Mirrors @licensing/core/crypto/ed25519 semantically:
+// the Go runtime. Mirrors @anorebel/licensing/crypto/ed25519 semantically:
 //
 //   - Accepts raw 32-byte seeds OR PKCS#8/SPKI PEM for key import
 //   - Produces deterministic 64-byte signatures

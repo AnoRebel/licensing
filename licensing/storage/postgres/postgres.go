@@ -1,6 +1,6 @@
 // Package postgres provides a Storage implementation backed by PostgreSQL.
 //
-// Mirrors @licensing/storage-postgres. Uses the same migration set so a
+// Mirrors @anorebel/licensing/storage/postgres. Uses the same migration set so a
 // licensing database populated by either runtime is usable by the other.
 //
 // # Architecture

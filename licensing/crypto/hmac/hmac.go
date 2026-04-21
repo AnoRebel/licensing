@@ -1,7 +1,7 @@
 // Package hmac implements the licensing SignatureBackend for HMAC-SHA-256.
 //
 // Uses only the Go standard library (crypto/hmac, crypto/sha256).
-// Mirrors @licensing/core/crypto/hmac semantically:
+// Mirrors @anorebel/licensing/crypto/hmac semantically:
 //
 //   - Secrets must be at least 32 bytes; shorter secrets are rejected with
 //     ErrInsufficientKeyStrength
@@ -28,7 +28,7 @@ import (
 	lic "github.com/AnoRebel/licensing/licensing"
 )
 
-// Profile parameters — must match @licensing/core/crypto/hmac.ts.
+// Profile parameters — must match @anorebel/licensing/crypto/hmac.ts.
 const (
 	MinSecretLen     = 32
 	DefaultSecretLen = 32

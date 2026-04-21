@@ -1,7 +1,7 @@
 package licensing
 
 // Two-level key hierarchy with rotation and encrypted-at-rest storage.
-// Mirrors @licensing/core/key-hierarchy.ts.
+// Mirrors @anorebel/licensing/key-hierarchy.ts.
 //
 //	┌─────────────┐        certifies         ┌──────────────────┐
 //	│  Root key   │ ────────────────────────▶│  Signing key(s)  │

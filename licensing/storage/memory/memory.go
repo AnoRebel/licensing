@@ -1,5 +1,5 @@
 // Package memory provides an in-process Storage implementation backed by
-// Go maps. Mirrors @licensing/storage-memory.
+// Go maps. Mirrors @anorebel/licensing/storage/memory.
 //
 // State is held in six tables keyed by id. Primary-key lookups are O(1);
 // natural-key / filter scans are O(n) — acceptable for a test/dev

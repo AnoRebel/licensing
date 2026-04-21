@@ -3,7 +3,7 @@
 // output length).
 //
 // Uses only the Go standard library (crypto/rsa, crypto/x509, encoding/pem).
-// Mirrors @licensing/core/crypto/rsa semantically:
+// Mirrors @anorebel/licensing/crypto/rsa semantically:
 //
 //   - Accepts PKCS#8 PEM (plaintext) or raw DER (PKCS#8) for private keys
 //   - Accepts SPKI PEM or raw SPKI DER for public keys
@@ -26,7 +26,7 @@ import (
 	lic "github.com/AnoRebel/licensing/licensing"
 )
 
-// Profile parameters — these MUST match @licensing/core/crypto/rsa.ts exactly
+// Profile parameters — these MUST match @anorebel/licensing/crypto/rsa.ts exactly
 // or cross-language verification will fail silently.
 const (
 	MinBits     = 2048

@@ -35,7 +35,7 @@ import (
 	"fmt"
 )
 
-// Profile parameters — must match @licensing/core/src/encrypted-pkcs8.ts.
+// Profile parameters — must match @anorebel/licensing/encrypted-pkcs8.ts.
 const (
 	PBKDF2Iterations = 600_000
 	PBKDF2SaltLen    = 16

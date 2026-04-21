@@ -2,7 +2,7 @@
 // hierarchy.
 //
 // Mirrors the `licensing keys:*` artisan commands in the PHP reference and
-// the @licensing/core keys helpers. Subcommands:
+// the @anorebel/licensing keys helpers. Subcommands:
 //
 //	make-root      Generate a new root key (ed25519 by default)
 //	issue-signing  Mint a signing key wrapped by an existing root key

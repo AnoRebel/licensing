@@ -1,6 +1,6 @@
 // Package sqlite provides a Storage implementation backed by SQLite.
 //
-// Mirrors @licensing/storage-sqlite. Uses the same migration set so a
+// Mirrors @anorebel/licensing/storage/sqlite. Uses the same migration set so a
 // licensing database populated by either runtime is usable by the other.
 // The package uses a pure-Go driver (modernc.org/sqlite) to avoid a CGO
 // dependency.
