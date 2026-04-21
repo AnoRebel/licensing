@@ -16,7 +16,21 @@
  *     and the secret never leaves the server process.
  */
 export default defineEventHandler(async (event) => {
+  // Defense in depth: refuse to seal a session unless all of
+  //   (a) the a11y test flag is set,
+  //   (b) we are not in production,
+  //   (c) the request comes from localhost.
+  // Any one of these going wrong must 404 — this endpoint is never
+  // legitimate outside of the axe harness.
   if (process.env.ADMIN_A11Y_TEST_MODE !== '1') {
+    throw createError({ statusCode: 404, statusMessage: 'not found' });
+  }
+  if (process.env.NODE_ENV === 'production') {
+    throw createError({ statusCode: 404, statusMessage: 'not found' });
+  }
+  const host = getRequestHeader(event, 'host') ?? '';
+  const hostname = host.split(':')[0];
+  if (hostname !== '127.0.0.1' && hostname !== 'localhost' && hostname !== '[::1]') {
     throw createError({ statusCode: 404, statusMessage: 'not found' });
   }
 
