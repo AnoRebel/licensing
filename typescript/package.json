@@ -171,7 +171,8 @@
   "scripts": {
     "build": "tsdown",
     "typecheck": "tsc --noEmit",
-    "test": "bun test"
+    "test": "bun test",
+    "test:contract": "bun test tests/http/openapi-contract.test.ts"
   },
   "bin": {
     "licensing-keys": "./bin/licensing-keys.js"

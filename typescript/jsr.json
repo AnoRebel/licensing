@@ -26,7 +26,8 @@
     "./storage/postgres": "./src/storage/postgres/index.ts",
     "./storage/postgres/migrations": "./src/storage/postgres/migrations.ts",
     "./storage/sqlite": "./src/storage/sqlite/index.ts",
-    "./storage/sqlite/migrations": "./src/storage/sqlite/migrations.ts"
+    "./storage/sqlite/migrations": "./src/storage/sqlite/migrations.ts",
+    "./cli": "./src/cli/index.ts"
   },
   "publish": {
     "include": ["src/", "migrations/", "README.md", "LICENSE", "NOTICE", "jsr.json"],

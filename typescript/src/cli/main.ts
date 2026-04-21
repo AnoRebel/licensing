@@ -51,7 +51,7 @@ const DEFAULT_BACKENDS: ReadonlyMap<KeyAlg, SignatureBackend> = new Map<KeyAlg, 
   ['hs256', hmacBackend],
 ]);
 
-export const USAGE = `\
+export const USAGE: string = `\
 licensing-keys — root/signing key management for @licensing/sdk
 
 USAGE
