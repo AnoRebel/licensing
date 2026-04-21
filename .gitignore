@@ -107,3 +107,11 @@ pnpm-debug.log*
 # ---------- Local runtime data ----------
 # Default token-store path used by @licensing/client examples
 .licensing/
+
+# ---------- Release artefacts ----------
+# The `release.yml` workflow copies the canonical LICENSE + NOTICE from the
+# repo root into typescript/ before npm/jsr publish (Apache-2.0 §4 requires
+# shipping both in every distribution). VCS keeps only the root copies —
+# any copy inside typescript/ is a local build artefact.
+/typescript/LICENSE
+/typescript/NOTICE

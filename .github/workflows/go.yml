@@ -62,9 +62,6 @@ jobs:
   postgres:
     name: storage/postgres + http contract (Postgres 18)
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: golang
     services:
       postgres:
         image: postgres:18-alpine

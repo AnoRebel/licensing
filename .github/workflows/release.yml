@@ -123,6 +123,14 @@ jobs:
       - name: Build dist/ (tsdown)
         run: bun run build
 
+      # Apache-2.0 §4(a)+(c) requires shipping LICENSE + NOTICE in every
+      # distribution. typescript/package.json `files` and typescript/jsr.json
+      # `publish.include` declare them, but the canonical copies live at the
+      # repo root — copy them in place before publish so npm pack picks them
+      # up. Local dev and VCS stay clean (no symlinks / duplicates).
+      - name: Stage LICENSE + NOTICE
+        run: cp LICENSE NOTICE typescript/
+
       # --provenance requires id-token: write (granted above) and a public
       # registry. OIDC attests that this artefact came from this tag of this
       # repo via GitHub Actions — surfaced on npmjs.com as a "Provenance"
@@ -150,6 +158,12 @@ jobs:
 
       - name: Install workspace deps (JSR publish transpiles src/ itself)
         run: bun install --frozen-lockfile
+
+      # Apache-2.0 §4(a)+(c) requires shipping LICENSE + NOTICE. jsr.json
+      # `publish.include` declares both; stage them from the repo root so
+      # `jsr publish` picks them up without keeping duplicates in VCS.
+      - name: Stage LICENSE + NOTICE
+        run: cp LICENSE NOTICE typescript/
 
       # JSR uses OIDC via GitHub Actions — no long-lived token needed.
       # The `id-token: write` permission above is what unlocks it.
