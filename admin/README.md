@@ -31,3 +31,24 @@ bun run --filter @licensing/admin build
 The typed client comes from `../openapi/licensing-admin.yaml`. There is no
 committed artefact — `nuxt-open-fetch` regenerates every build, so edits to
 the yaml are picked up automatically. No drift check needed.
+
+## Accessibility
+
+Target is WCAG 2.2 AA. axe-core is wired into the Playwright suite
+(`tests/a11y/*.spec.ts`) and blocks CI on any violation of `wcag2a`,
+`wcag2aa`, `wcag21a`, `wcag21aa`, or `wcag22aa`. The UI is tested against
+both light and dark themes; `prefers-reduced-motion: reduce` collapses
+every transition and animation to a single frame (see
+`assets/css/tailwind.css`).
+
+## Security posture
+
+The admin UI never holds the upstream bearer token in the browser. See
+[`../docs/security.md`](../docs/security.md) for the full threat model —
+in short: bearer lives in a sealed httpOnly session cookie
+(`nuxt-auth-utils` + iron-webcrypto), and every API call goes through
+`server/api/proxy/[...]` which enforces `Sec-Fetch-Site` / `Origin`
+same-origin on state-changing methods as CSRF defence-in-depth.
+
+`NUXT_SESSION_PASSWORD` MUST be set in production (≥ 32 bytes). The dev
+fallback fails the server boot when `NODE_ENV=production`.

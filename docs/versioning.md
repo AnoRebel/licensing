@@ -12,10 +12,10 @@ All three share one version. A license issued by any port at version `X.Y.Z` is 
 
 ## Single source of truth: `VERSION`
 
-The repo-root `VERSION` file holds the canonical semver string (no `v` prefix, no trailing newline required but tolerated):
+The repo-root `VERSION` file holds the canonical semver string (no `v` prefix, no trailing newline required but tolerated). Release-candidate suffixes (`-rc.N`, `-beta.N`) are permitted and flow through to every manifest unchanged:
 
 ```
-0.1.0
+0.1.0-rc.0
 ```
 
 Every other manifest is generated / rewritten from this file by `scripts/sync-versions.mjs`:

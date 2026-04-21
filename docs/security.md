@@ -56,6 +56,30 @@ PKCS#8 PEM encrypted with PBES2:
 
 Public keys are stored as SubjectPublicKeyInfo PEM, unencrypted.
 
+### Unwrap-time profile allowlist
+
+Encrypted PKCS#8 identifies its KDF and cipher by ASN.1 Object Identifier.
+A permissive unwrapper that dispatches on "any OID the library recognises"
+opens a parameter-confusion attack: an attacker who can place a file on
+disk (backup restore, shared volume, compromised CI secret store) can
+hand the issuer a blob encrypted with PBKDF2-HMAC-SHA-1 + 3DES-CBC, and
+the default library path will happily decrypt it. The issuer would then
+sign tokens with a key whose parameters were chosen by the attacker.
+
+Both ports defeat this by **byte-equality OID checks** on unwrap,
+before any crypto primitive runs:
+
+- `1.2.840.113549.1.5.13` — PBES2 (outer scheme)
+- `1.2.840.113549.1.5.12` — PBKDF2 (KDF)
+- `1.2.840.113549.2.9`   — HMAC-SHA-256 (PRF)
+- `2.16.840.1.101.3.4.1.46` — AES-256-GCM (cipher)
+
+Any other triple (including PBKDF2-HMAC-SHA-1, PBKDF2-HMAC-SHA-512,
+AES-256-CBC, 3DES) collapses into the opaque `KeyDecryptionFailed` error
+— deliberately the same error as an invalid passphrase, so an attacker
+probing the OID allowlist cannot distinguish "wrong cipher" from "wrong
+passphrase".
+
 Raw bytes (32-byte Ed25519 seed, RSA modulus/exponent, HMAC secret) are
 accessible alongside PEM via the key-storage adapter — consumers never have
 to parse PEM to get canonical key material.
@@ -156,6 +180,24 @@ token:
     `X-Forwarded-*` headers.
 - 401 from upstream → session cleared → redirect to `/sign-in`.
 
+### CSRF defence-in-depth
+
+`SameSite=Strict` alone defeats every CSRF vector modern browsers can
+launch. We additionally enforce same-origin provenance at the proxy
+edge for state-changing verbs (`POST` / `PUT` / `PATCH` / `DELETE`):
+
+- `Sec-Fetch-Site` MUST be `same-origin` or `none` (browser-enforced,
+  unforgeable via `fetch` — the browser sets this header itself), **OR**
+- `Origin` MUST exactly match this server's scheme+host.
+
+Missing both → `403 cross-origin request refused` before the session
+cookie is even read. This layer exists because:
+
+1. If a buggy browser or a mis-tuned CDN strips `SameSite`, the cookie
+   reverts to the old attacker-favouring default.
+2. The proxy may one day front programmatic callers (CLI, CI). Explicit
+   origin policy is cheaper to reason about than implicit cookie policy.
+
 The session cookie password MUST be set in production via
 `NUXT_SESSION_PASSWORD` (≥ 32 bytes). The dev fallback in
 `nuxt.config.ts` is refused by `nuxt-auth-utils` at production startup.
@@ -172,7 +214,8 @@ These are intentionally deferred to post-v0.1.0:
 
 - **Content-Security-Policy headers.** The admin UI has no CSP. Acceptable
   for an internal ops tool deployed behind SSO; revisit before any
-  internet-exposed deployment.
+  internet-exposed deployment. The proxy's `Origin` / `Sec-Fetch-Site`
+  check (above) is the current CSRF backstop; CSP would add XSS-in-depth.
 - **Rate limiting on sign-in probe.** The upstream `/v1/auth/me` endpoint
   already rate-limits, so a brute-force attacker hits that ceiling first.
   An additional layer at the admin edge is a belt-and-braces improvement.
