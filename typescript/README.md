@@ -1,8 +1,16 @@
 # @licensing/sdk
 
-Offline-capable licensing toolkit for TypeScript — mirrors the Go module at
-`github.com/AnoRebel/licensing/licensing` 1:1. One package, subpath exports
-for every area, matching versions across languages.
+Offline-capable software licensing for TypeScript runtimes. Issue signed
+license tokens, bind them to a device fingerprint, and verify them with no
+network round-trip — using Ed25519, RSA-PSS, or HMAC under a single envelope
+format (LIC1).
+
+Ships as one package with subpath exports for every layer: low-level crypto
+primitives, the issuer lifecycle (keys, scopes, templates, licenses, usages,
+tokens), framework-agnostic HTTP handlers with Hono/Express/Fastify adapters,
+an offline-first client, and pluggable storage (memory, Postgres, SQLite). A
+companion Go module at `github.com/AnoRebel/licensing` ships the same surface;
+tokens are byte-compatible across both ports at the same version.
 
 ## Install
 
@@ -121,3 +129,7 @@ Every release of this package matches the Go module
 (`github.com/AnoRebel/licensing/licensing`) at the same tag. A LIC1 token
 issued by one language verifies in the other; the interop fixtures in
 `tools/interop/` are pinned per-version.
+
+## License
+
+Apache-2.0. See [`LICENSE`](./LICENSE) and [`NOTICE`](./NOTICE).

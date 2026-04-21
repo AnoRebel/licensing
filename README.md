@@ -1,10 +1,15 @@
 # licensing
 
-A clean-room reimplementation of
-[masterix21/laravel-licensing](https://github.com/masterix21/laravel-licensing),
-[laravel-licensing-client](https://github.com/masterix21/laravel-licensing-client),
-and the Filament manager — built as standalone TypeScript and Go libraries with
-a shared token format, shared test fixtures, and a Nuxt-based admin UI.
+An offline-capable software licensing toolkit. Issue signed license tokens,
+activate them against a device fingerprint, and verify them without a network
+round-trip — from either TypeScript or Go, with a shared token format and a
+Nuxt-based admin console for the control plane.[^origin]
+
+The two ports are byte-compatible: a license issued by the Go module verifies
+under `@licensing/sdk` and vice versa, enforced by cross-language interop tests
+in CI. Both expose the same building blocks — key hierarchy, issuer lifecycle,
+HTTP handlers, pluggable storage (memory, Postgres, SQLite) — so you can pick
+the runtime that fits your stack without rewriting the licensing layer.
 
 > **Status:** pre-release. Tracking `v0.1.0`. Not yet production-ready.
 
@@ -197,8 +202,14 @@ See `docs/security.md` (landing in task 14.3) for full details.
 - Versions are pinned exactly in `package.json`, `go.mod`, and `VERSIONS.md`.
   Bumps go through a dedicated change proposal under `openspec/changes/`.
 
-## License & attribution
+## License
 
-This project is a **clean-room** reimplementation. It takes design inspiration
-from the Laravel packages cited above but shares no code with them. See
-`NOTICE` for details.
+Apache-2.0. See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE).
+
+---
+
+[^origin]: Design inspired by
+    [masterix21/laravel-licensing](https://github.com/masterix21/laravel-licensing),
+    [laravel-licensing-client](https://github.com/masterix21/laravel-licensing-client),
+    and the Filament manager. This is a clean-room reimplementation — no code is
+    shared with those packages; see `NOTICE` for details.
