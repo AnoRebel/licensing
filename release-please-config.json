@@ -6,7 +6,7 @@
   "separate-pull-requests": false,
   "include-v-in-tag": true,
   "pull-request-title-pattern": "release: v${version}",
-  "pull-request-header": "This PR was prepared automatically by release-please. Merging it will cut a new release of @licensing/sdk (npm + jsr.io) and github.com/AnoRebel/licensing (pkg.go.dev) in lockstep. See docs/versioning.md for the full flow.",
+  "pull-request-header": "This PR was prepared automatically by release-please. Merging it will cut a new release of @anorebel/licensing (npm + jsr.io) and github.com/AnoRebel/licensing (pkg.go.dev) in lockstep. See docs/versioning.md for the full flow.",
   "changelog-sections": [
     { "type": "feat", "section": "Added", "hidden": false },
     { "type": "fix", "section": "Fixed", "hidden": false },

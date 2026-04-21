@@ -1,7 +1,7 @@
 name: release
 
 # Tag-triggered publish pipeline: on push of `v<semver>` we publish
-# @licensing/sdk to both npm and jsr.io, then the Go module proxy
+# @anorebel/licensing to both npm and jsr.io, then the Go module proxy
 # picks up the tag automatically (no separate Go publish step exists).
 #
 # Prerequisites in the merge commit the tag points at:
@@ -21,7 +21,7 @@ name: release
 # npm chicken-and-egg: trusted publishing can only be configured for
 # packages that already exist on the registry. For the very first
 # publish (v0.1.0-rc.0) the maintainer runs `npm publish` once locally
-# with a one-shot token to create @licensing/sdk on npmjs.com, then
+# with a one-shot token to create @anorebel/licensing on npmjs.com, then
 # configures the trusted publisher via the package settings UI. Every
 # subsequent tag push lands through this workflow with zero stored
 # secrets. The npm job is idempotent — it no-ops if the version is
@@ -113,7 +113,7 @@ jobs:
         run: go test -race -timeout 1800s ./...
 
   publish-npm:
-    name: Publish to npm (@licensing/sdk)
+    name: Publish to npm (@anorebel/licensing)
     needs: verify
     runs-on: ubuntu-latest
     # `environment: npm` is required by npm's trusted-publisher binding
@@ -123,7 +123,7 @@ jobs:
     # "OIDC claim mismatch".
     environment:
       name: npm
-      url: https://www.npmjs.com/package/@licensing/sdk
+      url: https://www.npmjs.com/package/@anorebel/licensing
     steps:
       - uses: actions/checkout@v6
 
@@ -154,7 +154,7 @@ jobs:
       - name: Stage LICENSE + NOTICE
         run: cp LICENSE NOTICE typescript/
 
-      # Idempotent publish: skip cleanly if @licensing/sdk@<VERSION> is
+      # Idempotent publish: skip cleanly if @anorebel/licensing@<VERSION> is
       # already on the registry. This matters because v0.1.0-rc.0 ships
       # via a one-shot local `npm publish` before the trusted-publisher
       # config exists (npm chicken-and-egg — see workflow header). Once
@@ -169,19 +169,19 @@ jobs:
         working-directory: typescript
         run: |
           PKG_VERSION=$(node -p "require('./package.json').version")
-          if npm view "@licensing/sdk@${PKG_VERSION}" version >/dev/null 2>&1; then
-            echo "@licensing/sdk@${PKG_VERSION} is already on the registry; skipping publish."
+          if npm view "@anorebel/licensing@${PKG_VERSION}" version >/dev/null 2>&1; then
+            echo "@anorebel/licensing@${PKG_VERSION} is already on the registry; skipping publish."
             exit 0
           fi
           npm publish --access public
 
   publish-jsr:
-    name: Publish to jsr.io (@licensing/sdk)
+    name: Publish to jsr.io (@anorebel/licensing)
     needs: verify
     runs-on: ubuntu-latest
     environment:
       name: jsr
-      url: https://jsr.io/@licensing/sdk
+      url: https://jsr.io/@anorebel/licensing
     steps:
       - uses: actions/checkout@v6
 
@@ -206,8 +206,8 @@ jobs:
       # fast-check passes without --allow-slow-types. This keeps .d.ts
       # generation cheap for downstream consumers.
       #
-      # One-time bootstrap: the @licensing scope + sdk package must be
-      # created at jsr.io/new and linked to AnoRebel/licensing via the
+      # One-time bootstrap: the @anorebel scope + licensing package must
+      # be created at jsr.io/new and linked to AnoRebel/licensing via the
       # package settings UI before the first tag is pushed. The tag
       # itself publishes the first version through OIDC — no manual
       # `jsr publish` is needed, unlike the npm path.

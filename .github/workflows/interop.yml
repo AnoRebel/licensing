@@ -34,8 +34,8 @@ jobs:
       - name: Install TS workspace deps
         run: bun install --frozen-lockfile
 
-      # The interop Go tests shell out to Bun CLIs that import @licensing/sdk
-      # and @licensing/sdk/client from their built dist/. Without this step the
+      # The interop Go tests shell out to Bun CLIs that import @anorebel/licensing
+      # and @anorebel/licensing/client from their built dist/. Without this step the
       # TS side would fall back to the source .ts files via Bun's resolver,
       # but building enforces that the published artefact is what Go talks
       # to — same as what npm/jsr consumers will see.
