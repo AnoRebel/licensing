@@ -1,0 +1,6 @@
+{
+  "source": "001-ed25519-active",
+  "variant": "missing-exp",
+  "kind": "missing-required-claim",
+  "claim": "exp"
+}

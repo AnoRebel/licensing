@@ -1,0 +1,5 @@
+{
+  "source": "002-rs256-pss-active",
+  "variant": "sig-bitflip",
+  "kind": "sig-bitflip"
+}

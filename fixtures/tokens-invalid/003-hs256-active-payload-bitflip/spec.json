@@ -1,0 +1,5 @@
+{
+  "source": "003-hs256-active",
+  "variant": "payload-bitflip",
+  "kind": "payload-bitflip"
+}

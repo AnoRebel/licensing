@@ -1,0 +1,28 @@
+{
+  "alg": "rs256-pss",
+  "kid": "fixture-rsa-1",
+  "key_ref": "rsa",
+  "header": {
+    "v": 1,
+    "typ": "lic",
+    "alg": "rs256-pss",
+    "kid": "fixture-rsa-1"
+  },
+  "payload": {
+    "jti": "jti-suspended-0",
+    "iat": 1700000000,
+    "nbf": 1700000000,
+    "exp": 1702592000,
+    "force_online_after": null,
+    "scope": "example.app",
+    "license_id": "00000000-0000-4000-8000-000000000001",
+    "usage_id": "00000000-0000-4000-8000-000000000002",
+    "usage_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "status": "suspended",
+    "max_usages": 5,
+    "entitlements": {
+      "seats": 5
+    },
+    "meta": {}
+  }
+}

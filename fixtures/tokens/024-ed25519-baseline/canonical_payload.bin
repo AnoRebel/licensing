@@ -1,0 +1,1 @@
+{"entitlements":{"seats":5},"exp":1702592000,"force_online_after":null,"iat":1700000000,"jti":"jti-active-0","license_id":"00000000-0000-4000-8000-000000000001","max_usages":5,"meta":{},"nbf":1700000000,"scope":"example.app","status":"active","usage_fingerprint":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","usage_id":"00000000-0000-4000-8000-000000000002"}

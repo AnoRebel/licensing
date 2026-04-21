@@ -1,0 +1,6 @@
+{
+  "source": "003-hs256-active",
+  "variant": "missing-exp",
+  "kind": "missing-required-claim",
+  "claim": "exp"
+}

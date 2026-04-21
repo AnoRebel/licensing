@@ -1,0 +1,34 @@
+{
+  "source": "001-ed25519-active",
+  "variants": [
+    {
+      "variant": "sig-bitflip",
+      "kind": "sig-bitflip"
+    },
+    {
+      "variant": "header-bitflip",
+      "kind": "header-bitflip"
+    },
+    {
+      "variant": "payload-bitflip",
+      "kind": "payload-bitflip"
+    },
+    {
+      "variant": "wrong-kid",
+      "kind": "wrong-kid"
+    },
+    {
+      "variant": "missing-exp",
+      "kind": "missing-required-claim",
+      "claim": "exp"
+    },
+    {
+      "variant": "expired",
+      "kind": "expired"
+    },
+    {
+      "variant": "nbf-in-future",
+      "kind": "nbf-in-future"
+    }
+  ]
+}
