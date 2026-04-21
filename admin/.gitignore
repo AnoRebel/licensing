@@ -1,0 +1,11 @@
+.nuxt
+.output
+.data
+.env
+dist
+node_modules
+*.log
+.DS_Store
+playwright-report
+test-results
+.playwright-cache
