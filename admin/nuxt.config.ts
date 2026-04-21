@@ -6,6 +6,15 @@ import tailwindcss from '@tailwindcss/vite';
 // no staleness check needed.
 const OPENAPI_SPEC = fileURLToPath(new URL('../openapi/licensing-admin.yaml', import.meta.url));
 
+// In production the session password MUST come from the environment.
+// The dev placeholder below is only used when NODE_ENV != 'production';
+// a Nitro plugin (server/plugins/require-session-password.ts) fails the
+// server boot if the real secret is missing or too short. Keeping the
+// check in a plugin means `nuxt prepare` / `nuxt build` still work in CI
+// without the runtime secret — only `node .output/server/index.mjs`
+// (the actual prod boot) needs it.
+const sessionPassword = process.env.NUXT_SESSION_PASSWORD ?? 'dev_only_replace_in_prod_00000000';
+
 export default defineNuxtConfig({
   // Cut against 2026-04 — pins Nitro/Nuxt feature defaults so CI behaviour is
   // reproducible regardless of when `bun install` runs.
@@ -84,12 +93,25 @@ export default defineNuxtConfig({
     upstreamBaseUrl:
       process.env.LICENSING_UPSTREAM_BASE_URL ?? 'http://127.0.0.1:8787/api/licensing/v1',
     // nuxt-auth-utils session config. `password` is REQUIRED — in prod it
-    // must come from NUXT_SESSION_PASSWORD (>= 32 chars, server-only).
-    // The placeholder below is dev-only; nuxt-auth-utils will refuse to
-    // boot without an override in production. Never commit a real secret.
+    // must come from NUXT_SESSION_PASSWORD (>= 32 chars, server-only). We
+    // throw at boot if it's missing in production (see above); the dev
+    // placeholder is only used when NODE_ENV != 'production'.
     session: {
-      password: process.env.NUXT_SESSION_PASSWORD ?? 'dev_only_replace_in_prod_00000000',
+      password: sessionPassword,
       maxAge: 60 * 60 * 8, // 8h admin session; re-auth per working day.
+      // Cookie attributes are a defence-in-depth pair with the proxy's
+      // Origin/Sec-Fetch-Site check (server/api/proxy/[...].ts). SameSite
+      // strict defeats cross-site form posts outright — the browser refuses
+      // to attach the session cookie to a top-level navigation from another
+      // origin, let alone a fetch. httpOnly keeps the cookie out of reach of
+      // any XSS that slips past CSP. secure is dropped in dev only (http on
+      // localhost); production builds must run behind TLS.
+      cookie: {
+        httpOnly: true,
+        sameSite: 'strict',
+        secure: process.env.NODE_ENV === 'production',
+        path: '/',
+      },
     },
     public: {
       openFetch: {
