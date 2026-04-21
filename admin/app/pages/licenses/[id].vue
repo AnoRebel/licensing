@@ -532,14 +532,18 @@ const usageTableMeta = computed<UsageTableMeta>(() => ({
                   :model-value="state.value"
                   class="font-mono"
                   required
+                  :aria-invalid="state.meta.isTouched && !state.meta.isValid ? 'true' : undefined"
+                  :aria-describedby="state.meta.isTouched && !state.meta.isValid ? `${field.name}-error` : undefined"
                   @update:model-value="(v: string | number) => field.handleChange(String(v))"
                   @blur="field.handleBlur"
                 />
                 <p
-                  v-if="state.meta.errors.length"
+                  v-if="state.meta.isTouched && !state.meta.isValid"
+                  :id="`${field.name}-error`"
                   class="text-xs text-destructive"
+                  role="alert"
                 >
-                  {{ state.meta.errors.join(', ') }}
+                  {{ fieldErrors(state.meta.errors) }}
                 </p>
               </div>
             </template>
@@ -556,14 +560,18 @@ const usageTableMeta = computed<UsageTableMeta>(() => ({
                   type="datetime-local"
                   :model-value="state.value"
                   class="font-mono"
+                  :aria-invalid="state.meta.isTouched && !state.meta.isValid ? 'true' : undefined"
+                  :aria-describedby="state.meta.isTouched && !state.meta.isValid ? `${field.name}-error` : undefined"
                   @update:model-value="(v: string | number) => field.handleChange(String(v))"
                   @blur="field.handleBlur"
                 />
                 <p
-                  v-if="state.meta.errors.length"
+                  v-if="state.meta.isTouched && !state.meta.isValid"
+                  :id="`${field.name}-error`"
                   class="text-xs text-destructive"
+                  role="alert"
                 >
-                  {{ state.meta.errors.join(', ') }}
+                  {{ fieldErrors(state.meta.errors) }}
                 </p>
               </div>
             </template>

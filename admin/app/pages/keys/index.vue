@@ -295,22 +295,30 @@ const errorText = computed(() =>
       </div>
     </section>
 
+    <!--
+      B23: the live-region (role=status) wraps ONLY the announceable text
+      — not the Dismiss button. If the button lives inside role=status,
+      its label gets re-announced every time the region re-renders, and
+      hitting "Dismiss" can itself trigger a spurious SR announcement.
+      The visual container stays one section; the a11y contract splits.
+    -->
     <section
       v-if="lastRotation"
-      role="status"
       class="rounded-md border border-amber-500/40 bg-amber-500/5 p-4 text-xs"
     >
-      <p class="font-mono uppercase tracking-wide text-amber-600 dark:text-amber-400">
-        rotation complete
-      </p>
-      <div class="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
-        <div>
-          <p class="text-muted-foreground">retiring kid</p>
-          <code class="font-mono">{{ lastRotation.retiring.kid }}</code>
-        </div>
-        <div>
-          <p class="text-muted-foreground">new active kid</p>
-          <code class="font-mono">{{ lastRotation.active.kid }}</code>
+      <div role="status">
+        <p class="font-mono uppercase tracking-wide text-amber-600 dark:text-amber-400">
+          rotation complete
+        </p>
+        <div class="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <div>
+            <p class="text-muted-foreground">retiring kid</p>
+            <code class="font-mono">{{ lastRotation.retiring.kid }}</code>
+          </div>
+          <div>
+            <p class="text-muted-foreground">new active kid</p>
+            <code class="font-mono">{{ lastRotation.active.kid }}</code>
+          </div>
         </div>
       </div>
       <div class="mt-3 flex justify-end">
@@ -376,13 +384,20 @@ const errorText = computed(() =>
                   :value="state.value"
                   class="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                   required
+                  :aria-invalid="state.meta.isTouched && !state.meta.isValid ? 'true' : undefined"
+                  :aria-describedby="state.meta.isTouched && !state.meta.isValid ? `${field.name}-error` : undefined"
                   @change="(e) => field.handleChange((e.target as HTMLSelectElement).value)"
                 >
                   <option value="" disabled>select a scope</option>
                   <option v-for="s in scopes" :key="s.id" :value="s.id">{{ s.slug }}</option>
                 </select>
-                <p v-if="state.meta.errors.length" class="text-xs text-destructive">
-                  {{ state.meta.errors.join(', ') }}
+                <p
+                  v-if="state.meta.isTouched && !state.meta.isValid"
+                  :id="`${field.name}-error`"
+                  class="text-xs text-destructive"
+                  role="alert"
+                >
+                  {{ fieldErrors(state.meta.errors) }}
                 </p>
               </div>
             </template>
@@ -402,11 +417,18 @@ const errorText = computed(() =>
                   spellcheck="false"
                   placeholder="acme-prod-2026-04"
                   required
+                  :aria-invalid="state.meta.isTouched && !state.meta.isValid ? 'true' : undefined"
+                  :aria-describedby="state.meta.isTouched && !state.meta.isValid ? `${field.name}-error` : undefined"
                   @update:model-value="(v: string | number) => field.handleChange(String(v))"
                   @blur="field.handleBlur"
                 />
-                <p v-if="state.meta.errors.length" class="text-xs text-destructive">
-                  {{ state.meta.errors.join(', ') }}
+                <p
+                  v-if="state.meta.isTouched && !state.meta.isValid"
+                  :id="`${field.name}-error`"
+                  class="text-xs text-destructive"
+                  role="alert"
+                >
+                  {{ fieldErrors(state.meta.errors) }}
                 </p>
               </div>
             </template>

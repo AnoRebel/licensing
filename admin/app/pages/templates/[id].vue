@@ -302,11 +302,18 @@ const templateErrorMessage = computed(() =>
                   :id="field.name"
                   :model-value="state.value"
                   required
+                  :aria-invalid="state.meta.isTouched && !state.meta.isValid ? 'true' : undefined"
+                  :aria-describedby="state.meta.isTouched && !state.meta.isValid ? `${field.name}-error` : undefined"
                   @update:model-value="(v: string | number) => field.handleChange(String(v))"
                   @blur="field.handleBlur"
                 />
-                <p v-if="state.meta.errors.length" class="text-xs text-destructive">
-                  {{ state.meta.errors.join(', ') }}
+                <p
+                  v-if="state.meta.isTouched && !state.meta.isValid"
+                  :id="`${field.name}-error`"
+                  class="text-xs text-destructive"
+                  role="alert"
+                >
+                  {{ fieldErrors(state.meta.errors) }}
                 </p>
               </div>
             </template>
@@ -326,11 +333,18 @@ const templateErrorMessage = computed(() =>
                     :model-value="state.value"
                     class="font-mono"
                     required
+                    :aria-invalid="state.meta.isTouched && !state.meta.isValid ? 'true' : undefined"
+                    :aria-describedby="state.meta.isTouched && !state.meta.isValid ? `${field.name}-error` : undefined"
                     @update:model-value="(v: string | number) => field.handleChange(toNumber(v))"
                     @blur="field.handleBlur"
                   />
-                  <p v-if="state.meta.errors.length" class="text-xs text-destructive">
-                    {{ state.meta.errors.join(', ') }}
+                  <p
+                    v-if="state.meta.isTouched && !state.meta.isValid"
+                    :id="`${field.name}-error`"
+                    class="text-xs text-destructive"
+                    role="alert"
+                  >
+                    {{ fieldErrors(state.meta.errors) }}
                   </p>
                 </div>
               </template>
@@ -348,11 +362,18 @@ const templateErrorMessage = computed(() =>
                     min="0"
                     :model-value="state.value"
                     class="font-mono"
+                    :aria-invalid="state.meta.isTouched && !state.meta.isValid ? 'true' : undefined"
+                    :aria-describedby="state.meta.isTouched && !state.meta.isValid ? `${field.name}-error` : undefined"
                     @update:model-value="(v: string | number) => field.handleChange(toNumber(v))"
                     @blur="field.handleBlur"
                   />
-                  <p v-if="state.meta.errors.length" class="text-xs text-destructive">
-                    {{ state.meta.errors.join(', ') }}
+                  <p
+                    v-if="state.meta.isTouched && !state.meta.isValid"
+                    :id="`${field.name}-error`"
+                    class="text-xs text-destructive"
+                    role="alert"
+                  >
+                    {{ fieldErrors(state.meta.errors) }}
                   </p>
                 </div>
               </template>
@@ -370,11 +391,18 @@ const templateErrorMessage = computed(() =>
                     min="0"
                     :model-value="state.value"
                     class="font-mono"
+                    :aria-invalid="state.meta.isTouched && !state.meta.isValid ? 'true' : undefined"
+                    :aria-describedby="state.meta.isTouched && !state.meta.isValid ? `${field.name}-error` : undefined"
                     @update:model-value="(v: string | number) => field.handleChange(toNumber(v))"
                     @blur="field.handleBlur"
                   />
-                  <p v-if="state.meta.errors.length" class="text-xs text-destructive">
-                    {{ state.meta.errors.join(', ') }}
+                  <p
+                    v-if="state.meta.isTouched && !state.meta.isValid"
+                    :id="`${field.name}-error`"
+                    class="text-xs text-destructive"
+                    role="alert"
+                  >
+                    {{ fieldErrors(state.meta.errors) }}
                   </p>
                 </div>
               </template>
@@ -394,11 +422,18 @@ const templateErrorMessage = computed(() =>
                     :model-value="state.value ?? ''"
                     class="font-mono"
                     placeholder="—"
+                    :aria-invalid="state.meta.isTouched && !state.meta.isValid ? 'true' : undefined"
+                    :aria-describedby="state.meta.isTouched && !state.meta.isValid ? `${field.name}-error` : undefined"
                     @update:model-value="(v: string | number) => field.handleChange(toOptionalNumber(v))"
                     @blur="field.handleBlur"
                   />
-                  <p v-if="state.meta.errors.length" class="text-xs text-destructive">
-                    {{ state.meta.errors.join(', ') }}
+                  <p
+                    v-if="state.meta.isTouched && !state.meta.isValid"
+                    :id="`${field.name}-error`"
+                    class="text-xs text-destructive"
+                    role="alert"
+                  >
+                    {{ fieldErrors(state.meta.errors) }}
                   </p>
                 </div>
               </template>
@@ -418,11 +453,18 @@ const templateErrorMessage = computed(() =>
                   rows="6"
                   class="font-mono text-xs"
                   spellcheck="false"
+                  :aria-invalid="state.meta.isTouched && !state.meta.isValid ? 'true' : undefined"
+                  :aria-describedby="state.meta.isTouched && !state.meta.isValid ? `${field.name}-error` : undefined"
                   @update:model-value="(v: string | number) => field.handleChange(String(v))"
                   @blur="field.handleBlur"
                 />
-                <p v-if="state.meta.errors.length" class="text-xs text-destructive">
-                  {{ state.meta.errors.join(', ') }}
+                <p
+                  v-if="state.meta.isTouched && !state.meta.isValid"
+                  :id="`${field.name}-error`"
+                  class="text-xs text-destructive"
+                  role="alert"
+                >
+                  {{ fieldErrors(state.meta.errors) }}
                 </p>
               </div>
             </template>
@@ -441,11 +483,18 @@ const templateErrorMessage = computed(() =>
                   rows="4"
                   class="font-mono text-xs"
                   spellcheck="false"
+                  :aria-invalid="state.meta.isTouched && !state.meta.isValid ? 'true' : undefined"
+                  :aria-describedby="state.meta.isTouched && !state.meta.isValid ? `${field.name}-error` : undefined"
                   @update:model-value="(v: string | number) => field.handleChange(String(v))"
                   @blur="field.handleBlur"
                 />
-                <p v-if="state.meta.errors.length" class="text-xs text-destructive">
-                  {{ state.meta.errors.join(', ') }}
+                <p
+                  v-if="state.meta.isTouched && !state.meta.isValid"
+                  :id="`${field.name}-error`"
+                  class="text-xs text-destructive"
+                  role="alert"
+                >
+                  {{ fieldErrors(state.meta.errors) }}
                 </p>
               </div>
             </template>

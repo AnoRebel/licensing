@@ -13,6 +13,18 @@ const signOut = useSignOut();
 
 <template>
   <div class="min-h-dvh bg-background text-foreground">
+    <!--
+      Skip-to-content link (WCAG 2.4.1). Visually hidden until focused,
+      then jumps out of the top-left corner. Activating it moves focus
+      to <main id="main" tabindex="-1"> below so keyboard users can
+      bypass the primary-nav repeating on every page.
+    -->
+    <a
+      href="#main"
+      class="sr-only z-50 bg-background px-4 py-2 text-sm font-medium text-foreground shadow-lg outline-none ring-2 ring-ring focus:not-sr-only focus:absolute focus:left-4 focus:top-4"
+    >
+      Skip to content
+    </a>
     <header
       class="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80"
     >
@@ -61,7 +73,11 @@ const signOut = useSignOut();
         </div>
       </div>
     </header>
-    <main class="mx-auto max-w-6xl px-4 py-8">
+    <main
+      id="main"
+      tabindex="-1"
+      class="mx-auto max-w-6xl px-4 py-8 outline-none"
+    >
       <slot />
     </main>
   </div>

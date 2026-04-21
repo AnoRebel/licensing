@@ -293,6 +293,8 @@ function toOptionalNumber(v: unknown): number | undefined {
                   :value="state.value"
                   class="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                   required
+                  :aria-invalid="state.meta.isTouched && !state.meta.isValid ? 'true' : undefined"
+                  :aria-describedby="state.meta.isTouched && !state.meta.isValid ? `${field.name}-error` : undefined"
                   @change="(e) => field.handleChange((e.target as HTMLSelectElement).value)"
                 >
                   <option value="" disabled>select a scope</option>
@@ -300,8 +302,13 @@ function toOptionalNumber(v: unknown): number | undefined {
                     {{ s.slug }}
                   </option>
                 </select>
-                <p v-if="state.meta.errors.length" class="text-xs text-destructive">
-                  {{ state.meta.errors.join(', ') }}
+                <p
+                  v-if="state.meta.isTouched && !state.meta.isValid"
+                  :id="`${field.name}-error`"
+                  class="text-xs text-destructive"
+                  role="alert"
+                >
+                  {{ fieldErrors(state.meta.errors) }}
                 </p>
               </div>
             </template>
@@ -318,11 +325,18 @@ function toOptionalNumber(v: unknown): number | undefined {
                   :model-value="state.value"
                   placeholder="Pro Yearly"
                   required
+                  :aria-invalid="state.meta.isTouched && !state.meta.isValid ? 'true' : undefined"
+                  :aria-describedby="state.meta.isTouched && !state.meta.isValid ? `${field.name}-error` : undefined"
                   @update:model-value="(v: string | number) => field.handleChange(String(v))"
                   @blur="field.handleBlur"
                 />
-                <p v-if="state.meta.errors.length" class="text-xs text-destructive">
-                  {{ state.meta.errors.join(', ') }}
+                <p
+                  v-if="state.meta.isTouched && !state.meta.isValid"
+                  :id="`${field.name}-error`"
+                  class="text-xs text-destructive"
+                  role="alert"
+                >
+                  {{ fieldErrors(state.meta.errors) }}
                 </p>
               </div>
             </template>
@@ -343,11 +357,18 @@ function toOptionalNumber(v: unknown): number | undefined {
                     :model-value="state.value"
                     class="font-mono"
                     required
+                    :aria-invalid="state.meta.isTouched && !state.meta.isValid ? 'true' : undefined"
+                    :aria-describedby="state.meta.isTouched && !state.meta.isValid ? `${field.name}-error` : undefined"
                     @update:model-value="(v: string | number) => field.handleChange(toNumber(v))"
                     @blur="field.handleBlur"
                   />
-                  <p v-if="state.meta.errors.length" class="text-xs text-destructive">
-                    {{ state.meta.errors.join(', ') }}
+                  <p
+                    v-if="state.meta.isTouched && !state.meta.isValid"
+                    :id="`${field.name}-error`"
+                    class="text-xs text-destructive"
+                    role="alert"
+                  >
+                    {{ fieldErrors(state.meta.errors) }}
                   </p>
                 </div>
               </template>
@@ -366,11 +387,18 @@ function toOptionalNumber(v: unknown): number | undefined {
                     min="0"
                     :model-value="state.value"
                     class="font-mono"
+                    :aria-invalid="state.meta.isTouched && !state.meta.isValid ? 'true' : undefined"
+                    :aria-describedby="state.meta.isTouched && !state.meta.isValid ? `${field.name}-error` : undefined"
                     @update:model-value="(v: string | number) => field.handleChange(toNumber(v))"
                     @blur="field.handleBlur"
                   />
-                  <p v-if="state.meta.errors.length" class="text-xs text-destructive">
-                    {{ state.meta.errors.join(', ') }}
+                  <p
+                    v-if="state.meta.isTouched && !state.meta.isValid"
+                    :id="`${field.name}-error`"
+                    class="text-xs text-destructive"
+                    role="alert"
+                  >
+                    {{ fieldErrors(state.meta.errors) }}
                   </p>
                 </div>
               </template>
@@ -389,11 +417,18 @@ function toOptionalNumber(v: unknown): number | undefined {
                     min="0"
                     :model-value="state.value"
                     class="font-mono"
+                    :aria-invalid="state.meta.isTouched && !state.meta.isValid ? 'true' : undefined"
+                    :aria-describedby="state.meta.isTouched && !state.meta.isValid ? `${field.name}-error` : undefined"
                     @update:model-value="(v: string | number) => field.handleChange(toNumber(v))"
                     @blur="field.handleBlur"
                   />
-                  <p v-if="state.meta.errors.length" class="text-xs text-destructive">
-                    {{ state.meta.errors.join(', ') }}
+                  <p
+                    v-if="state.meta.isTouched && !state.meta.isValid"
+                    :id="`${field.name}-error`"
+                    class="text-xs text-destructive"
+                    role="alert"
+                  >
+                    {{ fieldErrors(state.meta.errors) }}
                   </p>
                 </div>
               </template>
@@ -414,11 +449,18 @@ function toOptionalNumber(v: unknown): number | undefined {
                     :model-value="state.value ?? ''"
                     class="font-mono"
                     placeholder="—"
+                    :aria-invalid="state.meta.isTouched && !state.meta.isValid ? 'true' : undefined"
+                    :aria-describedby="state.meta.isTouched && !state.meta.isValid ? `${field.name}-error` : undefined"
                     @update:model-value="(v: string | number) => field.handleChange(toOptionalNumber(v))"
                     @blur="field.handleBlur"
                   />
-                  <p v-if="state.meta.errors.length" class="text-xs text-destructive">
-                    {{ state.meta.errors.join(', ') }}
+                  <p
+                    v-if="state.meta.isTouched && !state.meta.isValid"
+                    :id="`${field.name}-error`"
+                    class="text-xs text-destructive"
+                    role="alert"
+                  >
+                    {{ fieldErrors(state.meta.errors) }}
                   </p>
                 </div>
               </template>

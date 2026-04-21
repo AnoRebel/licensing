@@ -110,3 +110,29 @@
     @apply bg-background text-foreground;
   }
 }
+
+/*
+ * B22 — WCAG 2.3.3 Animation from Interactions. Any user who has set
+ * `prefers-reduced-motion: reduce` at the OS level has told us, in no
+ * uncertain terms, that animation causes them discomfort (vestibular
+ * disorders, seizure triggers, or simple distraction in a dense ops tool).
+ *
+ * This override is the blunt-hammer approach: every transition and
+ * animation collapses to a single frame. It deliberately overrides
+ * @vueuse/motion, tw-animate-css, Tailwind's transition utilities, and
+ * anything sonner / shadcn-vue ships with animations. Scroll behaviour
+ * also snaps instead of smooth-scrolling.
+ *
+ * The `!important` is load-bearing: tw-animate-css and component libraries
+ * inject transition declarations with higher specificity than a bare `*`.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

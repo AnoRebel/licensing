@@ -18,20 +18,6 @@ const submitError = ref<string | null>(null);
 // validator returned — with standard-schema validators it's usually
 // `{ message: string }`, but it can also be a raw string or undefined.
 // Normalise to a single user-facing line.
-function fieldErrors(errors: readonly unknown[]): string {
-  return errors
-    .map((err) => {
-      if (!err) return '';
-      if (typeof err === 'string') return err;
-      if (typeof err === 'object' && 'message' in err) {
-        const m = (err as { message?: unknown }).message;
-        return typeof m === 'string' ? m : '';
-      }
-      return '';
-    })
-    .filter(Boolean)
-    .join(' · ');
-}
 
 const form = useForm({
   defaultValues: { token: '' },

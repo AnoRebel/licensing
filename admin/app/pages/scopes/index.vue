@@ -197,11 +197,18 @@ const createForm = useForm({
                   spellcheck="false"
                   placeholder="acme-prod"
                   required
+                  :aria-invalid="state.meta.isTouched && !state.meta.isValid ? 'true' : undefined"
+                  :aria-describedby="state.meta.isTouched && !state.meta.isValid ? `${field.name}-error` : undefined"
                   @update:model-value="(v: string | number) => field.handleChange(String(v))"
                   @blur="field.handleBlur"
                 />
-                <p v-if="state.meta.errors.length" class="text-xs text-destructive">
-                  {{ state.meta.errors.join(', ') }}
+                <p
+                  v-if="state.meta.isTouched && !state.meta.isValid"
+                  :id="`${field.name}-error`"
+                  class="text-xs text-destructive"
+                  role="alert"
+                >
+                  {{ fieldErrors(state.meta.errors) }}
                 </p>
               </div>
             </template>
@@ -218,11 +225,18 @@ const createForm = useForm({
                   :model-value="state.value"
                   placeholder="Acme Production"
                   required
+                  :aria-invalid="state.meta.isTouched && !state.meta.isValid ? 'true' : undefined"
+                  :aria-describedby="state.meta.isTouched && !state.meta.isValid ? `${field.name}-error` : undefined"
                   @update:model-value="(v: string | number) => field.handleChange(String(v))"
                   @blur="field.handleBlur"
                 />
-                <p v-if="state.meta.errors.length" class="text-xs text-destructive">
-                  {{ state.meta.errors.join(', ') }}
+                <p
+                  v-if="state.meta.isTouched && !state.meta.isValid"
+                  :id="`${field.name}-error`"
+                  class="text-xs text-destructive"
+                  role="alert"
+                >
+                  {{ fieldErrors(state.meta.errors) }}
                 </p>
               </div>
             </template>

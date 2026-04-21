@@ -349,11 +349,18 @@ const keyTableMeta = computed<KeyTableMeta>(() => ({
                   :id="field.name"
                   :model-value="state.value"
                   required
+                  :aria-invalid="state.meta.isTouched && !state.meta.isValid ? 'true' : undefined"
+                  :aria-describedby="state.meta.isTouched && !state.meta.isValid ? `${field.name}-error` : undefined"
                   @update:model-value="(v: string | number) => field.handleChange(String(v))"
                   @blur="field.handleBlur"
                 />
-                <p v-if="state.meta.errors.length" class="text-xs text-destructive">
-                  {{ state.meta.errors.join(', ') }}
+                <p
+                  v-if="state.meta.isTouched && !state.meta.isValid"
+                  :id="`${field.name}-error`"
+                  class="text-xs text-destructive"
+                  role="alert"
+                >
+                  {{ fieldErrors(state.meta.errors) }}
                 </p>
               </div>
             </template>
@@ -394,23 +401,28 @@ const keyTableMeta = computed<KeyTableMeta>(() => ({
         </form>
       </section>
 
-      <!-- Rotation banner -->
+      <!--
+        Rotation banner. B23: role=status wraps only announceable text,
+        never the interactive Dismiss button (which would re-announce
+        on activation and steal focus context from SR users).
+      -->
       <section
         v-if="lastRotation"
-        role="status"
         class="rounded-md border border-amber-500/40 bg-amber-500/5 p-4 text-xs"
       >
-        <p class="font-mono uppercase tracking-wide text-amber-600 dark:text-amber-400">
-          rotation complete
-        </p>
-        <div class="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <div>
-            <p class="text-muted-foreground">retiring kid</p>
-            <code class="font-mono">{{ lastRotation.retiring.kid }}</code>
-          </div>
-          <div>
-            <p class="text-muted-foreground">new active kid</p>
-            <code class="font-mono">{{ lastRotation.active.kid }}</code>
+        <div role="status">
+          <p class="font-mono uppercase tracking-wide text-amber-600 dark:text-amber-400">
+            rotation complete
+          </p>
+          <div class="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div>
+              <p class="text-muted-foreground">retiring kid</p>
+              <code class="font-mono">{{ lastRotation.retiring.kid }}</code>
+            </div>
+            <div>
+              <p class="text-muted-foreground">new active kid</p>
+              <code class="font-mono">{{ lastRotation.active.kid }}</code>
+            </div>
           </div>
         </div>
         <div class="mt-3 flex justify-end">
@@ -493,11 +505,18 @@ const keyTableMeta = computed<KeyTableMeta>(() => ({
                   spellcheck="false"
                   placeholder="acme-prod-2026-04"
                   required
+                  :aria-invalid="state.meta.isTouched && !state.meta.isValid ? 'true' : undefined"
+                  :aria-describedby="state.meta.isTouched && !state.meta.isValid ? `${field.name}-error` : undefined"
                   @update:model-value="(v: string | number) => field.handleChange(String(v))"
                   @blur="field.handleBlur"
                 />
-                <p v-if="state.meta.errors.length" class="text-xs text-destructive">
-                  {{ state.meta.errors.join(', ') }}
+                <p
+                  v-if="state.meta.isTouched && !state.meta.isValid"
+                  :id="`${field.name}-error`"
+                  class="text-xs text-destructive"
+                  role="alert"
+                >
+                  {{ fieldErrors(state.meta.errors) }}
                 </p>
               </div>
             </template>

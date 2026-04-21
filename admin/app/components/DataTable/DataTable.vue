@@ -171,6 +171,15 @@ defineExpose({ table });
               v-for="header in headerGroup.headers"
               :key="header.id"
               :colspan="header.colSpan"
+              :aria-sort="
+                header.column.getCanSort()
+                  ? header.column.getIsSorted() === 'asc'
+                    ? 'ascending'
+                    : header.column.getIsSorted() === 'desc'
+                      ? 'descending'
+                      : 'none'
+                  : undefined
+              "
             >
               <FlexRender
                 v-if="!header.isPlaceholder"
@@ -197,7 +206,18 @@ defineExpose({ table });
               v-for="row in table.getRowModel().rows"
               :key="row.id"
               :class="$attrs.onRowClick ? 'cursor-pointer hover:bg-muted/50' : undefined"
-              @click="emit('rowClick', row.original)"
+              :tabindex="$attrs.onRowClick ? 0 : undefined"
+              :role="$attrs.onRowClick ? 'button' : undefined"
+              @click="$attrs.onRowClick ? emit('rowClick', row.original) : undefined"
+              @keydown="
+                (e: KeyboardEvent) => {
+                  if (!$attrs.onRowClick) return;
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    emit('rowClick', row.original);
+                  }
+                }
+              "
             >
               <TableCell
                 v-for="cell in row.getVisibleCells()"
@@ -213,7 +233,12 @@ defineExpose({ table });
 
           <TableRow v-else>
             <TableCell :colspan="columns.length" class="h-24 text-center text-sm text-muted-foreground">
-              {{ emptyMessage }}
+              <!--
+                B21: empty state needs to be announced politely to SR
+                users — otherwise an applied filter that yields no rows
+                is invisible to anyone not looking at the viewport.
+              -->
+              <span role="status" aria-live="polite">{{ emptyMessage }}</span>
             </TableCell>
           </TableRow>
         </TableBody>
