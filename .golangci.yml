@@ -2,7 +2,7 @@
 # Schema: https://golangci-lint.run/usage/configuration/
 #
 # Run locally:
-#   cd golang && golangci-lint run ./...
+#   golangci-lint run ./...
 #
 # Enabled linters mirror the task-list contract (1.7) plus a few v2 extras that
 # pair cleanly with the core set. Formatters (gofmt, goimports) live under the
