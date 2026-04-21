@@ -15,12 +15,16 @@
  */
 
 import {
+  AlgorithmRegistry,
   decodeUnverified,
   findLicenseByKey,
   issueToken,
+  KeyAlgBindings,
+  type KeyRecord,
   LicensingError,
   registerUsage,
   revokeUsage,
+  verify,
 } from '../index.ts';
 import type { ClientHandlerContext } from './context.ts';
 import { err, errFromLicensing, noContent, ok } from './envelope.ts';
@@ -42,6 +46,81 @@ function unixSeconds(iso: string): number {
 
 function isoOf(unixSec: number): string {
   return new Date(unixSec * 1000).toISOString();
+}
+
+/**
+ * Verify a client-presented LIC1 token against the kid's public key loaded
+ * from storage, then enforce nbf/exp with an optional past-exp grace.
+ *
+ * Ordering mirrors `lic1.verify`: header shape → kid→alg binding (one-shot
+ * for this request) → signature. Only after the signature is valid do we
+ * look at expiry — an attacker's unsigned token never influences the
+ * expiry path.
+ *
+ * `allowExpiredWithinSec` lets /refresh accept a token that expired
+ * recently (so a paused client can rotate) while /heartbeat and /deactivate
+ * pass 0 and reject any expired token.
+ *
+ * This function is the single gatekeeper between "untrusted body bytes"
+ * and "payload claims we act on" — the caller must never read license_id /
+ * usage_id from `decodeUnverified`.
+ */
+async function verifyClientToken(
+  ctx: ClientHandlerContext,
+  token: string,
+  allowExpiredWithinSec: number,
+): Promise<ReturnType<typeof decodeUnverified>> {
+  const header = decodeUnverified(token); // structural parse only — trust follows.
+
+  const stored = await ctx.storage.getKeyByKid(header.header.kid);
+  if (stored === null) {
+    // `LicensingError` with UnknownKid → 401 via errFromLicensing.
+    throw new LicensingError('UnknownKid', `unknown kid: ${header.header.kid}`, {
+      kid: header.header.kid,
+    });
+  }
+
+  // One-shot registry + bindings for just this (kid, alg). Building on the
+  // fly avoids keeping a stale alg-binding cache across key rotation.
+  const registry = new AlgorithmRegistry();
+  const backend = ctx.backends.get(stored.alg);
+  if (backend === undefined) {
+    throw new LicensingError('UnsupportedAlgorithm', `backend missing for alg: ${stored.alg}`, {
+      alg: stored.alg,
+    });
+  }
+  registry.register(backend);
+
+  const bindings = new KeyAlgBindings();
+  bindings.bind(stored.kid, stored.alg);
+
+  const record: KeyRecord = {
+    kid: stored.kid,
+    alg: stored.alg,
+    publicPem: stored.public_pem,
+    privatePem: null,
+    raw: { privateRaw: null, publicRaw: new Uint8Array(0) }, // PEM path used.
+  };
+
+  const parts = await verify(token, {
+    registry,
+    bindings,
+    keys: new Map([[record.kid, record]]),
+  });
+
+  const nowSec = unixSeconds(ctx.clock.nowIso());
+  const nbf = parts.payload.nbf;
+  if (typeof nbf === 'number' && nowSec < nbf) {
+    throw new LicensingError('TokenMalformed', 'token not yet valid (nbf in future)');
+  }
+  const exp = parts.payload.exp;
+  if (typeof exp === 'number' && nowSec >= exp + allowExpiredWithinSec) {
+    // Strict `>=` matches the interop grace-table fix: a token at exactly
+    // exp is already expired. Grace extends the window past exp, not before.
+    throw new LicensingError('TokenExpired', 'token is expired');
+  }
+
+  return parts;
 }
 
 async function handleHealth(ctx: ClientHandlerContext): Promise<HandlerResponse> {
@@ -105,26 +184,22 @@ async function handleActivate(
   }
 }
 
-/** Refresh + heartbeat share the bulk of their work: decode the (unverified)
- *  token, re-resolve the license/usage, re-issue. The difference is the
- *  response envelope.
- *
- *  Verification-on-refresh note: the issuer does NOT re-verify the
- *  incoming token's signature on refresh — a client that holds a token
- *  is already trusted to the extent of its seat, and any tampering will
- *  fail `validate()` on the next client-side check anyway.
- *  We DO re-resolve the license by claim and re-check status, so a revoked
- *  license cannot refresh even with a valid old token. */
+/** Refresh re-issues a fresh token from a validly-signed one. We DO verify
+ *  the incoming signature (B12) — prior to that an attacker holding any
+ *  valid (license_id, usage_id) pair could mint tokens by submitting an
+ *  unsigned payload. /refresh accepts recently-expired tokens so a paused
+ *  client can still rotate; /heartbeat and /deactivate are strict. */
 async function reissueFromToken(
   ctx: ClientHandlerContext,
   token: string,
+  allowExpiredWithinSec: number,
 ): Promise<
   | { readonly token: string; readonly expiresAt: string; readonly foa: string | null }
   | HandlerResponse
 > {
   let parts: ReturnType<typeof decodeUnverified>;
   try {
-    parts = decodeUnverified(token);
+    parts = await verifyClientToken(ctx, token, allowExpiredWithinSec);
   } catch (e) {
     return errFromLicensing(e);
   }
@@ -174,9 +249,12 @@ async function handleRefresh(
   if (!token.ok) return token.response;
 
   try {
-    const result = await reissueFromToken(ctx, token.value);
-    if ('status' in result) return result; // already an error response
+    // Grace: tokens that expired within the TTL are still accepted on
+    // /refresh — a client paused (sleep/network partition) must be able
+    // to rotate. Beyond TTL seconds past exp, the token is too stale.
     const ttl = ctx.tokenTtlSec ?? 3600;
+    const result = await reissueFromToken(ctx, token.value, ttl);
+    if ('status' in result) return result; // already an error response
     const nowSec = unixSeconds(ctx.clock.nowIso());
     const refreshAt = nowSec + Math.floor(ttl * 0.75);
     const out: Record<string, JsonValue> = {
@@ -202,13 +280,12 @@ async function handleHeartbeat(
   if (!token.ok) return token.response;
 
   // Policy: heartbeat returns `{ok:true}` without rotating by default.
-  // Opportunistic rotation is allowed — wiring the policy hook lives
-  // in future work; for now we never rotate on heartbeat.
+  // Strict token verification — no expiry grace. An expired token cannot
+  // keep a seat warm. See B12.
   try {
-    // Re-resolve license/usage so revoked states surface as 403 even here.
     let parts: ReturnType<typeof decodeUnverified>;
     try {
-      parts = decodeUnverified(token.value);
+      parts = await verifyClientToken(ctx, token.value, 0);
     } catch (e) {
       return errFromLicensing(e);
     }
@@ -248,10 +325,13 @@ async function handleDeactivate(
     return err(400, 'BadRequest', `invalid reason: ${reason.value}`);
   }
 
+  // /deactivate: strict verification. An attacker who learns a usage_id
+  // must not be able to free someone else's seat by submitting an
+  // unsigned or wrong-key token. See B12.
   try {
     let parts: ReturnType<typeof decodeUnverified>;
     try {
-      parts = decodeUnverified(token.value);
+      parts = await verifyClientToken(ctx, token.value, 0);
     } catch (e) {
       return errFromLicensing(e);
     }
