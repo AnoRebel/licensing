@@ -1,0 +1,17 @@
+{
+  "name": "@licensing/interop",
+  "version": "0.1.0",
+  "description": "Cross-language interop harness helpers — tiny stdin/stdout CLIs invoked from Go tests to round-trip tokens, canonical JSON, and lifecycle decisions between the TS and Go implementations.",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "bin": {
+    "interop-sign": "./bin/sign.ts",
+    "interop-verify": "./bin/verify.ts",
+    "interop-canonicalize": "./bin/canonicalize.ts",
+    "interop-classify": "./bin/classify.ts"
+  },
+  "dependencies": {
+    "@licensing/sdk": "workspace:*"
+  }
+}
