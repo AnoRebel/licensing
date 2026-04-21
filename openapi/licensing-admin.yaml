@@ -1,0 +1,1222 @@
+openapi: 3.1.0
+info:
+  title: Licensing API
+  version: 0.1.0
+  description: |
+    Single source of truth for every client-facing and admin endpoint exposed
+    by the licensing reference HTTP handlers (TS: `@licensing/licensing/http`,
+    Go: `licensing/http`). Both implementations are contract-tested against
+    this document in CI — drift fails the merge.
+
+    All endpoints return JSON with one of two envelopes:
+
+      Success: `{"success": true, "data": <object>}`
+      Error:   `{"success": false, "error": {"code": "<identifier>", "message": "<human-readable>"}}`
+
+    Error identifiers are stable and correspond to the typed error taxonomy
+    exposed by `@licensing/licensing` / `licensing` (Go).
+
+servers:
+  - url: https://example.com/api/licensing/v1
+    description: Convention; consumers mount the handler group at any prefix.
+
+tags:
+  - name: Client
+    description: Endpoints called by the licensed application.
+  - name: Admin Licenses
+  - name: Admin Scopes
+  - name: Admin Templates
+  - name: Admin Usages
+  - name: Admin Keys
+  - name: Admin Audit
+
+security: []
+
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      tags: [Client]
+      summary: Liveness + build info
+      description: Unauthenticated liveness probe returning issuer `status` and semver `version`. Safe for load-balancer health checks.
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthEnvelope'
+
+  /activate:
+    post:
+      operationId: activate
+      tags: [Client]
+      summary: Exchange a license key for a signed token
+      description: First-time activation. Validates the key, registers a `LicenseUsage` row for the device fingerprint (or re-attaches idempotently to an existing one), and returns a freshly signed LIC1 token plus its refresh cadence.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ActivateRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/TokenEnvelopeResp' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/SeatLimit' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /refresh:
+    post:
+      operationId: refresh
+      tags: [Client]
+      summary: Renew a live token before it expires
+      description: Trades a still-valid token for a freshly signed one with a bumped `exp`. Called proactively by the client SDK when less than 25% of the original lifetime remains, or on demand when the issuer sets `force_online_after`.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefreshRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/TokenEnvelopeResp' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/TokenInvalid' }
+        '403': { $ref: '#/components/responses/LicenseBlocked' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /heartbeat:
+    post:
+      operationId: heartbeat
+      tags: [Client]
+      summary: Periodic liveness signal + optional token rollover
+      description: Low-frequency beacon that confirms the usage is alive. The issuer MAY opportunistically return a rotated token (`data.token`) if policy requires one; callers MUST accept the new token when present and replace their local copy atomically.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/HeartbeatRequest' }
+      responses:
+        '200':
+          description: OK — may carry a fresh token if the issuer chose to rotate
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HeartbeatResponseEnvelope' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/TokenInvalid' }
+        '403': { $ref: '#/components/responses/LicenseBlocked' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /deactivate:
+    post:
+      operationId: deactivate
+      tags: [Client]
+      summary: Release a seat; revoke the corresponding usage
+      description: Voluntary seat release (uninstall, user logout, or device reassignment). Revokes the `LicenseUsage` row matching the token's fingerprint, freeing a seat for future activations. Idempotent — a second call for an already-revoked usage still returns 204.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeactivateRequest' }
+      responses:
+        '204':
+          description: Usage revoked; no body
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/TokenInvalid' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /admin/licenses:
+    get:
+      operationId: listLicenses
+      tags: [Admin Licenses]
+      summary: List licenses
+      description: Paginated, cursor-based listing of licenses. All filter parameters are ANDed together. `cursor` is opaque; clients MUST treat it as a black box.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Cursor' }
+        - name: scope_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/LicenseStatus' }
+        - name: template_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: licensable
+          in: query
+          description: "format: `<type>:<id>`"
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LicenseListEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+    post:
+      operationId: createLicense
+      tags: [Admin Licenses]
+      summary: Create a license
+      description: Creates a license in status `pending`. If `license_key` is omitted the server generates a Crockford-Base32 key matching the `LIC-xxxx-xxxx-...` format. Providing an explicit key that already exists fails with 409 `LicenseKeyConflict`.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateLicenseRequest' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LicenseEnvelope' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '409': { $ref: '#/components/responses/KeyConflict' }
+
+  /admin/licenses/{id}:
+    parameters:
+      - { $ref: '#/components/parameters/IdPath' }
+    get:
+      operationId: getLicense
+      tags: [Admin Licenses]
+      summary: Fetch a single license
+      description: Returns the full license record including derived fields (e.g., `active_usages`).
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LicenseEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      operationId: updateLicense
+      tags: [Admin Licenses]
+      summary: Update a license (metadata only)
+      description: Patches mutable fields on a license. Lifecycle transitions (suspend, resume, revoke, renew) have their own dedicated endpoints and are NOT permitted here.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateLicenseRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LicenseEnvelope' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      operationId: deleteLicense
+      tags: [Admin Licenses]
+      summary: Delete a license
+      description: Hard-delete. Fails with 409 if any usages are still `active` — revoke them first. Audit-log rows for the license are preserved.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204':
+          description: Deleted
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: License has active usages; revoke first
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+
+  /admin/licenses/{id}/suspend:
+    parameters: [{ $ref: '#/components/parameters/IdPath' }]
+    post:
+      operationId: suspendLicense
+      tags: [Admin Licenses]
+      summary: Suspend a license
+      description: Transitions the license to `suspended`. Outstanding offline tokens remain valid until their `exp` unless separately revoked; no new tokens are issued until `resume`.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LicenseEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/licenses/{id}/resume:
+    parameters: [{ $ref: '#/components/parameters/IdPath' }]
+    post:
+      operationId: resumeLicense
+      tags: [Admin Licenses]
+      summary: Resume a suspended license
+      description: Reverses a prior `suspend`, returning the license to `active` (or `grace`/`expired` if time has passed it). Fails with 404 on a non-existent license; fails with the lifecycle-guard error if the license is `revoked`.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LicenseEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/licenses/{id}/revoke:
+    parameters: [{ $ref: '#/components/parameters/IdPath' }]
+    post:
+      operationId: revokeLicense
+      tags: [Admin Licenses]
+      summary: Revoke a license terminally
+      description: Transitions to `revoked` — a terminal state that cannot be reversed. All future activation, refresh, and issuance calls fail with `LicenseRevoked`.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LicenseEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/licenses/{id}/renew:
+    parameters: [{ $ref: '#/components/parameters/IdPath' }]
+    post:
+      operationId: renewLicense
+      tags: [Admin Licenses]
+      summary: Renew a license's expiry
+      description: Extends the license by setting a new `expires_at` (and optionally `grace_until`). A license in `grace` or `expired` returns to `active` if the new window is in the future.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RenewLicenseRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LicenseEnvelope' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/scopes:
+    get:
+      operationId: listScopes
+      tags: [Admin Scopes]
+      summary: List scopes
+      description: Paginated, cursor-based listing of `LicenseScope` rows.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Cursor' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ScopeListEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+    post:
+      operationId: createScope
+      tags: [Admin Scopes]
+      summary: Create a scope
+      description: Creates a `LicenseScope`. `slug` is globally unique (case-sensitive, `^[a-z0-9][a-z0-9-]*$`). Slug collisions return 409.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateScopeRequest' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ScopeEnvelope' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '409': { $ref: '#/components/responses/SlugConflict' }
+
+  /admin/scopes/{id}:
+    parameters: [{ $ref: '#/components/parameters/IdPath' }]
+    get:
+      operationId: getScope
+      tags: [Admin Scopes]
+      summary: Fetch a single scope
+      description: Returns the full scope record by id.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ScopeEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      operationId: updateScope
+      tags: [Admin Scopes]
+      summary: Update a scope
+      description: Patches mutable fields (`name`, `meta`). `slug` is immutable once the scope is created.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateScopeRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ScopeEnvelope' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      operationId: deleteScope
+      tags: [Admin Scopes]
+      summary: Delete a scope
+      description: Hard-delete. Fails with 409 if any licenses or templates still reference the scope.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204':
+          description: Deleted
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Scope is referenced by licenses or templates
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+
+  /admin/templates:
+    get:
+      operationId: listTemplates
+      tags: [Admin Templates]
+      summary: List license templates
+      description: Paginated, cursor-based listing of `LicenseTemplate` rows. Filter by `scope_id` to scope the result set.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Cursor' }
+        - name: scope_id
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TemplateListEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+    post:
+      operationId: createTemplate
+      tags: [Admin Templates]
+      summary: Create a license template
+      description: Creates a reusable `LicenseTemplate`. Defaults captured here (`max_usages`, `trial_duration_sec`, `grace_duration_sec`, `force_online_after_sec`, `entitlements`) are copied onto new licenses that reference this template, with per-license overrides taking precedence.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateTemplateRequest' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TemplateEnvelope' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+
+  /admin/templates/{id}:
+    parameters: [{ $ref: '#/components/parameters/IdPath' }]
+    get:
+      operationId: getTemplate
+      tags: [Admin Templates]
+      summary: Fetch a single template
+      description: Returns the full template record by id.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TemplateEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      operationId: updateTemplate
+      tags: [Admin Templates]
+      summary: Update a template
+      description: Patches mutable fields. Existing licenses that were created from this template are NOT retroactively updated — the template only supplies defaults at creation time.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateTemplateRequest' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TemplateEnvelope' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      operationId: deleteTemplate
+      tags: [Admin Templates]
+      summary: Delete a template
+      description: Hard-delete. Fails with 409 if any license still references the template.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '204':
+          description: Deleted
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Template is referenced by licenses
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+
+  /admin/usages:
+    get:
+      operationId: listUsages
+      tags: [Admin Usages]
+      summary: List license usages
+      description: Paginated, cursor-based listing of `LicenseUsage` rows across licenses, with optional filters.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Cursor' }
+        - name: license_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/UsageStatus' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UsageListEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+
+  /admin/usages/{id}:
+    parameters: [{ $ref: '#/components/parameters/IdPath' }]
+    get:
+      operationId: getUsage
+      tags: [Admin Usages]
+      summary: Fetch a single usage
+      description: Returns the full `LicenseUsage` record by id.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UsageEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/usages/{id}/revoke:
+    parameters: [{ $ref: '#/components/parameters/IdPath' }]
+    post:
+      operationId: revokeUsage
+      tags: [Admin Usages]
+      summary: Revoke a single usage
+      description: Transitions the usage to `revoked` and frees one seat on the parent license. Admin-initiated; prefer `/deactivate` for client-initiated flows so the client SDK can delete its local token.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UsageEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/keys:
+    get:
+      operationId: listKeys
+      tags: [Admin Keys]
+      summary: List signing keys
+      description: Paginated, cursor-based listing of `LicenseKey` rows (signing keys used to sign LIC1 tokens). Filter by `scope_id` to see keys bound to a specific scope, or by `state` to separate `active` from `retiring`.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Cursor' }
+        - name: scope_id
+          in: query
+          schema: { type: string, format: uuid, nullable: true }
+        - name: state
+          in: query
+          schema: { $ref: '#/components/schemas/KeyState' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/KeyListEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+    post:
+      operationId: createKey
+      tags: [Admin Keys]
+      description: Provisions a new signing key for the given scope.
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateKeyRequest' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/KeyEnvelope' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+
+  /admin/keys/{id}/rotate:
+    parameters: [{ $ref: '#/components/parameters/IdPath' }]
+    post:
+      operationId: rotateKey
+      tags: [Admin Keys]
+      description: Rotate the key out; the server issues a successor and returns both.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RotateKeyEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /admin/audit:
+    get:
+      operationId: listAudit
+      tags: [Admin Audit]
+      summary: List audit log entries
+      description: Paginated, cursor-based tail of the append-only audit log. Newest entries first. Filter by `license_id`, `scope_id`, or `event` (e.g., `license.activated`).
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { $ref: '#/components/parameters/Limit' }
+        - { $ref: '#/components/parameters/Cursor' }
+        - name: license_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: scope_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: event
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AuditListEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+
+  parameters:
+    IdPath:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 25 }
+    Cursor:
+      name: cursor
+      in: query
+      schema: { type: string }
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+    Unauthenticated:
+      description: Missing or invalid bearer token
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+    Forbidden:
+      description: Forbidden (e.g., fingerprint rejected)
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+    NotFound:
+      description: Not found
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+    KeyConflict:
+      description: License key conflict
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+    SlugConflict:
+      description: Scope slug conflict
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+    SeatLimit:
+      description: Seat limit exceeded
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+    LicenseBlocked:
+      description: License is suspended, revoked, or expired
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+    TokenInvalid:
+      description: Token signature, format, or claims invalid
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+    RateLimited:
+      description: Too many requests
+      headers:
+        Retry-After:
+          schema: { type: integer, minimum: 1 }
+          description: Seconds the client should wait before retrying.
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorEnvelope' } } }
+    TokenEnvelopeResp:
+      description: OK — signed token
+      content: { application/json: { schema: { $ref: '#/components/schemas/TokenEnvelope' } } }
+
+  schemas:
+    ErrorEnvelope:
+      type: object
+      required: [success, error]
+      properties:
+        success:
+          type: boolean
+          enum: [false]
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string }
+            message: { type: string }
+      additionalProperties: false
+
+    HealthEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, enum: [true] }
+        data:
+          type: object
+          required: [status, version]
+          properties:
+            status: { type: string, enum: [ok] }
+            version: { type: string }
+      additionalProperties: false
+
+    TokenEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, enum: [true] }
+        data:
+          type: object
+          required: [token, expires_at]
+          properties:
+            token:
+              type: string
+              pattern: '^LIC1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$'
+            expires_at:
+              type: string
+              format: date-time
+            refresh_recommended_at:
+              type: string
+              format: date-time
+            force_online_after:
+              type: string
+              format: date-time
+              nullable: true
+      additionalProperties: false
+
+    ActivateRequest:
+      type: object
+      required: [license_key, fingerprint]
+      properties:
+        license_key: { type: string }
+        fingerprint:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+        client_meta:
+          type: object
+          additionalProperties: true
+      additionalProperties: false
+
+    RefreshRequest:
+      type: object
+      required: [token]
+      properties:
+        token: { type: string }
+      additionalProperties: false
+
+    HeartbeatRequest:
+      type: object
+      required: [token]
+      properties:
+        token: { type: string }
+        client_meta:
+          type: object
+          additionalProperties: true
+      additionalProperties: false
+
+    HeartbeatResponseEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, enum: [true] }
+        data:
+          type: object
+          required: [ok]
+          properties:
+            ok: { type: boolean }
+            token:
+              type: string
+              nullable: true
+              description: Present when the issuer chose to rotate the client's token.
+            server_time:
+              type: string
+              format: date-time
+      additionalProperties: false
+
+    DeactivateRequest:
+      type: object
+      required: [token, reason]
+      properties:
+        token: { type: string }
+        reason:
+          type: string
+          enum: [user_requested, uninstall, reassign, other]
+      additionalProperties: false
+
+    # Domain types
+    LicenseStatus:
+      type: string
+      enum: [pending, active, grace, expired, suspended, revoked]
+
+    UsageStatus:
+      type: string
+      enum: [active, revoked]
+
+    KeyState:
+      type: string
+      enum: [active, retiring]
+
+    KeyAlg:
+      type: string
+      enum: [ed25519, rs256-pss, hs256]
+
+    License:
+      type: object
+      required:
+        [
+          id,
+          licensable_type,
+          licensable_id,
+          license_key,
+          status,
+          max_usages,
+          meta,
+          created_at,
+          updated_at,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        scope_id: { type: string, format: uuid, nullable: true }
+        template_id: { type: string, format: uuid, nullable: true }
+        licensable_type: { type: string, maxLength: 128 }
+        licensable_id: { type: string, maxLength: 128 }
+        license_key: { type: string }
+        status: { $ref: '#/components/schemas/LicenseStatus' }
+        max_usages: { type: integer, minimum: 1 }
+        active_usages: { type: integer, minimum: 0 }
+        activated_at: { type: string, format: date-time, nullable: true }
+        expires_at: { type: string, format: date-time, nullable: true }
+        grace_until: { type: string, format: date-time, nullable: true }
+        meta: { type: object, additionalProperties: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+      additionalProperties: false
+
+    Scope:
+      type: object
+      required: [id, slug, name, meta, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        slug:
+          type: string
+          pattern: '^[a-z0-9][a-z0-9-]*$'
+          maxLength: 64
+        name: { type: string, maxLength: 128 }
+        meta: { type: object, additionalProperties: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+      additionalProperties: false
+
+    Template:
+      type: object
+      required:
+        [
+          id,
+          name,
+          max_usages,
+          trial_duration_sec,
+          grace_duration_sec,
+          entitlements,
+          meta,
+          created_at,
+          updated_at,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        scope_id: { type: string, format: uuid, nullable: true }
+        name: { type: string, maxLength: 128 }
+        max_usages: { type: integer, minimum: 1 }
+        trial_duration_sec: { type: integer, minimum: 0 }
+        grace_duration_sec: { type: integer, minimum: 0 }
+        force_online_after_sec: { type: integer, minimum: 0, nullable: true }
+        entitlements: { type: object, additionalProperties: true }
+        meta: { type: object, additionalProperties: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+      additionalProperties: false
+
+    Usage:
+      type: object
+      required:
+        [
+          id,
+          license_id,
+          fingerprint,
+          status,
+          registered_at,
+          client_meta,
+          created_at,
+          updated_at,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        license_id: { type: string, format: uuid }
+        fingerprint:
+          type: string
+          pattern: '^[0-9a-f]{64}$'
+        status: { $ref: '#/components/schemas/UsageStatus' }
+        registered_at: { type: string, format: date-time }
+        revoked_at: { type: string, format: date-time, nullable: true }
+        client_meta: { type: object, additionalProperties: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+      additionalProperties: false
+
+    Key:
+      type: object
+      required:
+        [
+          id,
+          kid,
+          alg,
+          role,
+          state,
+          public_pem,
+          not_before,
+          meta,
+          created_at,
+          updated_at,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        scope_id: { type: string, format: uuid, nullable: true }
+        kid: { type: string, maxLength: 64 }
+        alg: { $ref: '#/components/schemas/KeyAlg' }
+        role: { type: string, enum: [root, signing] }
+        state: { $ref: '#/components/schemas/KeyState' }
+        public_pem: { type: string }
+        rotated_from: { type: string, format: uuid, nullable: true }
+        rotated_at: { type: string, format: date-time, nullable: true }
+        not_before: { type: string, format: date-time }
+        not_after: { type: string, format: date-time, nullable: true }
+        meta: { type: object, additionalProperties: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+      additionalProperties: false
+
+    AuditEntry:
+      type: object
+      required: [id, actor, event, occurred_at]
+      properties:
+        id: { type: string, format: uuid }
+        license_id: { type: string, format: uuid, nullable: true }
+        scope_id: { type: string, format: uuid, nullable: true }
+        actor: { type: string }
+        event: { type: string }
+        prior_state: { type: object, nullable: true, additionalProperties: true }
+        new_state: { type: object, nullable: true, additionalProperties: true }
+        occurred_at: { type: string, format: date-time }
+      additionalProperties: false
+
+    # Request bodies for admin CRUD
+    CreateLicenseRequest:
+      type: object
+      required: [licensable_type, licensable_id, max_usages]
+      properties:
+        scope_id: { type: string, format: uuid, nullable: true }
+        template_id: { type: string, format: uuid, nullable: true }
+        licensable_type: { type: string, maxLength: 128 }
+        licensable_id: { type: string, maxLength: 128 }
+        license_key: { type: string, nullable: true }
+        max_usages: { type: integer, minimum: 1 }
+        expires_at: { type: string, format: date-time, nullable: true }
+        grace_until: { type: string, format: date-time, nullable: true }
+        meta: { type: object, additionalProperties: true }
+      additionalProperties: false
+
+    UpdateLicenseRequest:
+      type: object
+      properties:
+        max_usages: { type: integer, minimum: 1 }
+        expires_at: { type: string, format: date-time, nullable: true }
+        grace_until: { type: string, format: date-time, nullable: true }
+        meta: { type: object, additionalProperties: true }
+      additionalProperties: false
+
+    RenewLicenseRequest:
+      type: object
+      required: [expires_at]
+      properties:
+        expires_at: { type: string, format: date-time }
+        grace_until: { type: string, format: date-time, nullable: true }
+      additionalProperties: false
+
+    CreateScopeRequest:
+      type: object
+      required: [slug, name]
+      properties:
+        slug:
+          type: string
+          pattern: '^[a-z0-9][a-z0-9-]*$'
+          maxLength: 64
+        name: { type: string, maxLength: 128 }
+        meta: { type: object, additionalProperties: true }
+      additionalProperties: false
+
+    UpdateScopeRequest:
+      type: object
+      properties:
+        name: { type: string, maxLength: 128 }
+        meta: { type: object, additionalProperties: true }
+      additionalProperties: false
+
+    CreateTemplateRequest:
+      type: object
+      required: [name, max_usages, trial_duration_sec, grace_duration_sec]
+      properties:
+        scope_id: { type: string, format: uuid, nullable: true }
+        name: { type: string, maxLength: 128 }
+        max_usages: { type: integer, minimum: 1 }
+        trial_duration_sec: { type: integer, minimum: 0 }
+        grace_duration_sec: { type: integer, minimum: 0 }
+        force_online_after_sec: { type: integer, minimum: 0, nullable: true }
+        entitlements: { type: object, additionalProperties: true }
+        meta: { type: object, additionalProperties: true }
+      additionalProperties: false
+
+    UpdateTemplateRequest:
+      type: object
+      properties:
+        name: { type: string, maxLength: 128 }
+        max_usages: { type: integer, minimum: 1 }
+        trial_duration_sec: { type: integer, minimum: 0 }
+        grace_duration_sec: { type: integer, minimum: 0 }
+        force_online_after_sec: { type: integer, minimum: 0, nullable: true }
+        entitlements: { type: object, additionalProperties: true }
+        meta: { type: object, additionalProperties: true }
+      additionalProperties: false
+
+    CreateKeyRequest:
+      type: object
+      required: [kid, alg, role]
+      properties:
+        scope_id: { type: string, format: uuid, nullable: true }
+        kid: { type: string, maxLength: 64 }
+        alg: { $ref: '#/components/schemas/KeyAlg' }
+        role: { type: string, enum: [root, signing] }
+        not_before: { type: string, format: date-time, nullable: true }
+        not_after: { type: string, format: date-time, nullable: true }
+        meta: { type: object, additionalProperties: true }
+      additionalProperties: false
+
+    # List envelopes
+    Page:
+      type: object
+      required: [next_cursor]
+      properties:
+        next_cursor: { type: string, nullable: true }
+
+    LicenseListEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, enum: [true] }
+        data:
+          allOf:
+            - $ref: '#/components/schemas/Page'
+            - type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  items: { $ref: '#/components/schemas/License' }
+      additionalProperties: false
+
+    ScopeListEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, enum: [true] }
+        data:
+          allOf:
+            - $ref: '#/components/schemas/Page'
+            - type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  items: { $ref: '#/components/schemas/Scope' }
+      additionalProperties: false
+
+    TemplateListEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, enum: [true] }
+        data:
+          allOf:
+            - $ref: '#/components/schemas/Page'
+            - type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  items: { $ref: '#/components/schemas/Template' }
+      additionalProperties: false
+
+    UsageListEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, enum: [true] }
+        data:
+          allOf:
+            - $ref: '#/components/schemas/Page'
+            - type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  items: { $ref: '#/components/schemas/Usage' }
+      additionalProperties: false
+
+    KeyListEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, enum: [true] }
+        data:
+          allOf:
+            - $ref: '#/components/schemas/Page'
+            - type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  items: { $ref: '#/components/schemas/Key' }
+      additionalProperties: false
+
+    AuditListEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, enum: [true] }
+        data:
+          allOf:
+            - $ref: '#/components/schemas/Page'
+            - type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  items: { $ref: '#/components/schemas/AuditEntry' }
+      additionalProperties: false
+
+    # Single-entity envelopes
+    LicenseEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, enum: [true] }
+        data: { $ref: '#/components/schemas/License' }
+      additionalProperties: false
+
+    ScopeEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, enum: [true] }
+        data: { $ref: '#/components/schemas/Scope' }
+      additionalProperties: false
+
+    TemplateEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, enum: [true] }
+        data: { $ref: '#/components/schemas/Template' }
+      additionalProperties: false
+
+    UsageEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, enum: [true] }
+        data: { $ref: '#/components/schemas/Usage' }
+      additionalProperties: false
+
+    KeyEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, enum: [true] }
+        data: { $ref: '#/components/schemas/Key' }
+      additionalProperties: false
+
+    RotateKeyEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, enum: [true] }
+        data:
+          type: object
+          required: [retiring, active]
+          properties:
+            retiring: { $ref: '#/components/schemas/Key' }
+            active: { $ref: '#/components/schemas/Key' }
+      additionalProperties: false
