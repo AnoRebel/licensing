@@ -1,0 +1,62 @@
+name: release-please
+
+# Runs on every push to main.
+#
+# Opens (or updates) a single "release PR" that accumulates Conventional
+# Commit messages since the last tag and computes the next semver. On merge,
+# release-please:
+#   1. Writes CHANGELOG.md
+#   2. Bumps VERSION, typescript/**/package.json, jsr.json, licensing/version.go
+#      (see release-please-config.json → extra-files)
+#   3. Creates a GitHub Release + pushes the tag vX.Y.Z
+#
+# The tag push triggers `.github/workflows/release.yml`, which publishes to
+# npm, jsr, and warms proxy.golang.org.
+#
+# See docs/versioning.md for the full flow and RELEASING.md for the manual
+# fallback when release-please is bypassed.
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      releases_created: ${{ steps.release.outputs.releases_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  # After release-please cuts a release (PR merged → tag pushed),
+  # sanity-check that every manifest agrees with VERSION. Guards against
+  # a release-please-config.json extra-files list that silently skipped
+  # a file.
+  verify-release:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.releases_created == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.12
+
+      - name: Version drift check
+        run: |
+          echo "Release created: ${{ needs.release-please.outputs.tag_name }}"
+          bun run version:check

@@ -1,0 +1,89 @@
+name: admin-ui
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'admin/**'
+      - 'openapi/**'
+      - 'package.json'
+      - 'bun.lock'
+      - 'biome.json'
+      - '.github/workflows/admin-ui.yml'
+  pull_request:
+    paths:
+      - 'admin/**'
+      - 'openapi/**'
+      - 'package.json'
+      - 'bun.lock'
+      - 'biome.json'
+      - '.github/workflows/admin-ui.yml'
+
+concurrency:
+  group: admin-ui-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: biome + typecheck + build + axe
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: admin
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.12
+
+      - name: Install workspace deps
+        working-directory: .
+        run: bun install --frozen-lockfile
+
+      - name: Biome check (admin scope)
+        working-directory: .
+        run: bunx biome check admin
+
+      - name: Typecheck
+        # nuxt-open-fetch regenerates the typed client into .nuxt/ during
+        # `nuxt prepare` (which postinstall already ran). Drift is
+        # impossible because the spec at openapi/licensing-admin.yaml is
+        # the only source — if it changes, this step re-reads it.
+        run: bun run typecheck
+
+      - name: Build (Nuxt)
+        run: bun run build
+
+      # axe-core is driven via Playwright (tests/a11y/*.spec.ts). The
+      # browser binary is cached separately from node_modules because
+      # setup-bun doesn't manage it.
+      - name: Cache Playwright browsers
+        uses: actions/cache@v5
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('admin/package.json') }}
+
+      - name: Install Playwright browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: bun run test:a11y:install
+
+      - name: Install Playwright system deps (cache hit path)
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: bunx playwright install-deps chromium
+
+      - name: Accessibility scan (axe-core via Playwright)
+        run: bun run test:a11y
+
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report
+          path: admin/playwright-report
+          retention-days: 14

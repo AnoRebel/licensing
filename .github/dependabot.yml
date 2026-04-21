@@ -1,0 +1,123 @@
+# Dependabot configuration for the licensing monorepo.
+#
+# Three ecosystems tracked:
+#   - bun      — the root Bun workspace (admin/, typescript/packages/*,
+#                tools/*). Single bun.lock at repo root, so one entry is
+#                enough; the parser walks workspaces defined in package.json.
+#   - gomod    — the Go module at the repo root.
+#   - github-actions — the five workflow files in .github/workflows/.
+#
+# Cadence: weekly Monday morning UTC. Security updates ignore the schedule
+# and fire immediately — that's the dependabot default and we want it.
+#
+# Grouping: production deps go in one PR per ecosystem per week, dev deps
+# in a second. Action bumps are grouped together — a single weekly PR
+# keeps CI green instead of five separate rebases.
+#
+# Labels + commit-message prefixes are kept in sync with the
+# conventional-commit convention the repo already uses so the changelog
+# generator picks them up cleanly (see `feat(deps):` / `chore(deps):`
+# in git log).
+version: 2
+
+updates:
+  # --- Bun workspace (admin + typescript/packages/* + tools/*) -----------
+  - package-ecosystem: "bun"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Africa/Dar_es_Salaam"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "ecosystem:bun"
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
+      include: "scope"
+    groups:
+      bun-prod:
+        dependency-type: "production"
+        update-types:
+          - "minor"
+          - "patch"
+      bun-dev:
+        dependency-type: "development"
+        update-types:
+          - "minor"
+          - "patch"
+      # Keep @tanstack/* aligned — vue-form + vue-table share peer assumptions,
+      # and splitting them across PRs causes temporary type mismatches.
+      tanstack:
+        patterns:
+          - "@tanstack/*"
+      # Nuxt + @nuxt/* + @nuxtjs/* ship in sync; one PR prevents the module
+      # system from falling out of step with the runtime.
+      nuxt-stack:
+        patterns:
+          - "nuxt"
+          - "@nuxt/*"
+          - "@nuxtjs/*"
+          - "nuxt-*"
+      # shadcn-nuxt + reka-ui are tightly coupled (reka provides the
+      # primitives shadcn-vue renders).
+      shadcn:
+        patterns:
+          - "shadcn-nuxt"
+          - "reka-ui"
+      # VueUse split across two packages — versions must match.
+      vueuse:
+        patterns:
+          - "@vueuse/*"
+    ignore:
+      # Never auto-bump the major of frameworks we pin in CLAUDE.md.
+      # Majors need a human deciding whether the change is worth it.
+      - dependency-name: "nuxt"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "vue"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+
+  # --- Go module ---------------------------------------------------------
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Africa/Dar_es_Salaam"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "ecosystem:go"
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+    groups:
+      go-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  # --- GitHub Actions ----------------------------------------------------
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Africa/Dar_es_Salaam"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "ecosystem:actions"
+    commit-message:
+      prefix: "chore(ci)"
+      include: "scope"
+    groups:
+      actions:
+        patterns:
+          - "*"

@@ -1,0 +1,75 @@
+name: openapi-contract
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'openapi/**'
+      - 'typescript/packages/http-handlers/**'
+      - 'licensing/http/**'
+      - '.github/workflows/openapi-contract.yml'
+  pull_request:
+    paths:
+      - 'openapi/**'
+      - 'typescript/packages/http-handlers/**'
+      - 'licensing/http/**'
+      - '.github/workflows/openapi-contract.yml'
+
+concurrency:
+  group: openapi-contract-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Spectral lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.12
+
+      - name: Install workspace deps
+        run: bun install --frozen-lockfile
+
+      - name: Spectral lint openapi/
+        run: bunx @stoplight/spectral-cli lint 'openapi/**/*.yaml' --fail-severity=warn
+
+  contract-ts:
+    name: TS handler contract conformance
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.12
+
+      - run: bun install --frozen-lockfile
+
+      - name: Run TS contract suite
+        run: bun run --filter '@licensing/sdk/http' test:contract
+
+  contract-go:
+    name: Go handler contract conformance
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: 1.26.2
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Run Go contract suite
+        run: go test ./licensing/http/... -tags=contract -run TestContract

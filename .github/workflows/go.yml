@@ -1,0 +1,97 @@
+name: go
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: go-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: gofmt + golangci-lint + test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: 1.26.2
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: gofmt (must be clean)
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "gofmt: the following files need formatting:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.11.4
+          args: --timeout=5m
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test (race + coverage)
+        # -timeout 1800s: under -race the http contract-conformance suite
+        # (19 cases × 3 backends) and the postgres-gated parts of interop
+        # can approach the 10-minute default even without Postgres enabled.
+        # No LICENSING_PG_URL here so the postgres storage tests are skipped;
+        # the postgres-matrix job below covers that path.
+        run: go test -race -covermode=atomic -coverprofile=coverage.out -timeout 1800s ./...
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: go-coverage
+          path: coverage.out
+          if-no-files-found: ignore
+
+  postgres:
+    name: storage/postgres + http contract (Postgres 18)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: golang
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: licensing_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      LICENSING_PG_URL: postgres://postgres:test@localhost:5432/licensing_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: 1.26.2
+          cache: true
+          cache-dependency-path: go.sum
+
+      # Narrow target: only the two packages whose Postgres branches are
+      # gated on LICENSING_PG_URL. Keeps wallclock sane under -race.
+      - name: go test -race (postgres-gated packages)
+        run: go test -race -timeout 1800s ./licensing/storage/postgres/... ./licensing/http/...

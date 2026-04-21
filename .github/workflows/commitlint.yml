@@ -1,0 +1,40 @@
+name: commitlint
+
+# Enforces Conventional Commits on every PR. Local lefthook catches this
+# pre-commit for contributors who installed it; this workflow is the remote
+# safety net so a PR from a fork or with lefthook skipped can't land a
+# non-conforming message that would break release-please parsing.
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, edited]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  commitlint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0 # need full history to lint the PR commit range
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.12
+
+      - name: Install deps
+        run: bun install --frozen-lockfile
+
+      # Lint every commit in the PR range. On a squash-merge repo this still
+      # catches typo'd commit subjects in the PR that would otherwise confuse
+      # release-please's changelog extraction.
+      - name: Lint PR commits
+        run: |
+          bunx commitlint \
+            --from=${{ github.event.pull_request.base.sha }} \
+            --to=${{ github.event.pull_request.head.sha }} \
+            --verbose

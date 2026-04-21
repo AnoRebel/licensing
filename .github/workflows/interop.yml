@@ -1,0 +1,55 @@
+name: interop
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: interop-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  cross-language:
+    name: TS ↔ Go cross-language interop
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.12
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: 1.26.2
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Install TS workspace deps
+        run: bun install --frozen-lockfile
+
+      # The interop Go tests shell out to Bun CLIs that import @licensing/sdk
+      # and @licensing/sdk/client from their built dist/. Without this step the
+      # TS side would fall back to the source .ts files via Bun's resolver,
+      # but building enforces that the published artefact is what Go talks
+      # to — same as what npm/jsr consumers will see.
+      - name: Build TS packages (Go interop talks to their built dist/)
+        run: bun run build
+
+      # Single `go test` covers all three harnesses:
+      #   TestTokenRoundTrip_TSSign_GoVerify        (12.1, 24 fixtures)
+      #   TestTokenRoundTrip_GoSign_TSVerify        (12.1, 24 fixtures)
+      #   TestCanonicalJSON_TSvsGo_Parity           (12.2, 10k iterations)
+      #   TestGracePeriodTable_TSvsGo               (12.3, 15-row table)
+      #
+      # -race catches concurrency bugs in the parallel subtests; the timeout
+      # is generous because RSA PEM import dominates the first bun call's
+      # wallclock.
+      - name: Cross-language harness (sign/verify + canonical-JSON + grace)
+        run: go test -race -timeout 600s -v ./licensing/interop/...
