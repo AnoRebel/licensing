@@ -219,7 +219,7 @@
     "test:contract": "bun test tests/http/openapi-contract.test.ts"
   },
   "bin": {
-    "licensing-keys": "./bin/licensing-keys.js"
+    "licensing-keys": "bin/licensing-keys.js"
   },
   "engines": {
     "bun": ">=1.3.12",

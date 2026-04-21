@@ -36,6 +36,13 @@ export default defineConfig({
   sourcemap: true,
   clean: true,
   target: 'es2022',
+  // `platform: 'neutral'` keeps tsdown's default extension pairing
+  // (`.js` for ESM + `.cjs` for CJS) which matches the `exports` map in
+  // package.json. Pinning `node` would flip ESM to `.mjs` and force a
+  // rewrite of every subpath export — not worth it. The SDK runs on
+  // Node, Bun, and Deno; rolldown treats `node:*` specifiers as external
+  // automatically, so the build output is correct even though the build
+  // log emits benign `UNRESOLVED_IMPORT` warnings for them.
   platform: 'neutral',
   unbundle: false,
   treeshake: true,
