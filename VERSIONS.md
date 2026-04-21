@@ -32,11 +32,11 @@ Exact pins, declared in the root `package.json` under `devDependencies`:
 
 | Package                       | Version   | Used by                                     |
 | ----------------------------- | --------- | ------------------------------------------- |
-| `pg`                          | `8.13.1`  | `@licensing/sdk/storage/postgres`.              |
-| `@types/pg`                   | `8.11.10` | `@licensing/sdk/storage/postgres` (dev).        |
-| `hono`                        | `5.0.4`   | optional adapter in `@licensing/sdk/http`. |
-| `express`                     | `5.2.1`   | optional adapter in `@licensing/sdk/http`. |
-| `fastify`                     | `5.5.0`   | optional adapter in `@licensing/sdk/http`. |
+| `pg`                          | `8.13.1`  | `@anorebel/licensing/storage/postgres`.              |
+| `@types/pg`                   | `8.11.10` | `@anorebel/licensing/storage/postgres` (dev).        |
+| `hono`                        | `5.0.4`   | optional adapter in `@anorebel/licensing/http`. |
+| `express`                     | `5.2.1`   | optional adapter in `@anorebel/licensing/http`. |
+| `fastify`                     | `5.5.0`   | optional adapter in `@anorebel/licensing/http`. |
 
 ## Admin UI (landing in phase 13)
 

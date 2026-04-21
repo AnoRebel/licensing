@@ -4,7 +4,7 @@ info:
   version: 0.1.0
   description: |
     Single source of truth for every client-facing and admin endpoint exposed
-    by the licensing reference HTTP handlers (TS: `@licensing/licensing/http`,
+    by the licensing reference HTTP handlers (TS: `@anorebel/licensing/http`,
     Go: `licensing/http`). Both implementations are contract-tested against
     this document in CI — drift fails the merge.
 
@@ -14,7 +14,7 @@ info:
       Error:   `{"success": false, "error": {"code": "<identifier>", "message": "<human-readable>"}}`
 
     Error identifiers are stable and correspond to the typed error taxonomy
-    exposed by `@licensing/licensing` / `licensing` (Go).
+    exposed by `@anorebel/licensing` / `licensing` (Go).
 
 servers:
   - url: https://example.com/api/licensing/v1

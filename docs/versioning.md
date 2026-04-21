@@ -2,8 +2,8 @@
 
 This monorepo ships **three artefacts** from one commit:
 
-1. `@licensing/sdk` on **npm** (dual ESM/CJS + `.d.ts` via `tsdown`)
-2. `@licensing/sdk` on **jsr.io** (raw TypeScript; JSR transpiles on publish)
+1. `@anorebel/licensing` on **npm** (dual ESM/CJS + `.d.ts` via `tsdown`)
+2. `@anorebel/licensing` on **jsr.io** (raw TypeScript; JSR transpiles on publish)
 3. `github.com/AnoRebel/licensing` on **pkg.go.dev** (Go module tagged `v<semver>`)
 
 All three share one version. A license issued by any port at version `X.Y.Z` is guaranteed verifiable by any other port at the same `X.Y.Z`. The interop CI job (`.github/workflows/interop.yml`) is the binding contract that enforces this.
@@ -83,13 +83,13 @@ Both ports move in lockstep. If only one port needs a bug fix, the other gets th
 
 ### Pre-1.0 caveat
 
-While `MAJOR == 0`, the API is **unstable**. Breaking changes may ship on a minor bump (`0.1.0 → 0.2.0`). Downstream consumers should pin to exact versions (`"@licensing/sdk": "0.1.0"` and `github.com/AnoRebel/licensing v0.1.0`) until `1.0.0`.
+While `MAJOR == 0`, the API is **unstable**. Breaking changes may ship on a minor bump (`0.1.0 → 0.2.0`). Downstream consumers should pin to exact versions (`"@anorebel/licensing": "0.1.0"` and `github.com/AnoRebel/licensing v0.1.0`) until `1.0.0`.
 
 ---
 
 ## Token-format versioning is separate
 
-`LIC1` is the **token envelope** version, carried in the `v` header claim of every token. It is **not** tied to the package version — a token issued by `@licensing/sdk@0.1.0` and one issued by `@licensing/sdk@2.4.7` are both `LIC1` tokens and remain cross-compatible.
+`LIC1` is the **token envelope** version, carried in the `v` header claim of every token. It is **not** tied to the package version — a token issued by `@anorebel/licensing@0.1.0` and one issued by `@anorebel/licensing@2.4.7` are both `LIC1` tokens and remain cross-compatible.
 
 A future `LIC2` envelope (if/when PASETO compatibility lands) will ship alongside `LIC1` — the prefix-based dispatch registry (`LIC1.` / `LIC2.`) lets a single library accept both simultaneously.
 
@@ -114,10 +114,10 @@ open https://pkg.go.dev/github.com/AnoRebel/licensing@v0.1.0
 
 ```bash
 # npm
-npm view @licensing/sdk versions
+npm view @anorebel/licensing versions
 
 # jsr
-npx jsr info @licensing/sdk
+npx jsr info @anorebel/licensing
 ```
 
 ---
@@ -144,4 +144,4 @@ Rollback: deprecate the bad version (`npm deprecate`, `jsr deprecate`, `go mod t
 
 We considered `changesets/changesets` but rejected it: the monorepo ships *one* TS package plus *one* Go module, so the primary value of changesets (independent per-package versioning in a multi-package repo) does not apply. The single-`VERSION` approach is simpler, statically verifiable in CI, and aligns naturally with the one-tag-per-release model the Go module proxy requires.
 
-If the repo ever grows a second independently-versioned package (e.g., an `@licensing/auth-apikey` post-v1), reconsider this decision.
+If the repo ever grows a second independently-versioned package (e.g., an `@anorebel/licensing-auth-apikey` post-v1), reconsider this decision.

@@ -4,8 +4,8 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-Three artefacts are released in lockstep — `@licensing/sdk` on npm,
-`@licensing/sdk` on jsr.io, and `github.com/AnoRebel/licensing` on
+Three artefacts are released in lockstep — `@anorebel/licensing` on npm,
+`@anorebel/licensing` on jsr.io, and `github.com/AnoRebel/licensing` on
 pkg.go.dev. A single entry below describes all three.
 
 ## [Unreleased]
@@ -22,7 +22,7 @@ with a framework-agnostic admin UI (Nuxt 4 + shadcn-nuxt).
 JSON body, ed25519 / RSA-PSS / HMAC-SHA-256 signature algorithms. Byte-identical
 serialization across both ports, enforced by a 10 000-case property test.
 
-**TypeScript — `@licensing/sdk`.** Single package with subpath exports
+**TypeScript — `@anorebel/licensing`.** Single package with subpath exports
 mirroring the Go module layout 1:1: `/crypto/{ed25519,rsa,hmac}`, `/client`,
 `/http` + `/http/adapters/{hono,express,fastify,node}`, `/storage/{memory,postgres,sqlite}`,
 `/cli`. Published to both npm (dual ESM/CJS via `tsdown`) and jsr.io (raw

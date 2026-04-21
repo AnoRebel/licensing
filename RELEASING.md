@@ -1,7 +1,7 @@
 # Releasing
 
 How to cut a release of the three-artefact bundle:
-`@licensing/sdk` on npm, `@licensing/sdk` on jsr.io, and
+`@anorebel/licensing` on npm, `@anorebel/licensing` on jsr.io, and
 `github.com/AnoRebel/licensing` on pkg.go.dev — all at the same version.
 
 For the *why* behind the single-version model, read
@@ -24,8 +24,8 @@ Create two environments — both are referenced by `release.yml` and both
 names are part of the trusted-publisher OIDC claim check. **The names
 must match exactly**; renaming them breaks publishing.
 
-- `npm` — URL `https://www.npmjs.com/package/@licensing/sdk`
-- `jsr` — URL `https://jsr.io/@licensing/sdk`
+- `npm` — URL `https://www.npmjs.com/package/@anorebel/licensing`
+- `jsr` — URL `https://jsr.io/@anorebel/licensing`
 
 Optionally add required reviewers to each environment if you want a
 human gate before publish fires.
@@ -44,7 +44,7 @@ cd typescript
 cp ../LICENSE ../NOTICE .
 bun run build
 # Generate a classic automation token at npmjs.com → Tokens → Generate
-# (granular, type=automation, scope @licensing/sdk, 7-day expiry).
+# (granular, type=automation, scope @anorebel/licensing, 7-day expiry).
 # This token is used ONCE and revoked immediately after.
 npm publish --access public --provenance
 # Clean up
@@ -53,7 +53,7 @@ rm LICENSE NOTICE
 
 Then on npmjs.com:
 
-1. Go to `@licensing/sdk` → Settings → Trusted Publisher
+1. Go to `@anorebel/licensing` → Settings → Trusted Publisher
 2. Fill in: organization = `AnoRebel`, repo = `licensing`,
    workflow filename = `release.yml`, environment = `npm`
 3. Save — npm does **not** validate these at save time, so double-check
@@ -62,8 +62,8 @@ Then on npmjs.com:
 
 **2. JSR (create scope + package, link to repo):**
 
-1. Go to [jsr.io/new](https://jsr.io/new) → create the `@licensing` scope
-2. In the scope, create the `sdk` package
+1. Go to [jsr.io/new](https://jsr.io/new) → create the `@anorebel` scope
+2. In the scope, create the `licensing` package
 3. In package settings → GitHub → link `AnoRebel/licensing`
 
 JSR's OIDC publish works from the very first tag once the package is
@@ -150,10 +150,10 @@ republishing a version. Instead:
 
 ```bash
 # npm
-npm view @licensing/sdk@0.1.0-rc.1
+npm view @anorebel/licensing@0.1.0-rc.1
 
 # jsr
-bunx jsr info @licensing/sdk
+bunx jsr info @anorebel/licensing
 
 # Go
 go list -m -versions github.com/AnoRebel/licensing
@@ -166,8 +166,8 @@ Smoke-test a fresh consumer install:
 # TS
 mkdir /tmp/smoke && cd /tmp/smoke
 bun init -y
-bun add @licensing/sdk@0.1.0-rc.1
-bun -e "import {canonicalize} from '@licensing/sdk/canonical-json'; console.log(canonicalize({b:1,a:2}))"
+bun add @anorebel/licensing@0.1.0-rc.1
+bun -e "import {canonicalize} from '@anorebel/licensing/canonical-json'; console.log(canonicalize({b:1,a:2}))"
 
 # Go
 cd /tmp && mkdir smoke-go && cd smoke-go
@@ -206,10 +206,10 @@ version must be **deprecated**, not deleted.
 
 ```bash
 # npm
-npm deprecate '@licensing/sdk@0.1.0' 'Critical bug XYZ; upgrade to 0.1.1'
+npm deprecate '@anorebel/licensing@0.1.0' 'Critical bug XYZ; upgrade to 0.1.1'
 
 # jsr
-bunx jsr deprecate @licensing/sdk@0.1.0 --reason "Critical bug XYZ"
+bunx jsr deprecate @anorebel/licensing@0.1.0 --reason "Critical bug XYZ"
 
 # Go: add a `retract` directive to go.mod, commit, tag the next version
 # Example block:

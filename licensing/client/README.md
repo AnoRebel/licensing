@@ -1,7 +1,7 @@
 # licensing/client
 
 Offline-first Go client for LIC1 tokens: validation, activation lifecycle,
-and grace-on-unreachable. Mirrors `@licensing/sdk/client` one-for-one so a license
+and grace-on-unreachable. Mirrors `@anorebel/licensing/client` one-for-one so a license
 activated in one language validates in the other.
 
 ## Usage

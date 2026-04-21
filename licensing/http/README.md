@@ -3,7 +3,7 @@
 `net/http`-compatible reference handlers for the licensing issuer. Registers
 against any stdlib-shaped mux (`http.ServeMux`, `chi.Router`, `echo.Echo`,
 `gorilla/mux`, …). Contract-conformant with `openapi/licensing-admin.yaml` —
-the same contract the TS `@licensing/sdk/http` package verifies.
+the same contract the TS `@anorebel/licensing/http` package verifies.
 
 ## Usage
 
