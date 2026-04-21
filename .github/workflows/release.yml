@@ -9,8 +9,24 @@ name: release
 #   - scripts/sync-versions.mjs has been run (version:check passes)
 #   - All tests pass (enforced here before publishing)
 #
-# Secrets required:
-#   NPM_TOKEN — npm automation token with publish rights on @licensing
+# Auth model (no long-lived secrets):
+#   - npm: OIDC trusted publishing. Package → "Trusted Publisher" on
+#     npmjs.com is bound to AnoRebel/licensing + this workflow filename
+#     (release.yml) + environment name `npm`. Provenance attestation is
+#     auto-generated from the OIDC id-token — no NPM_TOKEN, no
+#     --provenance flag needed. See docs.npmjs.com/trusted-publishers.
+#   - JSR: OIDC via the same `id-token: write` permission.
+#   - Go: proxy.golang.org ingests public GitHub tags automatically.
+#
+# npm chicken-and-egg: trusted publishing can only be configured for
+# packages that already exist on the registry. For the very first
+# publish (v0.1.0-rc.0) the maintainer runs `npm publish` once locally
+# with a one-shot token to create @licensing/sdk on npmjs.com, then
+# configures the trusted publisher via the package settings UI. Every
+# subsequent tag push lands through this workflow with zero stored
+# secrets. The npm job is idempotent — it no-ops if the version is
+# already on the registry, so the v0.1.0-rc.0 tag still fires the
+# workflow cleanly after the manual bootstrap.
 
 on:
   push:
@@ -20,7 +36,7 @@ on:
 
 permissions:
   contents: read
-  id-token: write  # required by both npm --provenance and jsr OIDC publish
+  id-token: write  # required by both npm trusted publishing and jsr OIDC
 
 jobs:
   verify:
@@ -100,16 +116,23 @@ jobs:
     name: Publish to npm (@licensing/sdk)
     needs: verify
     runs-on: ubuntu-latest
+    # `environment: npm` is required by npm's trusted-publisher binding
+    # — the setting on npmjs.com names this exact environment, and
+    # GitHub OIDC tokens only include the `environment` claim when the
+    # job opts into one. Without this, npm rejects the publish with
+    # "OIDC claim mismatch".
     environment:
       name: npm
       url: https://www.npmjs.com/package/@licensing/sdk
     steps:
       - uses: actions/checkout@v6
 
-      - name: Setup Node (for npm CLI + provenance)
+      # npm trusted publishing requires Node.js >= 24 — earlier CLI
+      # versions don't emit the id-token header the registry expects.
+      - name: Setup Node (trusted publishing requires >= 24)
         uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 24
           registry-url: https://registry.npmjs.org
 
       - name: Setup Bun (for build)
@@ -131,15 +154,26 @@ jobs:
       - name: Stage LICENSE + NOTICE
         run: cp LICENSE NOTICE typescript/
 
-      # --provenance requires id-token: write (granted above) and a public
-      # registry. OIDC attests that this artefact came from this tag of this
-      # repo via GitHub Actions — surfaced on npmjs.com as a "Provenance"
-      # badge.
-      - name: npm publish
-        run: npm publish --access public --provenance
+      # Idempotent publish: skip cleanly if @licensing/sdk@<VERSION> is
+      # already on the registry. This matters because v0.1.0-rc.0 ships
+      # via a one-shot local `npm publish` before the trusted-publisher
+      # config exists (npm chicken-and-egg — see workflow header). Once
+      # the tag fires this workflow, we want it to succeed without
+      # erroring on "409 Conflict: cannot republish".
+      #
+      # For every subsequent tag the check misses, and `npm publish`
+      # runs through trusted publishing: no NODE_AUTH_TOKEN, no
+      # --provenance flag (attestations are auto-generated from the
+      # OIDC id-token when the trusted publisher is configured).
+      - name: npm publish (idempotent; trusted publishing via OIDC)
         working-directory: typescript
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          if npm view "@licensing/sdk@${PKG_VERSION}" version >/dev/null 2>&1; then
+            echo "@licensing/sdk@${PKG_VERSION} is already on the registry; skipping publish."
+            exit 0
+          fi
+          npm publish --access public
 
   publish-jsr:
     name: Publish to jsr.io (@licensing/sdk)
@@ -171,6 +205,18 @@ jobs:
       # Every public function carries an explicit return type, so JSR's
       # fast-check passes without --allow-slow-types. This keeps .d.ts
       # generation cheap for downstream consumers.
+      #
+      # One-time bootstrap: the @licensing scope + sdk package must be
+      # created at jsr.io/new and linked to AnoRebel/licensing via the
+      # package settings UI before the first tag is pushed. The tag
+      # itself publishes the first version through OIDC — no manual
+      # `jsr publish` is needed, unlike the npm path.
+      #
+      # Safe to re-run on a stale tag: `jsr publish` is a no-op when
+      # the jsr.json version already exists on the registry (jsr-io
+      # docs: "will not attempt to publish if the version specified in
+      # your jsr.json is already published"), so a tag rebuild never
+      # 409s.
       - name: jsr publish
         run: bunx jsr publish
         working-directory: typescript

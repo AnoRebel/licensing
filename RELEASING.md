@@ -14,23 +14,66 @@ For the *why* behind the single-version model, read
 
 ### Repository secrets (GitHub → Settings → Secrets → Actions)
 
-| Secret | Used by | Notes |
-|---|---|---|
-| `NPM_TOKEN` | `release.yml → publish-npm` | npm **Automation** token scoped to `@licensing/sdk`. [Create one.](https://docs.npmjs.com/creating-and-viewing-access-tokens) |
-
-No JSR token is required — JSR publishes via GitHub OIDC (`id-token: write`).
-No PyPI / crates.io / pkg.go.dev tokens — Go module proxy ingests tags from
-the public GitHub mirror automatically.
+**None.** The workflow uses OIDC trusted publishing for both npm and
+JSR — no long-lived tokens are stored on GitHub. The one-time bootstrap
+below creates the packages; after that every release is tokenless.
 
 ### Repository environments (GitHub → Settings → Environments)
 
-Create two environments with required reviewers if you want a human gate
-before each publish step:
+Create two environments — both are referenced by `release.yml` and both
+names are part of the trusted-publisher OIDC claim check. **The names
+must match exactly**; renaming them breaks publishing.
 
 - `npm` — URL `https://www.npmjs.com/package/@licensing/sdk`
 - `jsr` — URL `https://jsr.io/@licensing/sdk`
 
-Both are referenced in `release.yml` with `environment.name`.
+Optionally add required reviewers to each environment if you want a
+human gate before publish fires.
+
+### One-time bootstrap (before the first tag is ever pushed)
+
+npm and JSR both require the package to exist on the registry before
+they'll accept an OIDC publish. This is a chicken-and-egg for v0.1.0-rc.0
+only; every subsequent release skips these steps entirely.
+
+**1. npm (one-shot token publish):**
+
+```bash
+cd typescript
+# Copy license into the package dir the same way release.yml does
+cp ../LICENSE ../NOTICE .
+bun run build
+# Generate a classic automation token at npmjs.com → Tokens → Generate
+# (granular, type=automation, scope @licensing/sdk, 7-day expiry).
+# This token is used ONCE and revoked immediately after.
+npm publish --access public --provenance
+# Clean up
+rm LICENSE NOTICE
+```
+
+Then on npmjs.com:
+
+1. Go to `@licensing/sdk` → Settings → Trusted Publisher
+2. Fill in: organization = `AnoRebel`, repo = `licensing`,
+   workflow filename = `release.yml`, environment = `npm`
+3. Save — npm does **not** validate these at save time, so double-check
+   capitalisation and the filename (must be `release.yml`, not the path).
+4. Revoke the automation token you just used.
+
+**2. JSR (create scope + package, link to repo):**
+
+1. Go to [jsr.io/new](https://jsr.io/new) → create the `@licensing` scope
+2. In the scope, create the `sdk` package
+3. In package settings → GitHub → link `AnoRebel/licensing`
+
+JSR's OIDC publish works from the very first tag once the package is
+created and linked — no one-shot token dance needed.
+
+**3. Go module:** nothing to bootstrap. `proxy.golang.org` ingests
+public GitHub tags automatically.
+
+After these three one-time steps, the full release flow below is
+tokenless and fully automated from every subsequent `git push origin v*`.
 
 ---
 
