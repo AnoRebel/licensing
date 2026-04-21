@@ -86,6 +86,24 @@ func (h *testHarness) createLicense(_ string) *lic.License {
 	return l
 }
 
+// createLicenseFor creates an active license scoped to a unique licensable
+// id. Tests that need multiple licenses in one harness use this to avoid
+// the (type, id) unique-constraint collision.
+func (h *testHarness) createLicenseFor(licensableID string) *lic.License {
+	h.t.Helper()
+	key := lic.GenerateLicenseKey()
+	l, err := lic.CreateLicense(h.storage, h.clock, lic.CreateLicenseInput{
+		LicensableType: "User", LicensableID: licensableID,
+		LicenseKey: key,
+		Status:     lic.LicenseStatusActive,
+		MaxUsages:  3,
+	}, lic.CreateLicenseOptions{})
+	if err != nil {
+		h.t.Fatalf("CreateLicense(%s): %v", licensableID, err)
+	}
+	return l
+}
+
 // post issues a POST with JSON body and returns the envelope-decoded response.
 func (h *testHarness) post(path string, body any) (*httptest.ResponseRecorder, Envelope) {
 	h.t.Helper()
@@ -373,5 +391,163 @@ func TestClientHandler_WrongPrefix_Returns404(t *testing.T) {
 	h.handler.ServeHTTP(rec, req)
 	if rec.Code != 404 {
 		t.Fatalf("expected 404, got %d", rec.Code)
+	}
+}
+
+// ---------------- token-trust regression tests (B12) ----------------
+//
+// These prove refresh/heartbeat/deactivate reject:
+//   - Tampered signatures (payload IDs altered, sig kept)
+//   - Tokens signed by a different installation's key
+// Prior to B12 the handlers used DecodeUnverified + trusted the claims,
+// so any attacker who learned a license_id/usage_id pair could mutate
+// the victim's usage state.
+
+// tamperPayload mutates one claim in a LIC1 token while leaving the
+// signature intact — a valid attack shape against DecodeUnverified.
+func tamperPayload(t *testing.T, token, claim, newValue string) string {
+	t.Helper()
+	parts := strings.Split(token, ".")
+	if len(parts) != 4 || parts[0] != "LIC1" {
+		t.Fatalf("not a LIC1 token: %q", token)
+	}
+	payloadB, err := lic.Base64urlDecode(parts[2])
+	if err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+	var p map[string]any
+	if err := json.Unmarshal(payloadB, &p); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	p[claim] = newValue
+	reencoded, err := json.Marshal(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parts[2] = lic.Base64urlEncode(reencoded)
+	return strings.Join(parts, ".")
+}
+
+func TestClientHandler_Refresh_TamperedPayload_RejectsWithSignatureError(t *testing.T) {
+	h := newHarness(t)
+	// Two licenses on the same server. Attacker holds victim's token.
+	victim := h.createLicenseFor("victim-1")
+	attacker := h.createLicenseFor("attacker-1")
+
+	_, env := h.post("/api/licensing/v1/activate", map[string]any{
+		"license_key": attacker.LicenseKey, "fingerprint": "fp-attacker",
+	})
+	attackerToken := env.Data.(map[string]any)["token"].(string)
+
+	// Swap license_id to point at the victim. Signature stays the same —
+	// DecodeUnverified would happily return the forged claims.
+	forged := tamperPayload(t, attackerToken, "license_id", victim.ID)
+
+	rec, env2 := h.post("/api/licensing/v1/refresh", map[string]any{"token": forged})
+	if rec.Code == 200 {
+		t.Fatalf("AUTH BYPASS: refresh accepted tampered token, body=%s", rec.Body.String())
+	}
+	if env2.Error == nil || env2.Error.Code != "TokenSignatureInvalid" {
+		t.Fatalf("expected TokenSignatureInvalid, got code=%d err=%+v", rec.Code, env2.Error)
+	}
+}
+
+func TestClientHandler_Heartbeat_TamperedPayload_Rejects(t *testing.T) {
+	h := newHarness(t)
+	victim := h.createLicenseFor("victim-h")
+	attacker := h.createLicenseFor("attacker-h")
+
+	// Give victim an active usage so a successful heartbeat would keep the seat warm.
+	_, _ = h.post("/api/licensing/v1/activate", map[string]any{
+		"license_key": victim.LicenseKey, "fingerprint": "fp-victim",
+	})
+	_, env := h.post("/api/licensing/v1/activate", map[string]any{
+		"license_key": attacker.LicenseKey, "fingerprint": "fp-attacker",
+	})
+	attackerToken := env.Data.(map[string]any)["token"].(string)
+
+	forged := tamperPayload(t, attackerToken, "license_id", victim.ID)
+
+	rec, env2 := h.post("/api/licensing/v1/heartbeat", map[string]any{"token": forged})
+	if rec.Code == 200 {
+		t.Fatalf("AUTH BYPASS: heartbeat accepted tampered token")
+	}
+	if env2.Error == nil || env2.Error.Code != "TokenSignatureInvalid" {
+		t.Fatalf("expected TokenSignatureInvalid, got %+v", env2.Error)
+	}
+}
+
+func TestClientHandler_Deactivate_TamperedPayload_Rejects(t *testing.T) {
+	h := newHarness(t)
+	victim := h.createLicenseFor("victim-d")
+	attacker := h.createLicenseFor("attacker-d")
+
+	// Victim activates: real, signed usage the attacker wants to revoke.
+	_, venv := h.post("/api/licensing/v1/activate", map[string]any{
+		"license_key": victim.LicenseKey, "fingerprint": "fp-v",
+	})
+	victimToken := venv.Data.(map[string]any)["token"].(string)
+	victimParts, err := lic.DecodeUnverified(victimToken)
+	if err != nil {
+		t.Fatalf("decode victim: %v", err)
+	}
+	victimUsageID := victimParts.Payload["usage_id"].(string)
+
+	// Attacker gets a real signed token and rewrites usage_id → victim's.
+	_, aenv := h.post("/api/licensing/v1/activate", map[string]any{
+		"license_key": attacker.LicenseKey, "fingerprint": "fp-a",
+	})
+	attackerToken := aenv.Data.(map[string]any)["token"].(string)
+	forged := tamperPayload(t, attackerToken, "usage_id", victimUsageID)
+
+	rec, env2 := h.post("/api/licensing/v1/deactivate", map[string]any{
+		"token": forged, "reason": "user_requested",
+	})
+	if rec.Code < 400 {
+		t.Fatalf("AUTH BYPASS: deactivate accepted tampered token (status=%d)", rec.Code)
+	}
+	if env2.Error == nil || env2.Error.Code != "TokenSignatureInvalid" {
+		t.Fatalf("expected TokenSignatureInvalid, got %+v", env2.Error)
+	}
+
+	// Victim's usage must still be active.
+	u, err := h.storage.GetUsage(victimUsageID)
+	if err != nil {
+		t.Fatalf("GetUsage: %v", err)
+	}
+	if u == nil || u.Status != lic.UsageStatusActive {
+		t.Fatalf("attacker succeeded: victim usage status=%v", u)
+	}
+}
+
+func TestClientHandler_Heartbeat_UnknownKid_Rejects(t *testing.T) {
+	h := newHarness(t)
+	l := h.createLicense("LK-UK")
+	_, env := h.post("/api/licensing/v1/activate", map[string]any{
+		"license_key": l.LicenseKey, "fingerprint": "fp-uk",
+	})
+	token := env.Data.(map[string]any)["token"].(string)
+
+	// Tamper the header kid to a value the server has never seen.
+	parts := strings.Split(token, ".")
+	headerB, err := lic.Base64urlDecode(parts[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var hdr map[string]any
+	if err := json.Unmarshal(headerB, &hdr); err != nil {
+		t.Fatal(err)
+	}
+	hdr["kid"] = "sig-deadbeefcafe"
+	b, _ := json.Marshal(hdr)
+	parts[1] = lic.Base64urlEncode(b)
+	forged := strings.Join(parts, ".")
+
+	rec, env2 := h.post("/api/licensing/v1/heartbeat", map[string]any{"token": forged})
+	if rec.Code == 200 {
+		t.Fatalf("AUTH BYPASS: unknown-kid token accepted")
+	}
+	if env2.Error == nil || env2.Error.Code != "UnknownKid" {
+		t.Fatalf("expected UnknownKid, got %+v", env2.Error)
 	}
 }
