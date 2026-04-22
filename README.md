@@ -1,5 +1,10 @@
 # licensing
 
+[![npm version](https://img.shields.io/npm/v/@anorebel/licensing?label=npm&logo=npm&color=cb3837)](https://www.npmjs.com/package/@anorebel/licensing)
+[![JSR version](https://jsr.io/badges/@anorebel/licensing)](https://jsr.io/@anorebel/licensing)
+[![Go module version](https://img.shields.io/github/v/tag/AnoRebel/licensing?label=pkg.go.dev&logo=go&color=00add8&sort=semver)](https://pkg.go.dev/github.com/AnoRebel/licensing)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+
 An offline-capable software licensing toolkit. Issue signed license tokens,
 activate them against a device fingerprint, and verify them without a network
 round-trip — from either TypeScript or Go, with a shared token format and a
