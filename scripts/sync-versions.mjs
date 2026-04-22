@@ -11,7 +11,7 @@
 //   sync-versions.mjs           → rewrites files to match VERSION
 //   sync-versions.mjs --check   → exits 1 if any file drifts (CI gate)
 
-import { glob, readFile, writeFile } from 'node:fs/promises';
+import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -43,33 +43,25 @@ async function rewriteJson(path, mutate) {
   wrote.push(path);
 }
 
-const patterns = [
+// Explicit file list avoids depending on `fs.glob` (Node >= 22). Wildcard
+// positions are resolved with `readdir`, which works on every supported Node.
+const manifestFiles = [
   'typescript/package.json',
   'typescript/jsr.json',
   'admin/package.json',
   'examples/ts/package.json',
-  'tools/*/package.json',
 ];
+const toolsDir = join(repoRoot, 'tools');
+const toolEntries = await readdir(toolsDir, { withFileTypes: true }).catch(() => []);
+for (const entry of toolEntries) {
+  if (entry.isDirectory()) manifestFiles.push(`tools/${entry.name}/package.json`);
+}
 
-for (const pattern of patterns) {
-  for await (const entry of glob(pattern, { cwd: repoRoot })) {
-    const full = join(repoRoot, entry);
-    await rewriteJson(full, (obj) => {
-      if (obj.version !== undefined) obj.version = version;
-      for (const field of ['dependencies', 'devDependencies', 'peerDependencies']) {
-        if (!obj[field]) continue;
-        for (const [name, spec] of Object.entries(obj[field])) {
-          if (
-            typeof spec === 'string' &&
-            spec.startsWith('workspace:') &&
-            name.startsWith('@licensing/')
-          ) {
-            // keep workspace:* — resolved at publish time
-          }
-        }
-      }
-    });
-  }
+for (const file of manifestFiles) {
+  const full = join(repoRoot, file);
+  await rewriteJson(full, (obj) => {
+    if (obj.version !== undefined) obj.version = version;
+  });
 }
 
 // Go: single-constant file, generated so pkg.go.dev surfaces the version.
