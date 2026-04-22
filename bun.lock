@@ -22,7 +22,7 @@
         "@formkit/auto-animate": "^0.9.0",
         "@nuxt/fonts": "0.14.0",
         "@nuxtjs/color-mode": "4.0.0",
-        "@tanstack/vue-form": "^1.29.0",
+        "@tanstack/vue-form": "^1.29.1",
         "@tanstack/vue-table": "^8.21.3",
         "@vueuse/core": "14.2.1",
         "@vueuse/motion": "3.0.3",
@@ -759,7 +759,7 @@
 
     "@tanstack/devtools-event-client": ["@tanstack/devtools-event-client@0.4.3", "", { "bin": { "intent": "bin/intent.js" } }, "sha512-OZI6QyULw0FI0wjgmeYzCIfbgPsOEzwJtCpa69XrfLMtNXLGnz3d/dIabk7frg0TmHo+Ah49w5I4KC7Tufwsvw=="],
 
-    "@tanstack/form-core": ["@tanstack/form-core@1.29.0", "", { "dependencies": { "@tanstack/devtools-event-client": "^0.4.1", "@tanstack/pacer-lite": "^0.1.1", "@tanstack/store": "^0.9.1" } }, "sha512-uyeKEdJBfbj0bkBSwvSYVRtWLOaXvfNX3CeVw1HqGOXVLxpBBGAqWdYLc+UoX/9xcoFwFXrjR9QqMPzvwm2yyQ=="],
+    "@tanstack/form-core": ["@tanstack/form-core@1.29.1", "", { "dependencies": { "@tanstack/devtools-event-client": "^0.4.1", "@tanstack/pacer-lite": "^0.1.1", "@tanstack/store": "^0.9.1" } }, "sha512-NIYPO36eEu7nSWvMpbFDQaBWyVtnH/C8fsZ3/XpJUT4uOWgmxsiUvHGbTbDNIQTXAKIkhwEl0sUrqBNn2SfUnw=="],
 
     "@tanstack/pacer-lite": ["@tanstack/pacer-lite@0.1.1", "", {}, "sha512-y/xtNPNt/YeyoVxE/JCx+T7yjEzpezmbb+toK8DDD1P4m7Kzs5YR956+7OKexG3f8aXgC3rLZl7b1V+yNUSy5w=="],
 
@@ -769,7 +769,7 @@
 
     "@tanstack/virtual-core": ["@tanstack/virtual-core@3.14.0", "", {}, "sha512-JLANqGy/D6k4Ujmh8Tr25lGimuOXNiaVyXaCAZS0W+1390sADdGnyUdSWNIfd49gebtIxGMij4IktRVzrdr12Q=="],
 
-    "@tanstack/vue-form": ["@tanstack/vue-form@1.29.0", "", { "dependencies": { "@tanstack/form-core": "1.29.0", "@tanstack/vue-store": "^0.9.1" }, "peerDependencies": { "vue": "^3.4.0" } }, "sha512-BBZFPQ0vlBHE3vBAHt8XdyVSVOLzZ1tgyjb7InJ4tAz+Sb/ePtwwIGvSUv6duuA9Nuusu+BX2O7lu5g4cvfLvg=="],
+    "@tanstack/vue-form": ["@tanstack/vue-form@1.29.1", "", { "dependencies": { "@tanstack/form-core": "1.29.1", "@tanstack/vue-store": "^0.9.1" }, "peerDependencies": { "vue": "^3.4.0" } }, "sha512-r21z+jmX1aqoEk2yCRH5smS6jtEUsCIYegRxt1JoW8Ecywl9M8+U522qaDoXpo+nqHXhPwyi2CCHfpNppzzcgg=="],
 
     "@tanstack/vue-store": ["@tanstack/vue-store@0.9.3", "", { "dependencies": { "@tanstack/store": "0.9.3", "vue-demi": "^0.14.10" }, "peerDependencies": { "@vue/composition-api": "^1.2.1", "vue": "^2.5.0 || ^3.0.0" }, "optionalPeers": ["@vue/composition-api"] }, "sha512-YZb5SAR3f2kLt58Ip6gig2+z8vRAfSkJK30Bq7enZ7cG4epyygmRsbrrDMxvmoYSJu33CY5uJ6MvI74KGP0ZvQ=="],
 
