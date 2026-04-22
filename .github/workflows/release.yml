@@ -116,6 +116,13 @@ jobs:
     name: Publish to npm (@anorebel/licensing)
     needs: verify
     runs-on: ubuntu-latest
+    # Explicit job-level perms: npm trusted publishing needs `id-token: write`
+    # to mint the OIDC token the registry verifies. Declared here (and not
+    # just top-level) so the job stays correct even if the top-level block
+    # is tightened by org policy.
+    permissions:
+      contents: read
+      id-token: write
     # `environment: npm` is required by npm's trusted-publisher binding
     # — the setting on npmjs.com names this exact environment, and
     # GitHub OIDC tokens only include the `environment` claim when the
@@ -179,6 +186,13 @@ jobs:
     name: Publish to jsr.io (@anorebel/licensing)
     needs: verify
     runs-on: ubuntu-latest
+    # Explicit job-level perms: JSR's OIDC publish requires `id-token: write`
+    # to mint the GitHub Actions OIDC token that jsr.io verifies against the
+    # package's linked repo. Declared here (and not just top-level) so the
+    # job stays correct even if the top-level block is tightened later.
+    permissions:
+      contents: read
+      id-token: write
     environment:
       name: jsr
       url: https://jsr.io/@anorebel/licensing
