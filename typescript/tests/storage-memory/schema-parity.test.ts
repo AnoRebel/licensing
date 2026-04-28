@@ -68,6 +68,7 @@ const SECTION_TO_ENTITY: Record<string, EntityName> = {
   LicenseUsage: 'LicenseUsage',
   LicenseKey: 'LicenseKey',
   AuditLog: 'AuditLog',
+  TrialIssuance: 'TrialIssuance',
 };
 
 function parseType(raw: string): SchemaColumn['type'] {
@@ -79,6 +80,7 @@ function parseType(raw: string): SchemaColumn['type'] {
   if (t.startsWith('json')) return 'json';
   if (t === 'enum') return 'enum';
   if (t === 'text') return 'text';
+  if (t === 'bool' || t === 'boolean') return 'bool';
   throw new Error(`unknown type category: ${raw}`);
 }
 
@@ -213,6 +215,7 @@ describe('schema parity — memory adapter vs fixtures/schema/entities.md', () =
       'LicenseScope',
       'LicenseTemplate',
       'LicenseUsage',
+      'TrialIssuance',
     ]);
   });
 

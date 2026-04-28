@@ -51,6 +51,8 @@ export interface License {
   readonly license_key: string;
   readonly status: LicenseStatus;
   readonly max_usages: number;
+  /** Mirrors the `trial: true` claim on trial-issued tokens. Added in v0002. */
+  readonly is_trial: boolean;
   readonly activated_at: Instant | null;
   readonly expires_at: Instant | null;
   readonly grace_until: Instant | null;
@@ -71,9 +73,13 @@ export interface LicenseScope {
 export interface LicenseTemplate {
   readonly id: UUIDv7;
   readonly scope_id: UUIDv7 | null;
+  /** Self-FK enabling template inheritance. Added in v0002. */
+  readonly parent_id: UUIDv7 | null;
   readonly name: string;
   readonly max_usages: number;
   readonly trial_duration_sec: number;
+  /** Minimum gap between successive trials of this template against the same fingerprint. Added in v0002. */
+  readonly trial_cooldown_sec: number | null;
   readonly grace_duration_sec: number;
   readonly force_online_after_sec: number | null;
   readonly entitlements: Readonly<Record<string, JSONValue>>;

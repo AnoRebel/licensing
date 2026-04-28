@@ -114,6 +114,12 @@ function toJsonNullable(v: Readonly<Record<string, JSONValue>> | null | undefine
 }
 
 function mapLicense(r: Record<string, unknown>): License {
+  // SQLite stores BOOL as 0/1 INTEGER. Treat any non-zero numeric or `true` as true.
+  const isTrialRaw = r.is_trial;
+  const is_trial =
+    isTrialRaw === true ||
+    isTrialRaw === 1 ||
+    (typeof isTrialRaw === 'bigint' && isTrialRaw === 1n);
   return {
     id: r.id as UUIDv7,
     scope_id: (r.scope_id as UUIDv7 | null) ?? null,
@@ -123,6 +129,7 @@ function mapLicense(r: Record<string, unknown>): License {
     license_key: r.license_key as string,
     status: r.status as License['status'],
     max_usages: r.max_usages as number,
+    is_trial,
     activated_at: (r.activated_at as string | null) ?? null,
     expires_at: (r.expires_at as string | null) ?? null,
     grace_until: (r.grace_until as string | null) ?? null,
@@ -147,9 +154,11 @@ function mapTemplate(r: Record<string, unknown>): LicenseTemplate {
   return {
     id: r.id as UUIDv7,
     scope_id: (r.scope_id as UUIDv7 | null) ?? null,
+    parent_id: (r.parent_id as UUIDv7 | null) ?? null,
     name: r.name as string,
     max_usages: r.max_usages as number,
     trial_duration_sec: r.trial_duration_sec as number,
+    trial_cooldown_sec: (r.trial_cooldown_sec as number | null) ?? null,
     grace_duration_sec: r.grace_duration_sec as number,
     force_online_after_sec: (r.force_online_after_sec as number | null) ?? null,
     entitlements: parseJson(r.entitlements),

@@ -211,8 +211,8 @@ export interface AuditLogFilter {
 export interface SchemaColumn {
   readonly name: string;
   /** Type category — not the adapter-native SQL type. One of:
-   *  `uuid`, `string`, `int`, `timestamp`, `json`, `enum`, `text`. */
-  readonly type: 'uuid' | 'string' | 'int' | 'timestamp' | 'json' | 'enum' | 'text';
+   *  `uuid`, `string`, `int`, `timestamp`, `json`, `enum`, `text`, `bool`. */
+  readonly type: 'uuid' | 'string' | 'int' | 'timestamp' | 'json' | 'enum' | 'text' | 'bool';
   readonly nullable: boolean;
   /** Member of a unique constraint. For composite uniques, the constraint
    *  name(s) this column participates in. Empty for non-unique columns. */
@@ -226,7 +226,8 @@ export interface SchemaEntity {
     | 'LicenseTemplate'
     | 'LicenseUsage'
     | 'LicenseKey'
-    | 'AuditLog';
+    | 'AuditLog'
+    | 'TrialIssuance';
   readonly columns: readonly SchemaColumn[];
 }
 

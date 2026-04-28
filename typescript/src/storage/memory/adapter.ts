@@ -155,6 +155,9 @@ export class MemoryStorage implements Storage {
         license_key: input.license_key,
         status: input.status,
         max_usages: input.max_usages,
+        // is_trial defaults to false; LicenseInput will be extended to accept
+        // it in group 2 alongside the trial-issuance feature.
+        is_trial: (input as { is_trial?: boolean }).is_trial ?? false,
         activated_at: input.activated_at,
         expires_at: input.expires_at,
         grace_until: input.grace_until,
@@ -276,12 +279,21 @@ export class MemoryStorage implements Storage {
         }
       }
       const now = this.nowIso();
+      // parent_id and trial_cooldown_sec are accepted only when the
+      // LicenseTemplateInput is widened in group 2; for now they default to
+      // null so the schema description matches the storage shape.
+      const inputAny = input as LicenseTemplateInput & {
+        parent_id?: UUIDv7 | null;
+        trial_cooldown_sec?: number | null;
+      };
       const row: LicenseTemplate = {
         id: newUuidV7(this.clock),
         scope_id: input.scope_id,
+        parent_id: inputAny.parent_id ?? null,
         name: input.name,
         max_usages: input.max_usages,
         trial_duration_sec: input.trial_duration_sec,
+        trial_cooldown_sec: inputAny.trial_cooldown_sec ?? null,
         grace_duration_sec: input.grace_duration_sec,
         force_online_after_sec: input.force_online_after_sec,
         entitlements: input.entitlements,

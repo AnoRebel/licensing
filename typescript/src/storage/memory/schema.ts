@@ -32,6 +32,7 @@ export const MEMORY_SCHEMA: SchemaDescription = [
       { name: 'license_key', type: 'string', nullable: false, unique: ['license_key'] },
       { name: 'status', type: 'enum', nullable: false, unique: [] },
       { name: 'max_usages', type: 'int', nullable: false, unique: [] },
+      { name: 'is_trial', type: 'bool', nullable: false, unique: [] },
       { name: 'activated_at', type: 'timestamp', nullable: true, unique: [] },
       { name: 'expires_at', type: 'timestamp', nullable: true, unique: [] },
       { name: 'grace_until', type: 'timestamp', nullable: true, unique: [] },
@@ -56,9 +57,11 @@ export const MEMORY_SCHEMA: SchemaDescription = [
     columns: [
       { name: 'id', type: 'uuid', nullable: false, unique: ['pk'] },
       { name: 'scope_id', type: 'uuid', nullable: true, unique: ['scope_name'] },
+      { name: 'parent_id', type: 'uuid', nullable: true, unique: [] },
       { name: 'name', type: 'string', nullable: false, unique: ['scope_name'] },
       { name: 'max_usages', type: 'int', nullable: false, unique: [] },
       { name: 'trial_duration_sec', type: 'int', nullable: false, unique: [] },
+      { name: 'trial_cooldown_sec', type: 'int', nullable: true, unique: [] },
       { name: 'grace_duration_sec', type: 'int', nullable: false, unique: [] },
       { name: 'force_online_after_sec', type: 'int', nullable: true, unique: [] },
       { name: 'entitlements', type: 'json', nullable: false, unique: [] },
@@ -117,6 +120,25 @@ export const MEMORY_SCHEMA: SchemaDescription = [
       { name: 'prior_state', type: 'json', nullable: true, unique: [] },
       { name: 'new_state', type: 'json', nullable: true, unique: [] },
       { name: 'occurred_at', type: 'timestamp', nullable: false, unique: [] },
+    ],
+  },
+  {
+    name: 'TrialIssuance',
+    columns: [
+      { name: 'id', type: 'uuid', nullable: false, unique: ['pk'] },
+      // template_id and fingerprint_hash share two split partial uniques —
+      // `(template_id, fingerprint_hash) WHERE template_id IS NOT NULL` and
+      // `(fingerprint_hash) WHERE template_id IS NULL`. Both reduce to "this
+      // pair is unique against the documented composite group", so they share
+      // a single constraint name in the adapter's report.
+      { name: 'template_id', type: 'uuid', nullable: true, unique: ['template_fingerprint'] },
+      {
+        name: 'fingerprint_hash',
+        type: 'string',
+        nullable: false,
+        unique: ['template_fingerprint'],
+      },
+      { name: 'issued_at', type: 'timestamp', nullable: false, unique: [] },
     ],
   },
 ];
