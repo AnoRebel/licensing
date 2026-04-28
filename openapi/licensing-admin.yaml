@@ -835,6 +835,7 @@ components:
           license_key,
           status,
           max_usages,
+          is_trial,
           meta,
           created_at,
           updated_at,
@@ -848,6 +849,8 @@ components:
         license_key: { type: string }
         status: { $ref: '#/components/schemas/LicenseStatus' }
         max_usages: { type: integer, minimum: 1 }
+        # Mirrors the `trial: true` claim on trial-issued tokens. Added in v0002.
+        is_trial: { type: boolean }
         active_usages: { type: integer, minimum: 0 }
         activated_at: { type: string, format: date-time, nullable: true }
         expires_at: { type: string, format: date-time, nullable: true }
@@ -889,9 +892,13 @@ components:
       properties:
         id: { type: string, format: uuid }
         scope_id: { type: string, format: uuid, nullable: true }
+        # Self-FK enabling template inheritance. Added in v0002.
+        parent_id: { type: string, format: uuid, nullable: true }
         name: { type: string, maxLength: 128 }
         max_usages: { type: integer, minimum: 1 }
         trial_duration_sec: { type: integer, minimum: 0 }
+        # Minimum gap between successive trials of this template against the same fingerprint. Added in v0002.
+        trial_cooldown_sec: { type: integer, minimum: 0, nullable: true }
         grace_duration_sec: { type: integer, minimum: 0 }
         force_online_after_sec: { type: integer, minimum: 0, nullable: true }
         entitlements: { type: object, additionalProperties: true }

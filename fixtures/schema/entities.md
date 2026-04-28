@@ -32,6 +32,7 @@ single-column or composite.
 | `license_key`     | string               | no        | yes (single)     | Crockford Base32, `LIC-` prefix; case-insensitive compare; stored canonicalized uppercase. |
 | `status`          | enum                 | no        | —                | One of `pending`, `active`, `grace`, `expired`, `suspended`, `revoked`. |
 | `max_usages`      | int (≥ 1)            | no        | —                | Seat cap enforced by `license_usages` count.                         |
+| `is_trial`        | bool                 | no        | —                | Default `false`. Mirrors the `trial: true` claim emitted in trial tokens. Added in v0002. |
 | `activated_at`    | timestamptz          | yes       | —                | Set when status first transitions to `active`.                       |
 | `expires_at`      | timestamptz          | yes       | —                | Null = perpetual.                                                    |
 | `grace_until`     | timestamptz          | yes       | —                | MUST be `> expires_at` when both set.                                |
@@ -48,6 +49,7 @@ Uniqueness:
 Indexes (non-unique, required for performance):
 - `(scope_id, status)` — admin filter queries.
 - `(expires_at)` — expiry-tick sweeps.
+- `(licensable_type, licensable_id)` — owner-based lookups (`findByLicensable`). Added in v0002.
 
 ---
 
@@ -70,9 +72,11 @@ Indexes (non-unique, required for performance):
 | ----------------------- | -------------------- | --------- | -------- | --------------------------------------------------------------------- |
 | `id`                    | uuid v7              | no        | yes (PK) |                                                                       |
 | `scope_id`              | uuid v7              | yes       | —        | FK → `license_scopes(id)`.                                            |
+| `parent_id`             | uuid v7              | yes       | —        | FK → `license_templates(id)` ON DELETE RESTRICT. Self-referential. NULL means "no parent". A non-NULL value enables inheritance: at issue time, the resolver walks the parent chain and child-wins-deep-merges `entitlements` and `meta`. Cycles MUST be rejected at insert/update with `TemplateCycleError`. Walk depth is capped at 5 ancestors (warning logged if exceeded). Added in v0002. |
 | `name`                  | string (≤ 128 chars) | no        | —        |                                                                       |
 | `max_usages`            | int (≥ 1)            | no        | —        | Default for `License.max_usages`.                                     |
 | `trial_duration_sec`    | int (≥ 0)            | no        | —        | 0 = no trial.                                                         |
+| `trial_cooldown_sec`    | int (≥ 0)            | yes       | —        | Minimum gap between successive trials of this template against the same fingerprint. NULL = no cooldown enforced (the unique constraint on `trial_issuances` still prevents simultaneous duplicates). Added in v0002. |
 | `grace_duration_sec`    | int (≥ 0)            | no        | —        | 0 = no grace.                                                         |
 | `force_online_after_sec`| int (≥ 0)            | yes       | —        | Null = never force online; 0 = always force online.                   |
 | `entitlements`          | json object          | no        | —        | Default `{}`; copied into `License.meta.entitlements` at creation.    |
@@ -173,11 +177,39 @@ Indexes:
 
 ---
 
-## 7. Cross-adapter expectations
+## 7. TrialIssuance (added in v0002)
+
+Tracks every trial license issuance against a `(template_id, fingerprint_hash)`
+pair so the issuer can enforce the per-template trial cooldown on the same
+device. The hash uses a per-installation pepper (see `server-issued-trials`
+spec) so a leaked table cannot be reversed back to raw fingerprints.
+
+| Field              | Type                 | Nullable? | Unique?         | Notes                                                                 |
+| ------------------ | -------------------- | --------- | --------------- | --------------------------------------------------------------------- |
+| `id`               | uuid v7              | no        | yes (PK)        |                                                                       |
+| `template_id`      | uuid v7              | yes       | composite below | FK → `license_templates(id)` ON DELETE RESTRICT. NULL = trial issued without a template (deduped against the global "no template" bucket via the partial unique index `WHERE template_id IS NULL`). |
+| `fingerprint_hash` | string (64 chars)    | no        | composite below | SHA-256 hex of `(pepper \|\| canonical_fingerprint_input)`, lowercase. |
+| `issued_at`        | timestamptz          | no        | —               | Defaults to now.                                                      |
+
+Uniqueness:
+- Partial unique: `(template_id, fingerprint_hash) WHERE template_id IS NOT NULL`
+  AND `(fingerprint_hash) WHERE template_id IS NULL` — split partial indexes
+  give NULLS-NOT-DISTINCT semantics, matching the project's existing pattern
+  for `license_templates(scope_id, name)`. Adapters without partial-index
+  support emulate this with an application-level check inside the trial-
+  issuance transaction.
+
+Indexes:
+- `(issued_at)` — cleanup queries (e.g. delete trials issued more than N
+  years ago).
+
+---
+
+## 8. Cross-adapter expectations
 
 All three storage adapters SHALL:
 
-1. Represent every field in §§1–6 with the exact name, type class, and
+1. Represent every field in §§1–7 with the exact name, type class, and
    nullability listed here. "Type class" means: adapters map `uuid v7` to
    their native UUID type, `timestamptz` to their native timestamp-with-
    timezone type, `int` to a ≥ 32-bit integer, `json` / `json object` to
