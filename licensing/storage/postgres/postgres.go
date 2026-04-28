@@ -953,6 +953,8 @@ func scanLicense(rows pgx.Rows) (*lic.License, error) {
 		&r.LicenseKey, &r.Status, &r.MaxUsages,
 		&activatedAt, &expiresAt, &graceUntil,
 		&metaJSON, &createdAt, &updatedAt,
+		// v0002 column appended via ALTER TABLE.
+		&r.IsTrial,
 	)
 	if err != nil {
 		return nil, err
@@ -993,6 +995,8 @@ func scanTemplate(rows pgx.Rows) (*lic.LicenseTemplate, error) {
 		&r.MaxUsages, &r.TrialDurationSec, &r.GraceDurationSec,
 		&r.ForceOnlineAfterSec,
 		&entJSON, &metaJSON, &createdAt, &updatedAt,
+		// v0002 columns appended via ALTER TABLE.
+		&r.ParentID, &r.TrialCooldownSec,
 	)
 	if err != nil {
 		return nil, err

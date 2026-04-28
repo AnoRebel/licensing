@@ -943,6 +943,7 @@ func scanOneLicense(row *sql.Row) (*lic.License, error) {
 	var (
 		r        lic.License
 		metaJSON string
+		isTrial  int // SQLite stores BOOL as 0/1.
 	)
 	err := row.Scan(
 		&r.ID, &r.ScopeID, &r.TemplateID,
@@ -950,6 +951,7 @@ func scanOneLicense(row *sql.Row) (*lic.License, error) {
 		&r.LicenseKey, &r.Status, &r.MaxUsages,
 		&r.ActivatedAt, &r.ExpiresAt, &r.GraceUntil,
 		&metaJSON, &r.CreatedAt, &r.UpdatedAt,
+		&isTrial,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -958,6 +960,7 @@ func scanOneLicense(row *sql.Row) (*lic.License, error) {
 		return nil, err
 	}
 	r.Meta = jsonFromText(metaJSON)
+	r.IsTrial = isTrial != 0
 	return &r, nil
 }
 
@@ -965,6 +968,7 @@ func scanRowLicense(rows *sql.Rows) (*lic.License, error) {
 	var (
 		r        lic.License
 		metaJSON string
+		isTrial  int
 	)
 	err := rows.Scan(
 		&r.ID, &r.ScopeID, &r.TemplateID,
@@ -972,11 +976,13 @@ func scanRowLicense(rows *sql.Rows) (*lic.License, error) {
 		&r.LicenseKey, &r.Status, &r.MaxUsages,
 		&r.ActivatedAt, &r.ExpiresAt, &r.GraceUntil,
 		&metaJSON, &r.CreatedAt, &r.UpdatedAt,
+		&isTrial,
 	)
 	if err != nil {
 		return nil, err
 	}
 	r.Meta = jsonFromText(metaJSON)
+	r.IsTrial = isTrial != 0
 	return &r, nil
 }
 
@@ -1019,6 +1025,8 @@ func scanOneTemplate(row *sql.Row) (*lic.LicenseTemplate, error) {
 		&r.MaxUsages, &r.TrialDurationSec, &r.GraceDurationSec,
 		&r.ForceOnlineAfterSec,
 		&entJSON, &metaJSON, &r.CreatedAt, &r.UpdatedAt,
+		// v0002 columns appended via ALTER TABLE — read in the order they were added.
+		&r.ParentID, &r.TrialCooldownSec,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -1041,6 +1049,7 @@ func scanRowTemplate(rows *sql.Rows) (*lic.LicenseTemplate, error) {
 		&r.MaxUsages, &r.TrialDurationSec, &r.GraceDurationSec,
 		&r.ForceOnlineAfterSec,
 		&entJSON, &metaJSON, &r.CreatedAt, &r.UpdatedAt,
+		&r.ParentID, &r.TrialCooldownSec,
 	)
 	if err != nil {
 		return nil, err

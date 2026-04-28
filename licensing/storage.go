@@ -80,6 +80,8 @@ const (
 	SchemaColJSON      SchemaColumnType = "json"
 	SchemaColEnum      SchemaColumnType = "enum"
 	SchemaColText      SchemaColumnType = "text"
+	// SchemaColBool is the `bool` type category (added in v0002 for licenses.is_trial).
+	SchemaColBool SchemaColumnType = "bool"
 )
 
 // SchemaColumn describes one column of the canonical entity schema.
@@ -103,6 +105,8 @@ const (
 	SchemaEntLicenseUsage    SchemaEntityName = "LicenseUsage"
 	SchemaEntLicenseKey      SchemaEntityName = "LicenseKey"
 	SchemaEntAuditLog        SchemaEntityName = "AuditLog"
+	// SchemaEntTrialIssuance enumerates per-template trial dedupe rows (added in v0002).
+	SchemaEntTrialIssuance SchemaEntityName = "TrialIssuance"
 )
 
 // SchemaEntity is one table / collection in the canonical schema.

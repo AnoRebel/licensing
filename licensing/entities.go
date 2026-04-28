@@ -76,6 +76,8 @@ type License struct {
 	CreatedAt      string         `json:"created_at"`
 	UpdatedAt      string         `json:"updated_at"`
 	MaxUsages      int            `json:"max_usages"`
+	// IsTrial mirrors the `trial: true` claim on trial-issued tokens. Added in v0002.
+	IsTrial bool `json:"is_trial"`
 }
 
 // LicenseScope is a tenant / product partition. Licenses, templates, and
@@ -94,7 +96,9 @@ type LicenseScope struct {
 // is minted from it.
 type LicenseTemplate struct {
 	ScopeID             *string        `json:"scope_id"`
+	ParentID            *string        `json:"parent_id"`
 	ForceOnlineAfterSec *int           `json:"force_online_after_sec"`
+	TrialCooldownSec    *int           `json:"trial_cooldown_sec"`
 	Entitlements        map[string]any `json:"entitlements"`
 	Meta                map[string]any `json:"meta"`
 	ID                  string         `json:"id"`

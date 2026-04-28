@@ -32,6 +32,7 @@ func CanonicalSchema() SchemaDescription {
 				{Name: "license_key", Type: SchemaColString, Nullable: false, Unique: []string{"license_key"}},
 				{Name: "status", Type: SchemaColEnum, Nullable: false, Unique: []string{}},
 				{Name: "max_usages", Type: SchemaColInt, Nullable: false, Unique: []string{}},
+				{Name: "is_trial", Type: SchemaColBool, Nullable: false, Unique: []string{}},
 				{Name: "activated_at", Type: SchemaColTimestamp, Nullable: true, Unique: []string{}},
 				{Name: "expires_at", Type: SchemaColTimestamp, Nullable: true, Unique: []string{}},
 				{Name: "grace_until", Type: SchemaColTimestamp, Nullable: true, Unique: []string{}},
@@ -58,9 +59,11 @@ func CanonicalSchema() SchemaDescription {
 			Columns: []SchemaColumn{
 				{Name: "id", Type: SchemaColUUID, Nullable: false, Unique: pk},
 				{Name: "scope_id", Type: SchemaColUUID, Nullable: true, Unique: []string{"scope_name"}},
+				{Name: "parent_id", Type: SchemaColUUID, Nullable: true, Unique: []string{}},
 				{Name: "name", Type: SchemaColString, Nullable: false, Unique: []string{"scope_name"}},
 				{Name: "max_usages", Type: SchemaColInt, Nullable: false, Unique: []string{}},
 				{Name: "trial_duration_sec", Type: SchemaColInt, Nullable: false, Unique: []string{}},
+				{Name: "trial_cooldown_sec", Type: SchemaColInt, Nullable: true, Unique: []string{}},
 				{Name: "grace_duration_sec", Type: SchemaColInt, Nullable: false, Unique: []string{}},
 				{Name: "force_online_after_sec", Type: SchemaColInt, Nullable: true, Unique: []string{}},
 				{Name: "entitlements", Type: SchemaColJSON, Nullable: false, Unique: []string{}},
@@ -117,6 +120,21 @@ func CanonicalSchema() SchemaDescription {
 				{Name: "prior_state", Type: SchemaColJSON, Nullable: true, Unique: []string{}},
 				{Name: "new_state", Type: SchemaColJSON, Nullable: true, Unique: []string{}},
 				{Name: "occurred_at", Type: SchemaColTimestamp, Nullable: false, Unique: []string{}},
+			},
+		},
+		// ---------- TrialIssuance ----------
+		{
+			Name: SchemaEntTrialIssuance,
+			Columns: []SchemaColumn{
+				{Name: "id", Type: SchemaColUUID, Nullable: false, Unique: pk},
+				// template_id and fingerprint_hash share two split partial uniques —
+				// `(template_id, fingerprint_hash) WHERE template_id IS NOT NULL` and
+				// `(fingerprint_hash) WHERE template_id IS NULL`. Both reduce to "this
+				// pair is unique against the documented composite group", so they share
+				// a single constraint name in the adapter's report.
+				{Name: "template_id", Type: SchemaColUUID, Nullable: true, Unique: []string{"template_fingerprint"}},
+				{Name: "fingerprint_hash", Type: SchemaColString, Nullable: false, Unique: []string{"template_fingerprint"}},
+				{Name: "issued_at", Type: SchemaColTimestamp, Nullable: false, Unique: []string{}},
 			},
 		},
 	}
