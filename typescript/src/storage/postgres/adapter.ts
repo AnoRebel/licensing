@@ -67,6 +67,9 @@ import type {
   PageRequest,
   Storage,
   StorageTx,
+  TrialIssuance,
+  TrialIssuanceInput,
+  TrialIssuanceLookup,
   UUIDv7,
 } from '../../index.ts';
 import { errors, isoFromMs, newUuidV7, type SchemaDescription, systemClock } from '../../index.ts';
@@ -211,6 +214,15 @@ function mapKey(r: Record<string, unknown>): LicenseKey {
     meta: toJsonRecord(r.meta),
     created_at: toIso(r.created_at as Date) as string,
     updated_at: toIso(r.updated_at as Date) as string,
+  };
+}
+
+function mapTrialIssuance(r: Record<string, unknown>): TrialIssuance {
+  return {
+    id: r.id as UUIDv7,
+    template_id: (r.template_id as UUIDv7 | null) ?? null,
+    fingerprint_hash: r.fingerprint_hash as string,
+    issued_at: toIso(r.issued_at as Date) as string,
   };
 }
 
@@ -762,23 +774,50 @@ export class PostgresStorage implements Storage {
   async listAudit(filter: AuditLogFilter, page: PageRequest): Promise<Page<AuditLogEntry>> {
     const where: string[] = ['1=1'];
     const params: unknown[] = [];
+    let fromClause = 'audit_logs a';
     if (filter.license_id !== undefined) {
-      if (filter.license_id === null) where.push('license_id IS NULL');
+      if (filter.license_id === null) where.push('a.license_id IS NULL');
       else {
         params.push(filter.license_id);
-        where.push(`license_id = $${params.length}`);
+        where.push(`a.license_id = $${params.length}`);
       }
     }
     if (filter.scope_id !== undefined) {
-      if (filter.scope_id === null) where.push('scope_id IS NULL');
+      if (filter.scope_id === null) where.push('a.scope_id IS NULL');
       else {
         params.push(filter.scope_id);
-        where.push(`scope_id = $${params.length}`);
+        where.push(`a.scope_id = $${params.length}`);
       }
     }
     if (filter.event !== undefined) {
-      params.push(filter.event);
-      where.push(`event = $${params.length}`);
+      const events = Array.isArray(filter.event) ? filter.event : [filter.event];
+      if (events.length === 0) return { items: [], cursor: null };
+      const placeholders = events.map((_, i) => `$${params.length + i + 1}`).join(',');
+      where.push(`a.event IN (${placeholders})`);
+      for (const e of events) params.push(e);
+    }
+    if (filter.actor !== undefined) {
+      params.push(filter.actor);
+      where.push(`a.actor = $${params.length}`);
+    }
+    if (filter.since !== undefined) {
+      params.push(filter.since);
+      where.push(`a.occurred_at >= $${params.length}`);
+    }
+    if (filter.until !== undefined) {
+      params.push(filter.until);
+      where.push(`a.occurred_at < $${params.length}`);
+    }
+    if (filter.licensable_type !== undefined || filter.licensable_id !== undefined) {
+      fromClause = 'audit_logs a INNER JOIN licenses l ON l.id = a.license_id';
+      if (filter.licensable_type !== undefined) {
+        params.push(filter.licensable_type);
+        where.push(`l.licensable_type = $${params.length}`);
+      }
+      if (filter.licensable_id !== undefined) {
+        params.push(filter.licensable_id);
+        where.push(`l.licensable_id = $${params.length}`);
+      }
     }
     const limit = Math.max(1, Math.min(page.limit, 500));
     const cursor = decodeCursor(page.cursor);
@@ -786,12 +825,12 @@ export class PostgresStorage implements Storage {
     const cursorParams: unknown[] = [];
     if (cursor) {
       cursorParams.push(cursor.createdAt, cursor.id);
-      cursorClause = ` AND (occurred_at, id) < ($${params.length + 1}, $${params.length + 2})`;
+      cursorClause = ` AND (a.occurred_at, a.id) < ($${params.length + 1}, $${params.length + 2})`;
     }
     const res = await this.#q.query<Record<string, unknown>>(
-      `SELECT * FROM audit_logs
+      `SELECT a.* FROM ${fromClause}
        WHERE ${where.join(' AND ')}${cursorClause}
-       ORDER BY occurred_at DESC, id DESC
+       ORDER BY a.occurred_at DESC, a.id DESC
        LIMIT ${limit + 1}`,
       [...params, ...cursorParams],
     );
@@ -803,6 +842,39 @@ export class PostgresStorage implements Storage {
       items,
       cursor: hasMore && last ? encodeCursor({ createdAt: last.occurred_at, id: last.id }) : null,
     };
+  }
+
+  // ---------- TrialIssuances (added in v0002) ----------
+
+  async recordTrialIssuance(input: TrialIssuanceInput): Promise<TrialIssuance> {
+    const id = newUuidV7(this.#clock);
+    try {
+      const res = await this.#q.query<Record<string, unknown>>(
+        `INSERT INTO trial_issuances (id, template_id, fingerprint_hash)
+         VALUES ($1,$2,$3) RETURNING *`,
+        [id, input.template_id, input.fingerprint_hash],
+      );
+      return mapTrialIssuance(res.rows[0] as Record<string, unknown>);
+    } catch (e) {
+      mapPgError(e);
+    }
+  }
+
+  async findTrialIssuance(query: TrialIssuanceLookup): Promise<TrialIssuance | null> {
+    const sql =
+      query.template_id === null
+        ? 'SELECT * FROM trial_issuances WHERE template_id IS NULL AND fingerprint_hash = $1 ORDER BY issued_at DESC LIMIT 1'
+        : 'SELECT * FROM trial_issuances WHERE template_id = $1 AND fingerprint_hash = $2 ORDER BY issued_at DESC LIMIT 1';
+    const params: unknown[] =
+      query.template_id === null
+        ? [query.fingerprint_hash]
+        : [query.template_id, query.fingerprint_hash];
+    const res = await this.#q.query<Record<string, unknown>>(sql, params);
+    return res.rows[0] ? mapTrialIssuance(res.rows[0]) : null;
+  }
+
+  async deleteTrialIssuance(id: UUIDv7): Promise<void> {
+    await this.#q.query('DELETE FROM trial_issuances WHERE id = $1', [id]);
   }
 
   // ---------- Transactions & schema ----------

@@ -128,3 +128,17 @@ export interface AuditLogEntry {
   readonly new_state: Readonly<Record<string, JSONValue>> | null;
   readonly occurred_at: Instant;
 }
+
+/**
+ * Per-template trial deduplication record. Each row pins a single
+ * `(template_id, fingerprint_hash)` pair — combined with the per-template
+ * `trial_cooldown_sec`, lets the issuer reject re-trials within the
+ * cooldown window. Added in v0002.
+ */
+export interface TrialIssuance {
+  readonly id: UUIDv7;
+  readonly template_id: UUIDv7 | null;
+  /** SHA-256 hex of `pepper || canonical_fingerprint_input`, lowercase. */
+  readonly fingerprint_hash: string;
+  readonly issued_at: Instant;
+}

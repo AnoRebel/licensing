@@ -1,0 +1,6 @@
+{
+  "_doc": "Canonical trial-fingerprint hash vector. The hash is sha256_hex(pepper || fingerprint_input), lowercase. Both ports MUST produce this exact hash for these inputs — interop tests assert byte-equality so a TS-issued trial can be deduped against a Go-issued trial sharing the same template + raw fingerprint.",
+  "pepper": "pepper-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "fingerprint_input": "fingerprint:User:u1",
+  "fingerprint_hash": "3608824937be760ec1791b32e668565882d6515c937d14b66360c0336b2e463f"
+}

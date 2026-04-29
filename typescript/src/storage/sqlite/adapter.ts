@@ -70,6 +70,9 @@ import type {
   PageRequest,
   Storage,
   StorageTx,
+  TrialIssuance,
+  TrialIssuanceInput,
+  TrialIssuanceLookup,
   UUIDv7,
 } from '../../index.ts';
 import { errors, isoFromMs, newUuidV7, type SchemaDescription, systemClock } from '../../index.ts';
@@ -237,6 +240,15 @@ function mapAudit(r: Record<string, unknown>): AuditLogEntry {
     prior_state: parseJsonNullable(r.prior_state),
     new_state: parseJsonNullable(r.new_state),
     occurred_at: r.occurred_at as string,
+  };
+}
+
+function mapTrialIssuance(r: Record<string, unknown>): TrialIssuance {
+  return {
+    id: r.id as UUIDv7,
+    template_id: (r.template_id as UUIDv7 | null) ?? null,
+    fingerprint_hash: r.fingerprint_hash as string,
+    issued_at: r.issued_at as string,
   };
 }
 
@@ -825,37 +837,67 @@ export class SqliteStorage implements Storage {
   async listAudit(filter: AuditLogFilter, page: PageRequest): Promise<Page<AuditLogEntry>> {
     const where: string[] = ['1=1'];
     const params: unknown[] = [];
+    let fromClause = 'audit_logs a';
     if (filter.license_id !== undefined) {
-      if (filter.license_id === null) where.push('license_id IS NULL');
+      if (filter.license_id === null) where.push('a.license_id IS NULL');
       else {
-        where.push('license_id = ?');
+        where.push('a.license_id = ?');
         params.push(filter.license_id);
       }
     }
     if (filter.scope_id !== undefined) {
-      if (filter.scope_id === null) where.push('scope_id IS NULL');
+      if (filter.scope_id === null) where.push('a.scope_id IS NULL');
       else {
-        where.push('scope_id = ?');
+        where.push('a.scope_id = ?');
         params.push(filter.scope_id);
       }
     }
     if (filter.event !== undefined) {
-      where.push('event = ?');
-      params.push(filter.event);
+      const events = Array.isArray(filter.event) ? filter.event : [filter.event];
+      if (events.length === 0) {
+        // No events match → return empty.
+        return { items: [], cursor: null };
+      }
+      where.push(`a.event IN (${events.map(() => '?').join(',')})`);
+      for (const e of events) params.push(e);
+    }
+    if (filter.actor !== undefined) {
+      where.push('a.actor = ?');
+      params.push(filter.actor);
+    }
+    if (filter.since !== undefined) {
+      where.push('a.occurred_at >= ?');
+      params.push(filter.since);
+    }
+    if (filter.until !== undefined) {
+      where.push('a.occurred_at < ?');
+      params.push(filter.until);
+    }
+    if (filter.licensable_type !== undefined || filter.licensable_id !== undefined) {
+      // Inner join via licenses; uses (licensable_type, licensable_id) idx.
+      fromClause = 'audit_logs a INNER JOIN licenses l ON l.id = a.license_id';
+      if (filter.licensable_type !== undefined) {
+        where.push('l.licensable_type = ?');
+        params.push(filter.licensable_type);
+      }
+      if (filter.licensable_id !== undefined) {
+        where.push('l.licensable_id = ?');
+        params.push(filter.licensable_id);
+      }
     }
     const limit = Math.max(1, Math.min(page.limit, 500));
     const cursor = decodeCursor(page.cursor);
     let cursorClause = '';
     const cursorParams: unknown[] = [];
     if (cursor) {
-      cursorClause = ` AND (occurred_at, id) < (?, ?)`;
+      cursorClause = ` AND (a.occurred_at, a.id) < (?, ?)`;
       cursorParams.push(cursor.createdAt, cursor.id);
     }
     const rows = this.#db
       .query(
-        `SELECT * FROM audit_logs
+        `SELECT a.* FROM ${fromClause}
          WHERE ${where.join(' AND ')}${cursorClause}
-         ORDER BY occurred_at DESC, id DESC
+         ORDER BY a.occurred_at DESC, a.id DESC
          LIMIT ${limit + 1}`,
       )
       .all(...bind([...params, ...cursorParams])) as Record<string, unknown>[];
@@ -866,6 +908,49 @@ export class SqliteStorage implements Storage {
       items,
       cursor: hasMore && last ? encodeCursor({ createdAt: last.occurred_at, id: last.id }) : null,
     };
+  }
+
+  // ---------- TrialIssuances (added in v0002) ----------
+
+  async recordTrialIssuance(input: TrialIssuanceInput): Promise<TrialIssuance> {
+    const id = newUuidV7(this.#clock);
+    const now = this.#now();
+    try {
+      this.#db
+        .query(
+          `INSERT INTO trial_issuances
+             (id, template_id, fingerprint_hash, issued_at)
+           VALUES (?,?,?,?)`,
+        )
+        .run(id, input.template_id ?? null, input.fingerprint_hash, now);
+      const row = this.#db.query('SELECT * FROM trial_issuances WHERE id = ?').get(id) as Record<
+        string,
+        unknown
+      >;
+      return mapTrialIssuance(row);
+    } catch (e) {
+      mapSqliteError(e);
+    }
+  }
+
+  async findTrialIssuance(query: TrialIssuanceLookup): Promise<TrialIssuance | null> {
+    let sql: string;
+    let args: SQLQueryBindings[];
+    if (query.template_id === null) {
+      sql =
+        'SELECT * FROM trial_issuances WHERE template_id IS NULL AND fingerprint_hash = ? ORDER BY issued_at DESC LIMIT 1';
+      args = bind([query.fingerprint_hash]);
+    } else {
+      sql =
+        'SELECT * FROM trial_issuances WHERE template_id = ? AND fingerprint_hash = ? ORDER BY issued_at DESC LIMIT 1';
+      args = bind([query.template_id, query.fingerprint_hash]);
+    }
+    const row = this.#db.query(sql).get(...args) as Record<string, unknown> | null;
+    return row ? mapTrialIssuance(row) : null;
+  }
+
+  async deleteTrialIssuance(id: UUIDv7): Promise<void> {
+    this.#db.query('DELETE FROM trial_issuances WHERE id = ?').run(id);
   }
 
   // ---------- Transactions & schema ----------

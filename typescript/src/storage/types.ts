@@ -38,6 +38,7 @@ import type {
   LicenseStatus,
   LicenseTemplate,
   LicenseUsage,
+  TrialIssuance,
   UsageStatus,
   UUIDv7,
 } from '../types.ts';
@@ -111,6 +112,11 @@ export interface AuditLogInput {
   readonly prior_state: Readonly<Record<string, JSONValue>> | null;
   readonly new_state: Readonly<Record<string, JSONValue>> | null;
   readonly occurred_at: string;
+}
+
+export interface TrialIssuanceInput {
+  readonly template_id: UUIDv7 | null;
+  readonly fingerprint_hash: string;
 }
 
 // ---------- Patch shapes (partial updates) ----------
@@ -210,7 +216,25 @@ export interface LicenseKeyFilter {
 export interface AuditLogFilter {
   readonly license_id?: UUIDv7 | null;
   readonly scope_id?: UUIDv7 | null;
-  readonly event?: string;
+  /** Filter to one or more event names. Single-string form is shorthand for [event]. */
+  readonly event?: string | readonly string[];
+  /**
+   * Filter by polymorphic licensable. Joined via the licenses table; uses the
+   * `(licensable_type, licensable_id)` index added in v0002.
+   */
+  readonly licensable_type?: string;
+  readonly licensable_id?: string;
+  /** Filter by actor (free-form string; "system" for automatic transitions). */
+  readonly actor?: string;
+  /** Lower bound on `occurred_at` (inclusive). ISO-8601 string. */
+  readonly since?: string;
+  /** Upper bound on `occurred_at` (exclusive). ISO-8601 string. */
+  readonly until?: string;
+}
+
+export interface TrialIssuanceLookup {
+  readonly template_id: UUIDv7 | null;
+  readonly fingerprint_hash: string;
 }
 
 // ---------- Schema-parity accessor ----------
@@ -310,6 +334,19 @@ export interface Storage {
   appendAudit(input: AuditLogInput): Promise<AuditLogEntry>;
   getAudit(id: UUIDv7): Promise<AuditLogEntry | null>;
   listAudit(filter: AuditLogFilter, page: PageRequest): Promise<Page<AuditLogEntry>>;
+
+  // ---------- TrialIssuances (added in v0002) ----------
+  /**
+   * Record that a trial license was issued for `(template_id, fingerprint_hash)`.
+   * The unique constraint on `(template_id, fingerprint_hash)` rejects same-pair
+   * duplicates with `UniqueConstraintViolation`. Per-template cooldown enforcement
+   * (issuer-side; this method just records the row) sits above the storage layer.
+   */
+  recordTrialIssuance(input: TrialIssuanceInput): Promise<TrialIssuance>;
+  /** Returns the most recent trial issuance for the pair, or null. */
+  findTrialIssuance(query: TrialIssuanceLookup): Promise<TrialIssuance | null>;
+  /** Hard-deletes a trial-issuance row. Used by the admin "Reset trial" action. */
+  deleteTrialIssuance(id: UUIDv7): Promise<void>;
 
   // ---------- Transactions & schema introspection ----------
   /** Run `fn` atomically. A thrown error MUST roll back every write made

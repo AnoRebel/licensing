@@ -70,6 +70,9 @@ import {
   type Storage,
   type StorageTx,
   systemClock,
+  type TrialIssuance,
+  type TrialIssuanceInput,
+  type TrialIssuanceLookup,
   type UUIDv7,
 } from '../../index.ts';
 
@@ -85,6 +88,7 @@ interface State {
   usages: Map<UUIDv7, LicenseUsage>;
   keys: Map<UUIDv7, LicenseKey>;
   audit: Map<UUIDv7, AuditLogEntry>;
+  trialIssuances: Map<UUIDv7, TrialIssuance>;
 }
 
 function emptyState(): State {
@@ -95,6 +99,7 @@ function emptyState(): State {
     usages: new Map(),
     keys: new Map(),
     audit: new Map(),
+    trialIssuances: new Map(),
   };
 }
 
@@ -106,6 +111,7 @@ function cloneState(s: State): State {
     usages: new Map(s.usages),
     keys: new Map(s.keys),
     audit: new Map(s.audit),
+    trialIssuances: new Map(s.trialIssuances),
   };
 }
 
@@ -599,10 +605,42 @@ export class MemoryStorage implements Storage {
   }
 
   async listAudit(filter: AuditLogFilter, page: PageRequest): Promise<Page<AuditLogEntry>> {
+    // Resolve licensable-filter to a set of license_ids before scanning the
+    // audit table (the (licensable_type, licensable_id) join lives logically
+    // here for the in-memory adapter).
+    const licenseIdsByLicensable = (() => {
+      if (filter.licensable_type === undefined && filter.licensable_id === undefined) return null;
+      const matches = new Set<string>();
+      for (const lic of this.state.licenses.values()) {
+        if (
+          filter.licensable_type !== undefined &&
+          lic.licensable_type !== filter.licensable_type
+        ) {
+          continue;
+        }
+        if (filter.licensable_id !== undefined && lic.licensable_id !== filter.licensable_id) {
+          continue;
+        }
+        matches.add(lic.id);
+      }
+      return matches;
+    })();
+    const eventList =
+      filter.event === undefined
+        ? null
+        : Array.isArray(filter.event)
+          ? filter.event
+          : [filter.event];
     const filtered = [...this.state.audit.values()].filter((r) => {
       if (filter.license_id !== undefined && r.license_id !== filter.license_id) return false;
       if (filter.scope_id !== undefined && r.scope_id !== filter.scope_id) return false;
-      if (filter.event !== undefined && r.event !== filter.event) return false;
+      if (eventList !== null && !eventList.includes(r.event)) return false;
+      if (filter.actor !== undefined && r.actor !== filter.actor) return false;
+      if (filter.since !== undefined && r.occurred_at < filter.since) return false;
+      if (filter.until !== undefined && r.occurred_at >= filter.until) return false;
+      if (licenseIdsByLicensable !== null) {
+        if (r.license_id === null || !licenseIdsByLicensable.has(r.license_id)) return false;
+      }
       return true;
     });
     // AuditLog orders by `occurred_at DESC, id DESC` — shimmed into the
@@ -616,6 +654,52 @@ export class MemoryStorage implements Storage {
       items: paged.items.map(({ created_at: _unused, ...rest }) => rest as AuditLogEntry),
       cursor: paged.cursor,
     };
+  }
+
+  // ---------- TrialIssuances (added in v0002) ----------
+
+  async recordTrialIssuance(input: TrialIssuanceInput): Promise<TrialIssuance> {
+    return this.writeOp((s) => {
+      // Unique on `(template_id, fingerprint_hash)` with NULLS-NOT-DISTINCT
+      // semantics (a NULL template_id is a single global "no-template" group).
+      for (const existing of s.trialIssuances.values()) {
+        if (
+          existing.template_id === input.template_id &&
+          existing.fingerprint_hash === input.fingerprint_hash
+        ) {
+          throw errors.uniqueConstraintViolation(
+            'template_fingerprint',
+            `${input.template_id ?? 'null'}:${input.fingerprint_hash}`,
+          );
+        }
+      }
+      const row: TrialIssuance = {
+        id: newUuidV7(this.clock),
+        template_id: input.template_id,
+        fingerprint_hash: input.fingerprint_hash,
+        issued_at: this.nowIso(),
+      };
+      s.trialIssuances.set(row.id, row);
+      return row;
+    });
+  }
+
+  async findTrialIssuance(query: TrialIssuanceLookup): Promise<TrialIssuance | null> {
+    for (const row of this.state.trialIssuances.values()) {
+      if (
+        row.template_id === query.template_id &&
+        row.fingerprint_hash === query.fingerprint_hash
+      ) {
+        return row;
+      }
+    }
+    return null;
+  }
+
+  async deleteTrialIssuance(id: UUIDv7): Promise<void> {
+    return this.writeOp((s) => {
+      s.trialIssuances.delete(id);
+    });
   }
 
   // ---------- Transactions & schema ----------
