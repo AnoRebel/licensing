@@ -75,6 +75,7 @@ const ERROR_STATUS: Readonly<Record<LicensingErrorCode, number>> = {
   SeatLimitExceeded: 409,
   IllegalLifecycleTransition: 409,
   TemplateCycle: 409,
+  TrialAlreadyIssued: 409,
   // 422 — crypto preconditions the caller got wrong
   UnsupportedAlgorithm: 422,
   AlgorithmAlreadyRegistered: 422,

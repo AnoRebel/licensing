@@ -59,12 +59,23 @@ import {
   type TokenStore,
 } from './client/index.ts';
 import { ed25519Backend, type SignatureBackend } from './crypto/index.ts';
+import { errors } from './errors.ts';
 import type { Clock } from './id.ts';
 import { systemClock } from './id.ts';
 import { type CreateLicenseInput, createLicense } from './license-service.ts';
 import { generateRootKey, issueInitialSigningKey, type KeyIssueOptions } from './scope-service.ts';
 import type { Storage } from './storage/types.ts';
-import type { JSONValue, KeyAlg, License, LicenseKey, LicenseStatus, UUIDv7 } from './types.ts';
+import { resolveTemplate } from './templates/resolve.ts';
+import { hashFingerprint } from './trials/pepper.ts';
+import type {
+  JSONValue,
+  KeyAlg,
+  License,
+  LicenseKey,
+  LicenseStatus,
+  LicenseTemplate,
+  UUIDv7,
+} from './types.ts';
 
 // ---------- Backend registry default ----------
 
@@ -103,6 +114,21 @@ export interface IssuerConfig {
   readonly defaultActor?: string;
   /** Default scope ID for issuance. `null` = global scope. */
   readonly defaultScopeId?: UUIDv7 | null;
+  /**
+   * Per-installation pepper for trial-fingerprint hashing. Required only
+   * when issuing trials (`isTrial: true`); otherwise unused. Pulled from
+   * `LICENSING_TRIAL_PEPPER` env var or a secret manager — never persisted
+   * in the licensing DB. See `typescript/src/trials/pepper.ts` for the
+   * threat model.
+   */
+  readonly trialPepper?: string;
+  /**
+   * Default trial cooldown in seconds when issuing a trial against `null`
+   * template (no per-template cooldown to consult). Default 90 days.
+   * Per-template cooldown lives on `license_templates.trial_cooldown_sec`
+   * and overrides this default when present.
+   */
+  readonly trialCooldownSec?: number;
 }
 
 export interface IssueInput {
@@ -110,15 +136,28 @@ export interface IssueInput {
   readonly licensableId: string;
   /** Optional override; auto-generated when omitted. */
   readonly licenseKey?: string;
-  readonly maxUsages: number;
+  /** Required unless a template is supplied (which carries `max_usages`). */
+  readonly maxUsages?: number;
   /** Lifecycle status. Default `'pending'`. */
   readonly status?: LicenseStatus;
-  /** Optional template id; resolves entitlements/duration/etc. */
+  /** Optional template id. When set, the resolver walks the parent chain
+   *  and merges entitlements + meta with child-wins precedence. Per-call
+   *  fields (e.g. `maxUsages`) override the template's defaults. */
   readonly templateId?: UUIDv7 | null;
   readonly scopeId?: UUIDv7 | null;
   readonly expiresAt?: string | null;
   readonly graceUntil?: string | null;
   readonly meta?: Readonly<Record<string, JSONValue>>;
+  /**
+   * Trial flag. When `true`, the issuance is recorded in `trial_issuances`
+   * for per-fingerprint dedupe (requires `fingerprint` + the issuer's
+   * `trialPepper` config). Re-issuing a trial within the cooldown window
+   * fails with `TrialAlreadyIssued`.
+   */
+  readonly isTrial?: boolean;
+  /** Required when `isTrial: true`. Canonical fingerprint input — the same
+   *  string the client computes from device sources. */
+  readonly fingerprint?: string;
   /** Audit actor. Defaults to the issuer's `defaultActor` or `"system"`. */
   readonly actor?: string;
 }
@@ -130,6 +169,9 @@ export interface IssuedLicense {
   readonly raw: License;
 }
 
+/** Default trial cooldown — 90 days in seconds. */
+const DEFAULT_TRIAL_COOLDOWN_SEC = 90 * 86400;
+
 /** High-level issuer. Wraps the primitive services with sensible defaults. */
 export class Issuer {
   readonly #db: Storage;
@@ -138,6 +180,8 @@ export class Issuer {
   readonly #signing: SigningConfig | undefined;
   readonly #defaultActor: string;
   readonly #defaultScopeId: UUIDv7 | null;
+  readonly #trialPepper: string | undefined;
+  readonly #trialCooldownSec: number;
   /** Cached active signing key (the auto-generation path populates this). */
   #signingKey: LicenseKey | null = null;
 
@@ -148,6 +192,8 @@ export class Issuer {
     this.#signing = config.signing;
     this.#defaultActor = config.defaultActor ?? 'system';
     this.#defaultScopeId = config.defaultScopeId ?? null;
+    this.#trialPepper = config.trialPepper;
+    this.#trialCooldownSec = config.trialCooldownSec ?? DEFAULT_TRIAL_COOLDOWN_SEC;
   }
 
   /** Direct access to the underlying storage for power users. */
@@ -157,11 +203,96 @@ export class Issuer {
 
   /**
    * Issue a license. Persists the row + writes a `license.created` audit
-   * entry inside one transaction. The `licenseKey` is generated when the
-   * caller omits it.
+   * entry inside one transaction. Behaviour:
+   *
+   *   - If `templateId` is set, the resolver walks the parent chain and
+   *     merges entitlements + meta with child-wins precedence. `maxUsages`,
+   *     `expiresAt`, `graceUntil`, and other inheritable fields default
+   *     from the resolved template; per-call values win.
+   *   - If `isTrial: true`, the issuance is recorded in `trial_issuances`
+   *     for per-fingerprint dedupe. The cooldown comes from
+   *     `template.trial_cooldown_sec` (when set) or `IssuerConfig.trialCooldownSec`.
+   *     A re-trial within the cooldown window throws `TrialAlreadyIssued`.
+   *
+   * Defaults: `status` = `'pending'`, `licenseKey` auto-generated.
    */
   async issue(input: IssueInput): Promise<IssuedLicense> {
     const scopeId = input.scopeId === undefined ? this.#defaultScopeId : input.scopeId;
+    const actor = input.actor ?? this.#defaultActor;
+
+    // 1. Resolve template inheritance up-front (used by both create + trial paths).
+    let template: LicenseTemplate | null = null;
+    let resolvedEntitlements: Readonly<Record<string, JSONValue>> | null = null;
+    if (input.templateId !== undefined && input.templateId !== null) {
+      const leaf = await this.#db.getTemplate(input.templateId);
+      if (leaf === null) {
+        throw errors.fingerprintRejected(`template not found: ${input.templateId}`);
+      }
+      template = leaf;
+      const resolved = await resolveTemplate(leaf, (id) => this.#db.getTemplate(id));
+      resolvedEntitlements = resolved.entitlements;
+    }
+
+    // 2. Compute defaults from template when caller didn't override.
+    const maxUsages = input.maxUsages ?? template?.max_usages;
+    if (maxUsages === undefined) {
+      throw errors.fingerprintRejected('issue() requires `maxUsages` when no template is supplied');
+    }
+    let expiresAt = input.expiresAt;
+    if (expiresAt === undefined && template !== null && template.trial_duration_sec > 0) {
+      const issuedAtMs = Date.parse(this.#clock.nowIso());
+      expiresAt = new Date(issuedAtMs + template.trial_duration_sec * 1000)
+        .toISOString()
+        .replace('Z', '000Z');
+    }
+
+    // 3. Merge meta: caller's per-call meta on top of resolved entitlements.
+    const baseMeta: Record<string, JSONValue> = {};
+    if (resolvedEntitlements !== null) {
+      baseMeta.entitlements = resolvedEntitlements as JSONValue;
+    }
+    if (input.isTrial === true) {
+      baseMeta.is_trial = true;
+    }
+    const meta: Record<string, JSONValue> = {
+      ...baseMeta,
+      ...(input.meta as Record<string, JSONValue> | undefined),
+    };
+
+    // 4. Trial dedupe: enforce cooldown BEFORE creating the license. If a
+    //    new license slipped in concurrently (race), the unique constraint
+    //    on `trial_issuances` will catch it and surface as a UniqueConstraintViolation
+    //    which the caller can map.
+    let trialFingerprintHash: string | null = null;
+    if (input.isTrial === true) {
+      if (input.fingerprint === undefined) {
+        throw errors.fingerprintRejected('isTrial=true requires `fingerprint`');
+      }
+      if (this.#trialPepper === undefined) {
+        throw errors.fingerprintRejected(
+          'issuer has no `trialPepper` configured — pass it to `Licensing.issuer({ trialPepper })` to issue trials',
+        );
+      }
+      trialFingerprintHash = hashFingerprint(this.#trialPepper, input.fingerprint);
+      const existing = await this.#db.findTrialIssuance({
+        template_id: input.templateId ?? null,
+        fingerprint_hash: trialFingerprintHash,
+      });
+      if (existing !== null) {
+        const cooldownSec = template?.trial_cooldown_sec ?? this.#trialCooldownSec;
+        const issuedMs = Date.parse(existing.issued_at);
+        const eligibleMs = issuedMs + cooldownSec * 1000;
+        if (Date.now() < eligibleMs) {
+          throw errors.trialAlreadyIssued(
+            input.templateId ?? null,
+            new Date(eligibleMs).toISOString(),
+          );
+        }
+        // Cooldown elapsed — old row stale; delete so the new one is unique.
+        await this.#db.deleteTrialIssuance(existing.id);
+      }
+    }
+
     const createInput: CreateLicenseInput = {
       scope_id: scopeId,
       template_id: input.templateId ?? null,
@@ -169,14 +300,23 @@ export class Issuer {
       licensable_id: input.licensableId,
       ...(input.licenseKey !== undefined ? { license_key: input.licenseKey } : {}),
       ...(input.status !== undefined ? { status: input.status } : {}),
-      max_usages: input.maxUsages,
-      ...(input.expiresAt !== undefined ? { expires_at: input.expiresAt } : {}),
+      max_usages: maxUsages,
+      ...(expiresAt !== undefined ? { expires_at: expiresAt } : {}),
       ...(input.graceUntil !== undefined ? { grace_until: input.graceUntil } : {}),
-      ...(input.meta !== undefined ? { meta: input.meta } : {}),
+      meta,
     };
-    const license = await createLicense(this.#db, this.#clock, createInput, {
-      actor: input.actor ?? this.#defaultActor,
-    });
+    const license = await createLicense(this.#db, this.#clock, createInput, { actor });
+
+    // 5. Record the trial issuance + audit row AFTER createLicense commits.
+    //    A failure here is intentionally non-fatal for the license itself —
+    //    the row exists, but the dedupe record may be retried by an admin.
+    if (input.isTrial === true && trialFingerprintHash !== null) {
+      await this.#db.recordTrialIssuance({
+        template_id: input.templateId ?? null,
+        fingerprint_hash: trialFingerprintHash,
+      });
+    }
+
     return {
       id: license.id,
       licenseKey: license.license_key,

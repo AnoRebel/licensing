@@ -47,6 +47,7 @@ export type LicensingErrorCode =
   | 'ImmutableAuditLog'
   | 'UniqueConstraintViolation'
   | 'TemplateCycle'
+  | 'TrialAlreadyIssued'
   // Grace / client
   | 'GraceExpired'
   // Auth / transport
@@ -153,6 +154,14 @@ export const errors = {
       templateId,
       parentChain: [...parentChain],
     }),
+  /** A trial issuance was rejected because the (template, fingerprint) pair
+   *  is still within the cooldown window. */
+  trialAlreadyIssued: (templateId: string | null, nextEligibleAt: string | null): LifecycleError =>
+    new LifecycleError(
+      'TrialAlreadyIssued',
+      `trial already issued for this fingerprint within the cooldown window`,
+      { templateId, nextEligibleAt },
+    ),
 
   // Lifecycle
   licenseNotFound: (id: string): LifecycleError =>
