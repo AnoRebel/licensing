@@ -49,15 +49,24 @@
 import {
   type ActivateOptions,
   type ActivateResult,
+  clientErrors,
+  createHeartbeat,
   type DeactivateResult,
   defaultFingerprintSources,
   FileTokenStore,
+  type Heartbeat,
+  type HeartbeatOptions,
   MemoryTokenStore,
   activate as primActivate,
   collectFingerprint as primCollectFingerprint,
   deactivate as primDeactivate,
+  refresh as primRefresh,
+  validate as primValidate,
+  type RefreshOutcome,
   type TokenStore,
+  type ValidateResult,
 } from './client/index.ts';
+import type { AlgorithmRegistry, KeyAlgBindings, KeyRecord } from './crypto/index.ts';
 import { ed25519Backend, type SignatureBackend } from './crypto/index.ts';
 import { errors } from './errors.ts';
 import type { Clock } from './id.ts';
@@ -400,6 +409,25 @@ export async function makeIssuer(config: IssuerConfig): Promise<Issuer> {
 
 // ---------- Client factory ----------
 
+/**
+ * Verify configuration — required for {@link Client.guard} and
+ * {@link Client.validate}. There's no JWKS-style discovery endpoint in the
+ * protocol today, so the consumer ships their public-key bundle at
+ * client-construction time. Activate / deactivate / heartbeat work without
+ * this config.
+ */
+export interface ClientVerifyConfig {
+  /** Algorithm registry; typically one backend (the alg the client was
+   *  provisioned for) to keep the attack surface narrow. */
+  readonly registry: AlgorithmRegistry;
+  /** Pre-registered kid → alg bindings — defeats alg-confusion. */
+  readonly bindings: KeyAlgBindings;
+  /** Public keys the client trusts, keyed by kid. */
+  readonly keys: ReadonlyMap<string, KeyRecord>;
+  /** Optional clock-skew tolerance in seconds for `nbf`/`exp` (default 60). */
+  readonly skewSec?: number;
+}
+
 export interface ClientConfig {
   /** Issuer base URL (e.g. `https://license.example.com`). */
   readonly serverUrl: string;
@@ -414,6 +442,40 @@ export interface ClientConfig {
   /** Optional path prefix for client endpoints. Defaults match the
    *  reference handlers (`/api/licensing/v1`). */
   readonly pathPrefix?: string;
+  /**
+   * Public-key bundle + algorithm registry needed for `guard()` and
+   * `validate()`. When omitted, those methods throw a clear error pointing
+   * at the docs. Activate / deactivate / heartbeat are unaffected.
+   */
+  readonly verify?: ClientVerifyConfig;
+  /**
+   * Grace-on-unreachable window in seconds when the issuer can't be
+   * reached during a refresh. Default 7 days (`604800`). Pass 0 to disable
+   * grace entirely — refresh failures then surface `IssuerUnreachable`.
+   */
+  readonly gracePeriodSec?: number;
+  /** Time source for `guard()`. Defaults to `Math.floor(Date.now()/1000)`. */
+  readonly nowSec?: () => number;
+}
+
+/**
+ * Returned by {@link Client.guard} on success. The handle exposes the
+ * verified claims plus flags that let callers branch on grace-period state
+ * without re-running the verifier.
+ */
+export interface LicenseHandle {
+  readonly licenseId: string;
+  readonly usageId: string;
+  readonly status: 'active' | 'grace';
+  readonly maxUsages: number;
+  /** Unix seconds; `Math.floor(Date.now()/1000)` to compute remaining time. */
+  readonly exp: number;
+  /** Unix seconds when grace started, or null when not in grace. */
+  readonly graceStartedAt: number | null;
+  /** Convenience flag: `status === 'grace'` OR `graceStartedAt !== null`. */
+  readonly isInGrace: boolean;
+  /** Resolved entitlements from the token (or null when none claimed). */
+  readonly entitlements: Readonly<Record<string, unknown>> | null;
 }
 
 /** Default storage path resolver. Prefers `./.licensing/` in dev (when
@@ -438,17 +500,26 @@ export interface ActivateClientInput {
 
 /** High-level offline-first client. Wraps the primitive client functions
  *  with default storage + a stable fingerprint helper. */
+/** Default grace-period window — 7 days in seconds. */
+const DEFAULT_GRACE_PERIOD_SEC = 7 * 24 * 3600;
+
 export class Client {
   readonly #serverUrl: string;
   readonly #storage: TokenStore;
   readonly #pathPrefix: string;
   readonly #fetch: typeof globalThis.fetch;
+  readonly #verify: ClientVerifyConfig | undefined;
+  readonly #gracePeriodSec: number;
+  readonly #nowSec: () => number;
 
   constructor(config: ClientConfig) {
     this.#serverUrl = stripTrailingSlash(config.serverUrl);
     this.#storage = config.storage ?? defaultClientStorage();
     this.#pathPrefix = config.pathPrefix ?? '/api/licensing/v1';
     this.#fetch = config.fetch ?? globalThis.fetch;
+    this.#verify = config.verify;
+    this.#gracePeriodSec = config.gracePeriodSec ?? DEFAULT_GRACE_PERIOD_SEC;
+    this.#nowSec = config.nowSec ?? (() => Math.floor(Date.now() / 1000));
   }
 
   /** Direct access to the configured token store for power users. */
@@ -494,11 +565,144 @@ export class Client {
     });
   }
 
-  // Note: `validate` and `refresh` require the consumer to provide the
-  // public-key bundle and an algorithm registry — there's no JWKS-style
-  // discovery endpoint in the protocol today. Use the primitives directly:
-  //   import { validate, refresh } from '@anorebel/licensing/client';
-  // …with the appropriate registry/bindings/trustedPublicKeys/nowSec.
+  /**
+   * Validate the persisted token offline. Throws a `LicensingClientError`
+   * with a typed `.code` on failure (NoToken, TokenExpired, FingerprintMismatch,
+   * UnknownKid, etc.). Requires `verify` config at construction.
+   */
+  async validate(input: { fingerprint: string }): Promise<ValidateResult> {
+    const verify = this.#requireVerify('validate');
+    const state = await this.#storage.read();
+    if (state.token === null) {
+      throw clientErrors.noToken();
+    }
+    return primValidate(state.token, {
+      registry: verify.registry,
+      bindings: verify.bindings,
+      keys: verify.keys,
+      fingerprint: input.fingerprint,
+      nowSec: this.#nowSec(),
+      ...(verify.skewSec !== undefined ? { skewSec: verify.skewSec } : {}),
+    });
+  }
+
+  /**
+   * Refresh the persisted token. Returns a `RefreshOutcome` describing the
+   * result (`refreshed` / `not-due` / `grace-entered` / `grace-continued`).
+   * Throws on hard failures (`LicenseRevoked`, `GraceExpired`, …).
+   */
+  async refresh(): Promise<RefreshOutcome> {
+    return primRefresh({
+      baseUrl: this.#serverUrl,
+      store: this.#storage,
+      nowSec: this.#nowSec(),
+      graceWindowSec: this.#gracePeriodSec,
+      fetchImpl: this.#fetch,
+      path: `${this.#pathPrefix}/refresh`,
+    });
+  }
+
+  /**
+   * Single-call guard: verify the stored token offline, refresh on demand
+   * when `force_online_after` has elapsed, and surface a {@link LicenseHandle}
+   * on success. Throws `LicensingClientError` with a typed `.code` on
+   * failure — branch on `.code`, not class identity.
+   *
+   * Behaviour:
+   *
+   *   1. Read the stored token; throw `NoToken` if absent.
+   *   2. If past `force_online_after`, attempt {@link refresh}. On grace-entered
+   *      / grace-continued, fall through to validate against the stored
+   *      token (still valid offline within the grace window). On hard refresh
+   *      failures (revoked, seat-limit, …), the error propagates unchanged.
+   *   3. Validate offline with the configured public keys. Returns the
+   *      decoded handle.
+   */
+  async guard(input: { fingerprint: string }): Promise<LicenseHandle> {
+    const verify = this.#requireVerify('guard');
+    const state = await this.#storage.read();
+    if (state.token === null) {
+      throw clientErrors.noToken();
+    }
+
+    // Step 1: refresh if needed. The primitive handles `not-due`,
+    // `refreshed`, and grace-entered/continued internally; only hard
+    // failures (revoked, seat-limit, GraceExpired) escape as throws.
+    await primRefresh({
+      baseUrl: this.#serverUrl,
+      store: this.#storage,
+      nowSec: this.#nowSec(),
+      graceWindowSec: this.#gracePeriodSec,
+      fetchImpl: this.#fetch,
+      path: `${this.#pathPrefix}/refresh`,
+    });
+
+    // Re-read in case refresh persisted a new token or grace state.
+    const fresh = await this.#storage.read();
+    if (fresh.token === null) {
+      // Refresh shouldn't clear the token, but be defensive.
+      throw clientErrors.noToken();
+    }
+
+    // Step 2: offline verify.
+    const result = await primValidate(fresh.token, {
+      registry: verify.registry,
+      bindings: verify.bindings,
+      keys: verify.keys,
+      fingerprint: input.fingerprint,
+      nowSec: this.#nowSec(),
+      ...(verify.skewSec !== undefined ? { skewSec: verify.skewSec } : {}),
+    });
+
+    return {
+      licenseId: result.license_id,
+      usageId: result.usage_id,
+      status: result.status,
+      maxUsages: result.max_usages,
+      exp: result.exp,
+      graceStartedAt: fresh.graceStartSec,
+      isInGrace: result.status === 'grace' || fresh.graceStartSec !== null,
+      entitlements: result.entitlements,
+    };
+  }
+
+  /**
+   * Build a {@link Heartbeat} scheduler. The returned object exposes
+   * `start()`, `stop()`, `tickNow()` — call `start()` to begin ticking.
+   * Defaults: 1-hour interval (clamped to 60s minimum).
+   */
+  heartbeat(input: {
+    licenseKey: string;
+    fingerprint: string;
+    runtimeVersion: string;
+    intervalSec?: number;
+    onError?: (err: Error) => void;
+    onSuccess?: () => void;
+  }): Heartbeat {
+    const opts: HeartbeatOptions = {
+      baseUrl: this.#serverUrl,
+      store: this.#storage,
+      licenseKey: input.licenseKey,
+      fingerprint: input.fingerprint,
+      runtimeVersion: input.runtimeVersion,
+      ...(input.intervalSec !== undefined ? { intervalSec: input.intervalSec } : {}),
+      ...(input.onError !== undefined ? { onError: input.onError } : {}),
+      ...(input.onSuccess !== undefined ? { onSuccess: input.onSuccess } : {}),
+      fetchImpl: this.#fetch,
+      path: `${this.#pathPrefix}/heartbeat`,
+    };
+    return createHeartbeat(opts);
+  }
+
+  #requireVerify(method: string): ClientVerifyConfig {
+    if (this.#verify === undefined) {
+      throw new Error(
+        `Licensing.client.${method}() requires a \`verify\` config — pass ` +
+          '`verify: { registry, bindings, keys }` to `Licensing.client({...})`',
+      );
+    }
+    return this.#verify;
+  }
 }
 
 /** Construct a high-level client. Synchronous because nothing about client
