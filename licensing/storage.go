@@ -119,6 +119,18 @@ type SchemaEntity struct {
 // compared in the parity test against parsed fixtures/schema/entities.md.
 type SchemaDescription []SchemaEntity
 
+// FindByLicensableQuery is the lookup-by-licensable query for
+// StorageTx.FindLicensesByLicensable. Type and ID are required;
+// ScopeID + ScopeIDSet follow the same "set means filter" convention
+// used by LicenseFilter (ScopeIDSet=false: all scopes; ScopeIDSet=true
+// with ScopeID=nil: global scope only).
+type FindByLicensableQuery struct {
+	ScopeID    *string
+	Type       string
+	ID         string
+	ScopeIDSet bool
+}
+
 // ---------- The Storage interface ----------
 
 // StorageTx is the transaction handle passed into Storage.WithTransaction.
@@ -133,6 +145,13 @@ type StorageTx interface {
 	GetLicense(id string) (*License, error)
 	GetLicenseByKey(licenseKey string) (*License, error)
 	ListLicenses(filter LicenseFilter, page PageRequest) (Page[License], error)
+	// FindLicensesByLicensable returns every license matching the given
+	// polymorphic attachment (licensable_type, licensable_id), ordered by
+	// created_at DESC. Bounded in practice by the
+	// (licensable_type, licensable_id, scope_id) unique constraint —
+	// each licensable holds at most one license per scope. Uses the
+	// licenses_licensable_type_id_idx introduced in v0002.
+	FindLicensesByLicensable(query FindByLicensableQuery) ([]License, error)
 	UpdateLicense(id string, patch LicensePatch) (*License, error)
 	// DeleteLicense hard-deletes a license row. Adapters MUST surface
 	// CodeLicenseNotFound when no row matches, and CodeUniqueConstraintViolation

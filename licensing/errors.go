@@ -51,6 +51,7 @@ const (
 	// Storage
 	CodeImmutableAuditLog         ErrorCode = "ImmutableAuditLog"
 	CodeUniqueConstraintViolation ErrorCode = "UniqueConstraintViolation"
+	CodeTemplateCycle             ErrorCode = "TemplateCycle"
 
 	// Grace / client
 	CodeGraceExpired ErrorCode = "GraceExpired"

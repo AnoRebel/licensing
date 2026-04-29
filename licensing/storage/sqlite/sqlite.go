@@ -123,6 +123,13 @@ func (s *Storage) ListLicenses(filter lic.LicenseFilter, page lic.PageRequest) (
 	return listLicenses(s.db, filter, page)
 }
 
+// FindLicensesByLicensable returns every license attached to a polymorphic
+// licensable, ordered by created_at DESC. Uses the
+// licenses_licensable_type_id_idx index introduced in v0002.
+func (s *Storage) FindLicensesByLicensable(query lic.FindByLicensableQuery) ([]lic.License, error) {
+	return findLicensesByLicensable(s.db, query)
+}
+
 // UpdateLicense updates license.
 func (s *Storage) UpdateLicense(id string, patch lic.LicensePatch) (*lic.License, error) {
 	return updateLicense(s.db, s.clock, id, patch)
@@ -306,6 +313,11 @@ func (t *sqliteTx) ListLicenses(filter lic.LicenseFilter, page lic.PageRequest) 
 	return listLicenses(t.tx, filter, page)
 }
 
+// FindLicensesByLicensable mirrors Storage.FindLicensesByLicensable inside a tx.
+func (t *sqliteTx) FindLicensesByLicensable(query lic.FindByLicensableQuery) ([]lic.License, error) {
+	return findLicensesByLicensable(t.tx, query)
+}
+
 // UpdateLicense updates license.
 func (t *sqliteTx) UpdateLicense(id string, patch lic.LicensePatch) (*lic.License, error) {
 	return updateLicense(t.tx, t.clock, id, patch)
@@ -473,6 +485,38 @@ func getLicense(q queryable, id string) (*lic.License, error) {
 func getLicenseByKey(q queryable, licenseKey string) (*lic.License, error) {
 	return scanOneLicense(q.QueryRow(
 		"SELECT * FROM licenses WHERE license_key = ?", licenseKey))
+}
+
+func findLicensesByLicensable(q queryable, query lic.FindByLicensableQuery) ([]lic.License, error) {
+	where := []string{"licensable_type = ?", "licensable_id = ?"}
+	args := []any{query.Type, query.ID}
+	if query.ScopeIDSet {
+		if query.ScopeID == nil {
+			where = append(where, "scope_id IS NULL")
+		} else {
+			where = append(where, "scope_id = ?")
+			args = append(args, *query.ScopeID)
+		}
+	}
+	sql := "SELECT * FROM licenses WHERE " + strings.Join(where, " AND ") +
+		" ORDER BY created_at DESC, id DESC"
+	rows, err := q.Query(sql, args...)
+	if err != nil {
+		return nil, mapSqliteError(err)
+	}
+	defer rows.Close()
+	out := make([]lic.License, 0)
+	for rows.Next() {
+		l, err := scanRowLicense(rows)
+		if err != nil {
+			return nil, mapSqliteError(err)
+		}
+		out = append(out, *l)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, mapSqliteError(err)
+	}
+	return out, nil
 }
 
 func listLicenses(q queryable, filter lic.LicenseFilter, page lic.PageRequest) (lic.Page[lic.License], error) {
@@ -657,11 +701,12 @@ func createTemplate(q queryable, clk lic.Clock, in lic.LicenseTemplateInput) (*l
 	now := clk.NowISO()
 	_, err := q.Exec(
 		`INSERT INTO license_templates (
-			id, scope_id, name, max_usages, trial_duration_sec, grace_duration_sec,
-			force_online_after_sec, entitlements, meta, created_at, updated_at
-		) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-		id, in.ScopeID, in.Name, in.MaxUsages,
-		in.TrialDurationSec, in.GraceDurationSec,
+			id, scope_id, parent_id, name, max_usages, trial_duration_sec,
+			trial_cooldown_sec, grace_duration_sec, force_online_after_sec,
+			entitlements, meta, created_at, updated_at
+		) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		id, in.ScopeID, in.ParentID, in.Name, in.MaxUsages,
+		in.TrialDurationSec, in.TrialCooldownSec, in.GraceDurationSec,
 		in.ForceOnlineAfterSec,
 		jsonText(in.Entitlements), jsonText(in.Meta), now, now,
 	)
@@ -687,10 +732,30 @@ func listTemplates(q queryable, filter lic.LicenseTemplateFilter, page lic.PageR
 	if filter.Name != nil {
 		wb.addParam("name = ?", *filter.Name)
 	}
+	if filter.ParentIDSet {
+		if filter.ParentID == nil {
+			wb.add("parent_id IS NULL")
+		} else {
+			wb.addParam("parent_id = ?", *filter.ParentID)
+		}
+	}
 	return queryPage(q, scanRowTemplate, extractTemplate, "license_templates", "created_at", wb, page)
 }
 
 func updateTemplate(q queryable, clk lic.Clock, id string, patch lic.LicenseTemplatePatch) (*lic.LicenseTemplate, error) {
+	// Cycle detection on re-parenting. If parent_id is set to a non-nil
+	// value, walk forward and reject if we revisit `id`.
+	if patch.ParentID.Set && patch.ParentID.Value != nil {
+		chain, err := walkSqliteParentChain(q, *patch.ParentID.Value, id)
+		if err != nil {
+			return nil, err
+		}
+		if chain != nil {
+			return nil, lic.NewError(lic.CodeTemplateCycle,
+				fmt.Sprintf("template parent chain forms a cycle through %s", id),
+				map[string]any{"id": id, "chain": chain})
+		}
+	}
 	ub := updateBuilder{}
 	if patch.Name != nil {
 		ub.set("name", *patch.Name)
@@ -704,8 +769,14 @@ func updateTemplate(q queryable, clk lic.Clock, id string, patch lic.LicenseTemp
 	if patch.GraceDurationSec != nil {
 		ub.set("grace_duration_sec", *patch.GraceDurationSec)
 	}
+	if patch.ParentID.Set {
+		ub.set("parent_id", patch.ParentID.Value)
+	}
 	if patch.ForceOnlineAfterSec.Set {
 		ub.set("force_online_after_sec", patch.ForceOnlineAfterSec.Value)
+	}
+	if patch.TrialCooldownSec.Set {
+		ub.set("trial_cooldown_sec", patch.TrialCooldownSec.Value)
 	}
 	if patch.Entitlements.Set {
 		ub.set("entitlements", jsonText(patch.Entitlements.Value))
@@ -718,6 +789,33 @@ func updateTemplate(q queryable, clk lic.Clock, id string, patch lic.LicenseTemp
 		return nil, mapSqliteError(err)
 	}
 	return row, nil
+}
+
+// walkSqliteParentChain walks toward the root from startParent and returns
+// the visited ids (in walk order) if `forbidden` appears. Nil = no cycle.
+// Caps at 64 hops as defence against corrupted data.
+func walkSqliteParentChain(q queryable, startParent string, forbidden string) ([]string, error) {
+	visited := make([]string, 0, 8)
+	cursor := startParent
+	for range 64 {
+		visited = append(visited, cursor)
+		if cursor == forbidden {
+			return visited, nil
+		}
+		var parentID *string
+		err := q.QueryRow("SELECT parent_id FROM license_templates WHERE id = ?", cursor).Scan(&parentID)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return nil, nil
+			}
+			return nil, mapSqliteError(err)
+		}
+		if parentID == nil {
+			return nil, nil
+		}
+		cursor = *parentID
+	}
+	return nil, nil
 }
 
 func deleteTemplate(q queryable, id string) error {

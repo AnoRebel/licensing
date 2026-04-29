@@ -188,7 +188,9 @@ type LicenseScopeInput struct {
 // LicenseTemplateInput is the tx-level Create input for a LicenseTemplate.
 type LicenseTemplateInput struct {
 	ScopeID             *string
+	ParentID            *string
 	ForceOnlineAfterSec *int
+	TrialCooldownSec    *int
 	Entitlements        map[string]any
 	Meta                map[string]any
 	Name                string
@@ -288,7 +290,9 @@ type LicenseTemplatePatch struct {
 	MaxUsages           *int
 	TrialDurationSec    *int
 	GraceDurationSec    *int
+	ParentID            OptString
 	ForceOnlineAfterSec OptInt
+	TrialCooldownSec    OptInt
 	Entitlements        OptJSON
 	Meta                OptJSON
 }
@@ -329,12 +333,15 @@ type LicenseScopeFilter struct {
 	Slug *string
 }
 
-// LicenseTemplateFilter narrows ListTemplates results. ScopeIDSet
-// distinguishes "don't filter on scope" from "filter on nil (global) scope."
+// LicenseTemplateFilter narrows ListTemplates results. ScopeIDSet and
+// ParentIDSet distinguish "don't filter on field" from "filter on nil"
+// (global scope or root template).
 type LicenseTemplateFilter struct {
-	ScopeID    *string
-	Name       *string
-	ScopeIDSet bool
+	ScopeID     *string
+	Name        *string
+	ParentID    *string
+	ScopeIDSet  bool
+	ParentIDSet bool
 }
 
 // LicenseUsageFilter narrows ListUsages results.

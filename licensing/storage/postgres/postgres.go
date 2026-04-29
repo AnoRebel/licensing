@@ -109,6 +109,13 @@ func (s *Storage) ListLicenses(filter lic.LicenseFilter, page lic.PageRequest) (
 	return listLicenses(context.Background(), s.pool, filter, page)
 }
 
+// FindLicensesByLicensable returns every license matching the polymorphic
+// (licensable_type, licensable_id), ordered by created_at DESC. Uses the
+// licenses_licensable_type_id_idx index introduced in v0002.
+func (s *Storage) FindLicensesByLicensable(query lic.FindByLicensableQuery) ([]lic.License, error) {
+	return findLicensesByLicensable(context.Background(), s.pool, query)
+}
+
 // UpdateLicense updates license.
 func (s *Storage) UpdateLicense(id string, patch lic.LicensePatch) (*lic.License, error) {
 	return updateLicense(context.Background(), s.pool, id, patch)
@@ -293,6 +300,11 @@ func (t *postgresTx) ListLicenses(filter lic.LicenseFilter, page lic.PageRequest
 	return listLicenses(context.Background(), t.tx, filter, page)
 }
 
+// FindLicensesByLicensable mirrors Storage.FindLicensesByLicensable inside a tx.
+func (t *postgresTx) FindLicensesByLicensable(query lic.FindByLicensableQuery) ([]lic.License, error) {
+	return findLicensesByLicensable(context.Background(), t.tx, query)
+}
+
 // UpdateLicense updates license.
 func (t *postgresTx) UpdateLicense(id string, patch lic.LicensePatch) (*lic.License, error) {
 	return updateLicense(context.Background(), t.tx, id, patch)
@@ -450,6 +462,38 @@ func getLicense(ctx context.Context, q queryable, id string) (*lic.License, erro
 func getLicenseByKey(ctx context.Context, q queryable, licenseKey string) (*lic.License, error) {
 	return queryOptional[lic.License](ctx, q, scanLicense,
 		"SELECT * FROM licenses WHERE license_key = $1", licenseKey)
+}
+
+func findLicensesByLicensable(ctx context.Context, q queryable, query lic.FindByLicensableQuery) ([]lic.License, error) {
+	where := []string{"licensable_type = $1", "licensable_id = $2"}
+	args := []any{query.Type, query.ID}
+	if query.ScopeIDSet {
+		if query.ScopeID == nil {
+			where = append(where, "scope_id IS NULL")
+		} else {
+			args = append(args, *query.ScopeID)
+			where = append(where, fmt.Sprintf("scope_id = $%d", len(args)))
+		}
+	}
+	sql := "SELECT * FROM licenses WHERE " + strings.Join(where, " AND ") +
+		" ORDER BY created_at DESC, id DESC"
+	rows, err := q.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, mapPgError(err)
+	}
+	defer rows.Close()
+	out := make([]lic.License, 0)
+	for rows.Next() {
+		l, err := scanLicense(rows)
+		if err != nil {
+			return nil, mapPgError(err)
+		}
+		out = append(out, *l)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, mapPgError(err)
+	}
+	return out, nil
 }
 
 func listLicenses(ctx context.Context, q queryable, filter lic.LicenseFilter, page lic.PageRequest) (lic.Page[lic.License], error) {
@@ -636,11 +680,12 @@ func createTemplate(ctx context.Context, q queryable, clk lic.Clock, in lic.Lice
 	id := lic.NewUUIDv7()
 	row, err := queryOne[lic.LicenseTemplate](ctx, q, scanTemplate,
 		`INSERT INTO license_templates (
-			id, scope_id, name, max_usages, trial_duration_sec, grace_duration_sec,
-			force_online_after_sec, entitlements, meta
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
-		id, in.ScopeID, in.Name, in.MaxUsages,
-		in.TrialDurationSec, in.GraceDurationSec,
+			id, scope_id, parent_id, name, max_usages, trial_duration_sec,
+			trial_cooldown_sec, grace_duration_sec, force_online_after_sec,
+			entitlements, meta
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+		id, in.ScopeID, in.ParentID, in.Name, in.MaxUsages,
+		in.TrialDurationSec, in.TrialCooldownSec, in.GraceDurationSec,
 		in.ForceOnlineAfterSec,
 		jsonArg(in.Entitlements), jsonArg(in.Meta),
 	)
@@ -667,10 +712,29 @@ func listTemplates(ctx context.Context, q queryable, filter lic.LicenseTemplateF
 	if filter.Name != nil {
 		wb.addParam("name = $%d", *filter.Name)
 	}
+	if filter.ParentIDSet {
+		if filter.ParentID == nil {
+			wb.add("parent_id IS NULL")
+		} else {
+			wb.addParam("parent_id = $%d", *filter.ParentID)
+		}
+	}
 	return queryPage(ctx, q, scanTemplate, extractTemplate, "license_templates", "created_at", wb, page)
 }
 
 func updateTemplate(ctx context.Context, q queryable, id string, patch lic.LicenseTemplatePatch) (*lic.LicenseTemplate, error) {
+	// Cycle detection on re-parenting.
+	if patch.ParentID.Set && patch.ParentID.Value != nil {
+		chain, err := walkPgParentChain(ctx, q, *patch.ParentID.Value, id)
+		if err != nil {
+			return nil, err
+		}
+		if chain != nil {
+			return nil, lic.NewError(lic.CodeTemplateCycle,
+				fmt.Sprintf("template parent chain forms a cycle through %s", id),
+				map[string]any{"id": id, "chain": chain})
+		}
+	}
 	ub := updateBuilder{}
 	if patch.Name != nil {
 		ub.set("name", *patch.Name)
@@ -684,8 +748,14 @@ func updateTemplate(ctx context.Context, q queryable, id string, patch lic.Licen
 	if patch.GraceDurationSec != nil {
 		ub.set("grace_duration_sec", *patch.GraceDurationSec)
 	}
+	if patch.ParentID.Set {
+		ub.set("parent_id", patch.ParentID.Value)
+	}
 	if patch.ForceOnlineAfterSec.Set {
 		ub.set("force_online_after_sec", patch.ForceOnlineAfterSec.Value)
+	}
+	if patch.TrialCooldownSec.Set {
+		ub.set("trial_cooldown_sec", patch.TrialCooldownSec.Value)
 	}
 	if patch.Entitlements.Set {
 		ub.set("entitlements", jsonArg(patch.Entitlements.Value))
@@ -702,6 +772,32 @@ func updateTemplate(ctx context.Context, q queryable, id string, patch lic.Licen
 			map[string]any{"constraint": "pk"})
 	}
 	return row, nil
+}
+
+// walkPgParentChain walks toward the root from startParent and returns the
+// visited ids if `forbidden` appears. Nil = no cycle. 64-hop cap.
+func walkPgParentChain(ctx context.Context, q queryable, startParent string, forbidden string) ([]string, error) {
+	visited := make([]string, 0, 8)
+	cursor := startParent
+	for range 64 {
+		visited = append(visited, cursor)
+		if cursor == forbidden {
+			return visited, nil
+		}
+		var parentID *string
+		err := q.QueryRow(ctx, "SELECT parent_id FROM license_templates WHERE id = $1", cursor).Scan(&parentID)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil, nil
+			}
+			return nil, mapPgError(err)
+		}
+		if parentID == nil {
+			return nil, nil
+		}
+		cursor = *parentID
+	}
+	return nil, nil
 }
 
 func deleteTemplate(ctx context.Context, q queryable, id string) error {

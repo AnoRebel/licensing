@@ -118,6 +118,9 @@ func (m *mockTx) GetLicenseByKey(_ string) (*License, error)     { return nil, n
 func (m *mockTx) ListLicenses(_ LicenseFilter, _ PageRequest) (Page[License], error) {
 	return Page[License]{}, nil
 }
+func (m *mockTx) FindLicensesByLicensable(_ FindByLicensableQuery) ([]License, error) {
+	return nil, nil
+}
 func (m *mockTx) CreateScope(_ LicenseScopeInput) (*LicenseScope, error) { return nil, nil }
 func (m *mockTx) GetScope(_ string) (*LicenseScope, error)               { return nil, nil }
 func (m *mockTx) GetScopeBySlug(_ string) (*LicenseScope, error)         { return nil, nil }

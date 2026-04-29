@@ -162,6 +162,15 @@ func (s *Storage) ListLicenses(filter lic.LicenseFilter, page lic.PageRequest) (
 	return listLicenses(s.s, filter, page)
 }
 
+// FindLicensesByLicensable returns every license attached to a polymorphic
+// licensable (type, id), ordered by created_at DESC. See
+// licensing.StorageTx for the contract.
+func (s *Storage) FindLicensesByLicensable(query lic.FindByLicensableQuery) ([]lic.License, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return findLicensesByLicensable(s.s, query)
+}
+
 // UpdateLicense updates license.
 func (s *Storage) UpdateLicense(id string, patch lic.LicensePatch) (*lic.License, error) {
 	s.mu.Lock()
@@ -415,6 +424,12 @@ func (t *memoryTx) ListLicenses(filter lic.LicenseFilter, page lic.PageRequest) 
 	return listLicenses(t.state, filter, page)
 }
 
+// FindLicensesByLicensable returns every license attached to a polymorphic
+// licensable (type, id), ordered by created_at DESC.
+func (t *memoryTx) FindLicensesByLicensable(query lic.FindByLicensableQuery) ([]lic.License, error) {
+	return findLicensesByLicensable(t.state, query)
+}
+
 // UpdateLicense updates license.
 func (t *memoryTx) UpdateLicense(id string, patch lic.LicensePatch) (*lic.License, error) {
 	return updateLicense(t.state, t.clock, id, patch)
@@ -616,6 +631,27 @@ func listLicenses(s *state, filter lic.LicenseFilter, page lic.PageRequest) (lic
 	return paginate(rows, page, func(r lic.License) (string, string) { return r.CreatedAt, r.ID }), nil
 }
 
+func findLicensesByLicensable(s *state, query lic.FindByLicensableQuery) ([]lic.License, error) {
+	rows := make([]lic.License, 0)
+	for _, r := range s.licenses {
+		if r.LicensableType != query.Type || r.LicensableID != query.ID {
+			continue
+		}
+		if query.ScopeIDSet && !ptrEq(r.ScopeID, query.ScopeID) {
+			continue
+		}
+		rows = append(rows, r)
+	}
+	// created_at DESC, id DESC for stable ordering.
+	sort.Slice(rows, func(i, j int) bool {
+		if rows[i].CreatedAt != rows[j].CreatedAt {
+			return rows[i].CreatedAt > rows[j].CreatedAt
+		}
+		return rows[i].ID > rows[j].ID
+	})
+	return rows, nil
+}
+
 func updateLicense(s *state, clk lic.Clock, id string, patch lic.LicensePatch) (*lic.License, error) {
 	cur, ok := s.licenses[id]
 	if !ok {
@@ -762,13 +798,22 @@ func createTemplate(s *state, clk lic.Clock, in lic.LicenseTemplateInput) (*lic.
 				fmt.Sprintf("%s:%s", ptrOrNullStr(in.ScopeID), in.Name))
 		}
 	}
+	// FK-style guard: if parent_id references a non-existent template,
+	// reject. The Postgres adapter relies on a real FK; we mirror it here.
+	if in.ParentID != nil {
+		if _, ok := s.templates[*in.ParentID]; !ok {
+			return nil, uniqueViolation("parent_id", *in.ParentID)
+		}
+	}
 	now := clk.NowISO()
 	row := lic.LicenseTemplate{
 		ID:                  lic.NewUUIDv7(),
 		ScopeID:             in.ScopeID,
+		ParentID:            in.ParentID,
 		Name:                in.Name,
 		MaxUsages:           in.MaxUsages,
 		TrialDurationSec:    in.TrialDurationSec,
+		TrialCooldownSec:    in.TrialCooldownSec,
 		GraceDurationSec:    in.GraceDurationSec,
 		ForceOnlineAfterSec: in.ForceOnlineAfterSec,
 		Entitlements:        orEmptyMap(in.Entitlements),
@@ -797,6 +842,9 @@ func listTemplates(s *state, filter lic.LicenseTemplateFilter, page lic.PageRequ
 		if filter.Name != nil && r.Name != *filter.Name {
 			continue
 		}
+		if filter.ParentIDSet && !ptrEq(r.ParentID, filter.ParentID) {
+			continue
+		}
 		rows = append(rows, r)
 	}
 	return paginate(rows, page, func(r lic.LicenseTemplate) (string, string) { return r.CreatedAt, r.ID }), nil
@@ -806,6 +854,19 @@ func updateTemplate(s *state, clk lic.Clock, id string, patch lic.LicenseTemplat
 	cur, ok := s.templates[id]
 	if !ok {
 		return nil, uniqueViolation("pk", id)
+	}
+	// Cycle detection on re-parenting: walk forward from the prospective
+	// parent and reject if we'd revisit `id`.
+	if patch.ParentID.Set && patch.ParentID.Value != nil {
+		if _, exists := s.templates[*patch.ParentID.Value]; !exists {
+			return nil, uniqueViolation("parent_id", *patch.ParentID.Value)
+		}
+		chain := walkMemoryParentChain(s, *patch.ParentID.Value, id)
+		if chain != nil {
+			return nil, lic.NewError(lic.CodeTemplateCycle,
+				fmt.Sprintf("template parent chain forms a cycle through %s", id),
+				map[string]any{"id": id, "chain": chain})
+		}
 	}
 	if patch.Name != nil {
 		cur.Name = *patch.Name
@@ -819,8 +880,14 @@ func updateTemplate(s *state, clk lic.Clock, id string, patch lic.LicenseTemplat
 	if patch.GraceDurationSec != nil {
 		cur.GraceDurationSec = *patch.GraceDurationSec
 	}
+	if patch.ParentID.Set {
+		cur.ParentID = patch.ParentID.Value
+	}
 	if patch.ForceOnlineAfterSec.Set {
 		cur.ForceOnlineAfterSec = patch.ForceOnlineAfterSec.Value
+	}
+	if patch.TrialCooldownSec.Set {
+		cur.TrialCooldownSec = patch.TrialCooldownSec.Value
 	}
 	if patch.Entitlements.Set {
 		cur.Entitlements = orEmptyMap(patch.Entitlements.Value)
@@ -831,6 +898,28 @@ func updateTemplate(s *state, clk lic.Clock, id string, patch lic.LicenseTemplat
 	cur.UpdatedAt = clk.NowISO()
 	s.templates[id] = cur
 	return &cur, nil
+}
+
+// walkMemoryParentChain walks toward the root from startParent and returns
+// the visited ids (in walk order) if `forbidden` appears. Nil means no cycle.
+func walkMemoryParentChain(s *state, startParent string, forbidden string) []string {
+	visited := make([]string, 0, 8)
+	cursor := startParent
+	for range 64 {
+		visited = append(visited, cursor)
+		if cursor == forbidden {
+			return visited
+		}
+		node, ok := s.templates[cursor]
+		if !ok {
+			return nil
+		}
+		if node.ParentID == nil {
+			return nil
+		}
+		cursor = *node.ParentID
+	}
+	return nil
 }
 
 func deleteTemplate(s *state, id string) error {
