@@ -41,6 +41,7 @@ import type {
   AuditLogFilter,
   AuditLogInput,
   Clock,
+  FindByLicensableQuery,
   JSONValue,
   License,
   LicenseFilter,
@@ -77,6 +78,35 @@ import { POSTGRES_SCHEMA } from './schema.ts';
 /** Union of the two connection shapes the adapter can run against — a pool
  *  (checks out a client per statement) or a client (one tx, re-used). */
 type Queryable = Pool | PoolClient;
+
+/**
+ * Walk the template parent chain starting at `startParent` and return the
+ * visited ids if `forbidden` appears. Null means "no cycle". Used by
+ * updateTemplate to reject re-parenting that would form a loop.
+ */
+async function walkPgParentChain(
+  q: Queryable,
+  startParent: UUIDv7,
+  forbidden: UUIDv7,
+): Promise<readonly UUIDv7[] | null> {
+  const visited: UUIDv7[] = [];
+  let cursor: UUIDv7 | null = startParent;
+  let hops = 0;
+  while (cursor !== null && hops < 64) {
+    visited.push(cursor);
+    if (cursor === forbidden) return visited;
+    // Inline the query type via cast — pg's overloads make tsc balk on
+    // generic arguments inside a recursive let-narrowing loop.
+    const res = (await q.query('SELECT parent_id FROM license_templates WHERE id = $1', [
+      cursor,
+    ])) as { rows: Array<Record<string, unknown>> };
+    const row = res.rows[0];
+    if (!row) return null;
+    cursor = (row.parent_id as UUIDv7 | null) ?? null;
+    hops++;
+  }
+  return null;
+}
 
 export interface PostgresAdapterOptions {
   /** Clock used for UUIDv7 generation. Defaults to the system clock. */
@@ -273,6 +303,25 @@ export class PostgresStorage implements Storage {
     return buildPage(rows, limit);
   }
 
+  async findLicensesByLicensable(query: FindByLicensableQuery): Promise<readonly License[]> {
+    // Uses the licenses_licensable_type_id_idx introduced in v0002.
+    const where: string[] = ['licensable_type = $1', 'licensable_id = $2'];
+    const params: unknown[] = [query.type, query.id];
+    if (query.scope_id !== undefined) {
+      if (query.scope_id === null) {
+        where.push('scope_id IS NULL');
+      } else {
+        params.push(query.scope_id);
+        where.push(`scope_id = $${params.length}`);
+      }
+    }
+    const sql = `SELECT * FROM licenses
+                 WHERE ${where.join(' AND ')}
+                 ORDER BY created_at DESC, id DESC`;
+    const res = await this.#q.query<Record<string, unknown>>(sql, params);
+    return res.rows.map(mapLicense);
+  }
+
   async updateLicense(id: UUIDv7, patch: LicensePatch): Promise<License> {
     const { setSql, values } = buildUpdateSet(patch as unknown as Record<string, unknown>);
     if (setSql === null) {
@@ -377,15 +426,18 @@ export class PostgresStorage implements Storage {
     try {
       const res = await this.#q.query<Record<string, unknown>>(
         `INSERT INTO license_templates (
-           id, scope_id, name, max_usages, trial_duration_sec, grace_duration_sec,
-           force_online_after_sec, entitlements, meta
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+           id, scope_id, parent_id, name, max_usages, trial_duration_sec,
+           trial_cooldown_sec, grace_duration_sec, force_online_after_sec,
+           entitlements, meta
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
         [
           id,
           input.scope_id,
+          input.parent_id,
           input.name,
           input.max_usages,
           input.trial_duration_sec,
+          input.trial_cooldown_sec,
           input.grace_duration_sec,
           input.force_online_after_sec,
           input.entitlements,
@@ -422,6 +474,14 @@ export class PostgresStorage implements Storage {
       params.push(filter.name);
       where.push(`name = $${params.length}`);
     }
+    if (filter.parent_id !== undefined) {
+      if (filter.parent_id === null) {
+        where.push('parent_id IS NULL');
+      } else {
+        params.push(filter.parent_id);
+        where.push(`parent_id = $${params.length}`);
+      }
+    }
     const { limitClause, cursorClause, cursorParams, limit } = buildPagination(page, params.length);
     const res = await this.#q.query<Record<string, unknown>>(
       `SELECT * FROM license_templates
@@ -435,8 +495,16 @@ export class PostgresStorage implements Storage {
   }
 
   async updateTemplate(id: UUIDv7, patch: LicenseTemplatePatch): Promise<LicenseTemplate> {
-    const { setSql, values } = buildUpdateSet(patch as unknown as Record<string, unknown>);
     try {
+      // Cycle detection: if parent_id is being set to a non-null value,
+      // walk forward from the new parent and bail if we would revisit `id`.
+      if (patch.parent_id !== undefined && patch.parent_id !== null) {
+        const cycle = await walkPgParentChain(this.#q, patch.parent_id, id);
+        if (cycle !== null) {
+          throw errors.templateCycle(id, cycle);
+        }
+      }
+      const { setSql, values } = buildUpdateSet(patch as unknown as Record<string, unknown>);
       if (setSql === null) {
         const res = await this.#q.query<Record<string, unknown>>(
           'UPDATE license_templates SET updated_at = now() WHERE id = $1 RETURNING *',

@@ -66,9 +66,13 @@ export interface LicenseScopeInput {
 
 export interface LicenseTemplateInput {
   readonly scope_id: UUIDv7 | null;
+  /** Self-FK enabling template inheritance. Null means "no parent". Added in v0002. */
+  readonly parent_id: UUIDv7 | null;
   readonly name: string;
   readonly max_usages: number;
   readonly trial_duration_sec: number;
+  /** Minimum gap between successive trials of this template against the same fingerprint. Added in v0002. */
+  readonly trial_cooldown_sec: number | null;
   readonly grace_duration_sec: number;
   readonly force_online_after_sec: number | null;
   readonly entitlements: Readonly<Record<string, JSONValue>>;
@@ -130,8 +134,11 @@ export interface LicenseScopePatch {
 
 export interface LicenseTemplatePatch {
   readonly name?: string;
+  /** Re-parent or detach a template. Cycles are rejected at write time. */
+  readonly parent_id?: UUIDv7 | null;
   readonly max_usages?: number;
   readonly trial_duration_sec?: number;
+  readonly trial_cooldown_sec?: number | null;
   readonly grace_duration_sec?: number;
   readonly force_online_after_sec?: number | null;
   readonly entitlements?: Readonly<Record<string, JSONValue>>;
@@ -182,6 +189,8 @@ export interface LicenseScopeFilter {
 export interface LicenseTemplateFilter {
   readonly scope_id?: UUIDv7 | null;
   readonly name?: string;
+  /** Restrict to templates with the given parent. NULL filters root templates. */
+  readonly parent_id?: UUIDv7 | null;
 }
 
 export interface LicenseUsageFilter {
@@ -243,12 +252,32 @@ export type SchemaDescription = readonly SchemaEntity[];
  *  on anything beyond what's declared here. */
 export type StorageTx = Omit<Storage, 'withTransaction'>;
 
+/** Query argument for {@link Storage.findLicensesByLicensable}. */
+export interface FindByLicensableQuery {
+  readonly type: string;
+  readonly id: string;
+  /** When set, restrict to a specific scope (or `null` for global-scope only).
+   *  When omitted, returns matches in every scope. */
+  readonly scope_id?: UUIDv7 | null;
+}
+
 export interface Storage {
   // ---------- Licenses ----------
   createLicense(input: LicenseInput): Promise<License>;
   getLicense(id: UUIDv7): Promise<License | null>;
   getLicenseByKey(licenseKey: string): Promise<License | null>;
   listLicenses(filter: LicenseFilter, page: PageRequest): Promise<Page<License>>;
+  /**
+   * Return every license attached to the given polymorphic licensable,
+   * ordered by `created_at DESC`. Bounded in practice by the
+   * `(licensable_type, licensable_id, scope_id)` unique constraint —
+   * each licensable holds at most one license per scope, so callers
+   * see at most one row per scope.
+   *
+   * Uses the `licenses_licensable_type_id_idx` introduced in v0002.
+   * Added in v0002.
+   */
+  findLicensesByLicensable(query: FindByLicensableQuery): Promise<readonly License[]>;
   updateLicense(id: UUIDv7, patch: LicensePatch): Promise<License>;
 
   // ---------- LicenseScopes ----------

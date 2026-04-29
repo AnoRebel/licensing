@@ -48,9 +48,13 @@ import type { JSONValue, License, LicenseStatus, LicenseTemplate, UUIDv7 } from 
 
 export interface CreateTemplateInput {
   readonly scope_id: UUIDv7 | null;
+  /** Optional self-FK enabling template inheritance. Defaults to null. Added in v0002. */
+  readonly parent_id?: UUIDv7 | null;
   readonly name: string;
   readonly max_usages: number;
   readonly trial_duration_sec: number;
+  /** Per-template trial cooldown in seconds. Null = no cooldown enforced. */
+  readonly trial_cooldown_sec?: number | null;
   readonly grace_duration_sec: number;
   readonly force_online_after_sec: number | null;
   readonly entitlements?: Readonly<Record<string, JSONValue>>;
@@ -90,9 +94,11 @@ export async function createTemplate(
   return storage.withTransaction(async (tx) => {
     const template = await tx.createTemplate({
       scope_id: input.scope_id,
+      parent_id: input.parent_id ?? null,
       name: input.name,
       max_usages: input.max_usages,
       trial_duration_sec: input.trial_duration_sec,
+      trial_cooldown_sec: input.trial_cooldown_sec ?? null,
       grace_duration_sec: input.grace_duration_sec,
       force_online_after_sec: input.force_online_after_sec,
       entitlements: input.entitlements ?? {},

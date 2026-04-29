@@ -44,6 +44,7 @@ import type {
   AuditLogFilter,
   AuditLogInput,
   Clock,
+  FindByLicensableQuery,
   JSONValue,
   License,
   LicenseFilter,
@@ -80,6 +81,30 @@ import { decodeCursor, encodeCursor } from './cursor.ts';
  *  The cast centralises the `as` so call sites stay readable. */
 function bind(params: readonly unknown[]): SQLQueryBindings[] {
   return params as SQLQueryBindings[];
+}
+
+/**
+ * Walk the template parent chain starting at `startParent` toward the root
+ * and return the visited ids (in walk order) if `forbidden` appears. Null
+ * means "no cycle". 64-hop cap defends against pathological / corrupted data.
+ */
+function walkSqliteParentChain(
+  db: Database,
+  startParent: UUIDv7,
+  forbidden: UUIDv7,
+): readonly UUIDv7[] | null {
+  const visited: UUIDv7[] = [];
+  let cursor: UUIDv7 | null = startParent;
+  for (let i = 0; i < 64 && cursor !== null; i++) {
+    visited.push(cursor);
+    if (cursor === forbidden) return visited;
+    const row = db.query('SELECT parent_id FROM license_templates WHERE id = ?').get(cursor) as {
+      parent_id: string | null;
+    } | null;
+    if (!row) return null;
+    cursor = row.parent_id ?? null;
+  }
+  return null;
 }
 
 import { mapSqliteError } from './errors.ts';
@@ -315,6 +340,25 @@ export class SqliteStorage implements Storage {
     return buildPage(rows.map(mapLicense), limit);
   }
 
+  async findLicensesByLicensable(query: FindByLicensableQuery): Promise<readonly License[]> {
+    // Uses the licenses_licensable_type_id_idx introduced in v0002.
+    const where: string[] = ['licensable_type = ?', 'licensable_id = ?'];
+    const params: unknown[] = [query.type, query.id];
+    if (query.scope_id !== undefined) {
+      if (query.scope_id === null) {
+        where.push('scope_id IS NULL');
+      } else {
+        where.push('scope_id = ?');
+        params.push(query.scope_id);
+      }
+    }
+    const sql = `SELECT * FROM licenses
+                 WHERE ${where.join(' AND ')}
+                 ORDER BY created_at DESC, id DESC`;
+    const rows = this.#db.query(sql).all(...bind(params)) as Record<string, unknown>[];
+    return rows.map(mapLicense);
+  }
+
   async updateLicense(id: UUIDv7, patch: LicensePatch): Promise<License> {
     const { setSql, values } = buildUpdateSet(patch as unknown as Record<string, unknown>);
     const now = this.#now();
@@ -425,16 +469,19 @@ export class SqliteStorage implements Storage {
       this.#db
         .query(
           `INSERT INTO license_templates (
-             id, scope_id, name, max_usages, trial_duration_sec, grace_duration_sec,
-             force_online_after_sec, entitlements, meta, created_at, updated_at
-           ) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+             id, scope_id, parent_id, name, max_usages, trial_duration_sec,
+             trial_cooldown_sec, grace_duration_sec, force_online_after_sec,
+             entitlements, meta, created_at, updated_at
+           ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         )
         .run(
           id,
           input.scope_id ?? null,
+          input.parent_id ?? null,
           input.name,
           input.max_usages,
           input.trial_duration_sec,
+          input.trial_cooldown_sec ?? null,
           input.grace_duration_sec,
           input.force_online_after_sec ?? null,
           toJson(input.entitlements),
@@ -477,6 +524,13 @@ export class SqliteStorage implements Storage {
       where.push('name = ?');
       params.push(filter.name);
     }
+    if (filter.parent_id !== undefined) {
+      if (filter.parent_id === null) where.push('parent_id IS NULL');
+      else {
+        where.push('parent_id = ?');
+        params.push(filter.parent_id);
+      }
+    }
     const { limitClause, cursorClause, cursorParams, limit } = buildPagination(page);
     const rows = this.#db
       .query(
@@ -490,9 +544,18 @@ export class SqliteStorage implements Storage {
   }
 
   async updateTemplate(id: UUIDv7, patch: LicenseTemplatePatch): Promise<LicenseTemplate> {
-    const { setSql, values } = buildUpdateSet(patch as unknown as Record<string, unknown>);
     const now = this.#now();
     try {
+      // Cycle detection: if parent_id is being changed, walk forward from the
+      // prospective parent and bail if we would revisit `id`. SQLite has no
+      // native graph primitives so we walk in app code.
+      if (patch.parent_id !== undefined && patch.parent_id !== null) {
+        const cycle = walkSqliteParentChain(this.#db, patch.parent_id, id);
+        if (cycle !== null) {
+          throw errors.templateCycle(id, cycle);
+        }
+      }
+      const { setSql, values } = buildUpdateSet(patch as unknown as Record<string, unknown>);
       if (setSql === null) {
         this.#db.query('UPDATE license_templates SET updated_at = ? WHERE id = ?').run(now, id);
       } else {

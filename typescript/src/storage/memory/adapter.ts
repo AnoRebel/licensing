@@ -41,6 +41,7 @@ import {
   type AuditLogInput,
   type Clock,
   errors,
+  type FindByLicensableQuery,
   isoFromMs,
   type License,
   type LicenseFilter,
@@ -106,6 +107,32 @@ function cloneState(s: State): State {
     keys: new Map(s.keys),
     audit: new Map(s.audit),
   };
+}
+
+/**
+ * Walk the parent chain starting at `startParent` toward the root and return
+ * the visited template ids if we encounter `forbidden` (= the template being
+ * updated). Null means "no cycle". A null `startParent` is also "no cycle"
+ * (root template). The walk caps at 64 hops to bound runtime against
+ * pathologically deep or already-corrupted chains; depth-limit semantics for
+ * inheritance resolution live elsewhere (templates/resolve).
+ */
+function walkParentChain(
+  templates: ReadonlyMap<UUIDv7, LicenseTemplate>,
+  startParent: UUIDv7 | null,
+  forbidden: UUIDv7,
+): readonly UUIDv7[] | null {
+  if (startParent === null) return null;
+  const visited: UUIDv7[] = [];
+  let cursor: UUIDv7 | null = startParent;
+  for (let i = 0; i < 64 && cursor !== null; i++) {
+    visited.push(cursor);
+    if (cursor === forbidden) return visited;
+    const node = templates.get(cursor);
+    if (!node) return null;
+    cursor = node.parent_id;
+  }
+  return null;
 }
 
 export interface MemoryAdapterOptions {
@@ -195,6 +222,21 @@ export class MemoryStorage implements Storage {
     return paginate(filtered, page);
   }
 
+  async findLicensesByLicensable(query: FindByLicensableQuery): Promise<readonly License[]> {
+    const matches = [...this.state.licenses.values()].filter((r) => {
+      if (r.licensable_type !== query.type) return false;
+      if (r.licensable_id !== query.id) return false;
+      if (query.scope_id !== undefined && r.scope_id !== query.scope_id) return false;
+      return true;
+    });
+    // Sort created_at DESC, with id as tiebreaker for determinism.
+    matches.sort((a, b) => {
+      if (a.created_at !== b.created_at) return a.created_at < b.created_at ? 1 : -1;
+      return a.id < b.id ? 1 : -1;
+    });
+    return matches;
+  }
+
   async updateLicense(id: UUIDv7, patch: LicensePatch): Promise<License> {
     return this.writeOp((s) => {
       const cur = s.licenses.get(id);
@@ -278,22 +320,25 @@ export class MemoryStorage implements Storage {
           );
         }
       }
+      // If parent_id is set it must reference an existing template (FK
+      // semantics). The Postgres adapter relies on a real FK; we mirror the
+      // check here so the memory adapter behaves identically.
+      if (input.parent_id !== null && !s.templates.has(input.parent_id)) {
+        throw errors.uniqueConstraintViolation('parent_id', input.parent_id);
+      }
+      const id = newUuidV7(this.clock);
+      // Cycles are impossible at create time (we just generated the id) but
+      // the helper is shared with updateTemplate to keep the contract uniform.
+      // We pass the prospective row so the walker can see the new edge.
       const now = this.nowIso();
-      // parent_id and trial_cooldown_sec are accepted only when the
-      // LicenseTemplateInput is widened in group 2; for now they default to
-      // null so the schema description matches the storage shape.
-      const inputAny = input as LicenseTemplateInput & {
-        parent_id?: UUIDv7 | null;
-        trial_cooldown_sec?: number | null;
-      };
       const row: LicenseTemplate = {
-        id: newUuidV7(this.clock),
+        id,
         scope_id: input.scope_id,
-        parent_id: inputAny.parent_id ?? null,
+        parent_id: input.parent_id,
         name: input.name,
         max_usages: input.max_usages,
         trial_duration_sec: input.trial_duration_sec,
-        trial_cooldown_sec: inputAny.trial_cooldown_sec ?? null,
+        trial_cooldown_sec: input.trial_cooldown_sec,
         grace_duration_sec: input.grace_duration_sec,
         force_online_after_sec: input.force_online_after_sec,
         entitlements: input.entitlements,
@@ -317,6 +362,7 @@ export class MemoryStorage implements Storage {
     const filtered = [...this.state.templates.values()].filter((r) => {
       if (filter.scope_id !== undefined && r.scope_id !== filter.scope_id) return false;
       if (filter.name !== undefined && r.name !== filter.name) return false;
+      if (filter.parent_id !== undefined && r.parent_id !== filter.parent_id) return false;
       return true;
     });
     return paginate(filtered, page);
@@ -326,6 +372,17 @@ export class MemoryStorage implements Storage {
     return this.writeOp((s) => {
       const cur = s.templates.get(id);
       if (!cur) throw errors.uniqueConstraintViolation('pk', id);
+      // Re-parenting can introduce cycles. Walk forward from the prospective
+      // parent toward the root and bail with TemplateCycle if we revisit `id`.
+      if (patch.parent_id !== undefined) {
+        if (patch.parent_id !== null && !s.templates.has(patch.parent_id)) {
+          throw errors.uniqueConstraintViolation('parent_id', patch.parent_id);
+        }
+        const chain = walkParentChain(s.templates, patch.parent_id, id);
+        if (chain !== null) {
+          throw errors.templateCycle(id, chain);
+        }
+      }
       const next: LicenseTemplate = {
         ...cur,
         ...patch,

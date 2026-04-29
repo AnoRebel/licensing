@@ -46,6 +46,7 @@ export type LicensingErrorCode =
   // Storage
   | 'ImmutableAuditLog'
   | 'UniqueConstraintViolation'
+  | 'TemplateCycle'
   // Grace / client
   | 'GraceExpired'
   // Auth / transport
@@ -146,6 +147,12 @@ export const errors = {
     ),
   immutableAuditLog: (): StorageError =>
     new StorageError('ImmutableAuditLog', 'audit log rows are append-only and cannot be mutated'),
+  /** Inserting/updating a template such that the parent chain forms a cycle. */
+  templateCycle: (templateId: string, parentChain: readonly string[]): StorageError =>
+    new StorageError('TemplateCycle', `template parent chain forms a cycle through ${templateId}`, {
+      templateId,
+      parentChain: [...parentChain],
+    }),
 
   // Lifecycle
   licenseNotFound: (id: string): LifecycleError =>
