@@ -52,6 +52,7 @@ const (
 	CodeImmutableAuditLog         ErrorCode = "ImmutableAuditLog"
 	CodeUniqueConstraintViolation ErrorCode = "UniqueConstraintViolation"
 	CodeTemplateCycle             ErrorCode = "TemplateCycle"
+	CodeTrialAlreadyIssued        ErrorCode = "TrialAlreadyIssued"
 
 	// Grace / client
 	CodeGraceExpired ErrorCode = "GraceExpired"
