@@ -4,6 +4,7 @@
 
 export * from './canonical-json.ts';
 export * from './crypto/index.ts';
+export * from './easy.ts';
 export * from './encrypted-pkcs8.ts';
 export * from './errors.ts';
 export * from './id.ts';
