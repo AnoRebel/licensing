@@ -159,6 +159,30 @@ type AuditLogEntry struct {
 	OccurredAt string         `json:"occurred_at"`
 }
 
+// TrialIssuance pins a single (template_id, fingerprint_hash) so the issuer
+// can enforce the per-template trial cooldown. Mirrors typescript/src/types.ts
+// TrialIssuance. Added in v0002.
+type TrialIssuance struct {
+	TemplateID      *string `json:"template_id"`
+	ID              string  `json:"id"`
+	FingerprintHash string  `json:"fingerprint_hash"`
+	IssuedAt        string  `json:"issued_at"`
+}
+
+// TrialIssuanceInput is the caller-supplied shape for RecordTrialIssuance.
+// Storage-managed fields (id, issued_at) are populated by the adapter.
+type TrialIssuanceInput struct {
+	TemplateID      *string
+	FingerprintHash string
+}
+
+// TrialIssuanceLookup is the find-by query for FindTrialIssuance.
+// A nil TemplateID matches the global "no-template" dedupe group.
+type TrialIssuanceLookup struct {
+	TemplateID      *string
+	FingerprintHash string
+}
+
 // ---------- Input shapes (caller-supplied; storage-managed fields omitted) ----------
 
 // LicenseInput is the caller-supplied shape for creating a License.
@@ -365,9 +389,20 @@ type LicenseKeyFilter struct {
 // AuditLogFilter narrows ListAudits results. The *Set fields distinguish
 // "don't filter" from "filter on nil" for the nullable pointer columns.
 type AuditLogFilter struct {
-	LicenseID    *string
-	ScopeID      *string
-	Event        *string
+	LicenseID *string
+	ScopeID   *string
+	Event     *string
+	// Events allows multi-event filtering (taken in preference to Event when
+	// non-empty). Added in v0002.
+	Events []string
+	// LicensableType/LicensableID join via the licenses table; uses the
+	// (licensable_type, licensable_id) index from v0002.
+	LicensableType *string
+	LicensableID   *string
+	Actor          *string
+	// Since (inclusive) and Until (exclusive) bound occurred_at. ISO-8601 strings.
+	Since        *string
+	Until        *string
 	LicenseIDSet bool
 	ScopeIDSet   bool
 }

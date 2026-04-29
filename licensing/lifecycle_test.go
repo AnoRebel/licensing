@@ -155,6 +155,13 @@ func (m *mockTx) GetAudit(_ string) (*AuditLogEntry, error)                  { r
 func (m *mockTx) ListAudit(_ AuditLogFilter, _ PageRequest) (Page[AuditLogEntry], error) {
 	return Page[AuditLogEntry]{}, nil
 }
+func (m *mockTx) RecordTrialIssuance(_ TrialIssuanceInput) (*TrialIssuance, error) {
+	return nil, nil
+}
+func (m *mockTx) FindTrialIssuance(_ TrialIssuanceLookup) (*TrialIssuance, error) {
+	return nil, nil
+}
+func (m *mockTx) DeleteTrialIssuance(_ string) error { return nil }
 
 // ---------- Activate ----------
 

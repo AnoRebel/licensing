@@ -207,6 +207,19 @@ type StorageTx interface {
 	AppendAudit(input AuditLogInput) (*AuditLogEntry, error)
 	GetAudit(id string) (*AuditLogEntry, error)
 	ListAudit(filter AuditLogFilter, page PageRequest) (Page[AuditLogEntry], error)
+
+	// ---------- TrialIssuances (added in v0002) ----------
+	//
+	// RecordTrialIssuance writes a row pinning (template_id, fingerprint_hash)
+	// at issuance time. The unique constraint on (template_id, fingerprint_hash)
+	// rejects same-pair duplicates with CodeUniqueConstraintViolation; per-
+	// template cooldown enforcement sits one layer above this method.
+	//
+	// FindTrialIssuance returns the most recent row for the pair, or nil.
+	// DeleteTrialIssuance hard-deletes by id (admin "Reset trial" action).
+	RecordTrialIssuance(input TrialIssuanceInput) (*TrialIssuance, error)
+	FindTrialIssuance(query TrialIssuanceLookup) (*TrialIssuance, error)
+	DeleteTrialIssuance(id string) error
 }
 
 // Storage is the full adapter contract. In addition to everything on

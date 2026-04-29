@@ -54,22 +54,24 @@ import (
 // tx-body path). No field on *state is concurrency-safe on its own —
 // synchronization lives one level up on *Storage.
 type state struct {
-	licenses  map[string]lic.License
-	scopes    map[string]lic.LicenseScope
-	templates map[string]lic.LicenseTemplate
-	usages    map[string]lic.LicenseUsage
-	keys      map[string]lic.LicenseKey
-	audit     map[string]lic.AuditLogEntry
+	licenses       map[string]lic.License
+	scopes         map[string]lic.LicenseScope
+	templates      map[string]lic.LicenseTemplate
+	usages         map[string]lic.LicenseUsage
+	keys           map[string]lic.LicenseKey
+	audit          map[string]lic.AuditLogEntry
+	trialIssuances map[string]lic.TrialIssuance
 }
 
 func newState() *state {
 	return &state{
-		licenses:  map[string]lic.License{},
-		scopes:    map[string]lic.LicenseScope{},
-		templates: map[string]lic.LicenseTemplate{},
-		usages:    map[string]lic.LicenseUsage{},
-		keys:      map[string]lic.LicenseKey{},
-		audit:     map[string]lic.AuditLogEntry{},
+		licenses:       map[string]lic.License{},
+		scopes:         map[string]lic.LicenseScope{},
+		templates:      map[string]lic.LicenseTemplate{},
+		usages:         map[string]lic.LicenseUsage{},
+		keys:           map[string]lic.LicenseKey{},
+		audit:          map[string]lic.AuditLogEntry{},
+		trialIssuances: map[string]lic.TrialIssuance{},
 	}
 }
 
@@ -81,12 +83,13 @@ func newState() *state {
 // map in place, which preserves that invariant.
 func (s *state) clone() *state {
 	out := &state{
-		licenses:  make(map[string]lic.License, len(s.licenses)),
-		scopes:    make(map[string]lic.LicenseScope, len(s.scopes)),
-		templates: make(map[string]lic.LicenseTemplate, len(s.templates)),
-		usages:    make(map[string]lic.LicenseUsage, len(s.usages)),
-		keys:      make(map[string]lic.LicenseKey, len(s.keys)),
-		audit:     make(map[string]lic.AuditLogEntry, len(s.audit)),
+		licenses:       make(map[string]lic.License, len(s.licenses)),
+		scopes:         make(map[string]lic.LicenseScope, len(s.scopes)),
+		templates:      make(map[string]lic.LicenseTemplate, len(s.templates)),
+		usages:         make(map[string]lic.LicenseUsage, len(s.usages)),
+		keys:           make(map[string]lic.LicenseKey, len(s.keys)),
+		audit:          make(map[string]lic.AuditLogEntry, len(s.audit)),
+		trialIssuances: make(map[string]lic.TrialIssuance, len(s.trialIssuances)),
 	}
 	maps.Copy(out.licenses, s.licenses)
 	maps.Copy(out.scopes, s.scopes)
@@ -94,6 +97,7 @@ func (s *state) clone() *state {
 	maps.Copy(out.usages, s.usages)
 	maps.Copy(out.keys, s.keys)
 	maps.Copy(out.audit, s.audit)
+	maps.Copy(out.trialIssuances, s.trialIssuances)
 	return out
 }
 
@@ -346,6 +350,29 @@ func (s *Storage) ListAudit(filter lic.AuditLogFilter, page lic.PageRequest) (li
 	return listAudit(s.s, filter, page)
 }
 
+// RecordTrialIssuance records a trial-dedupe row. Returns
+// CodeUniqueConstraintViolation if (template_id, fingerprint_hash) already
+// exists. Added in v0002.
+func (s *Storage) RecordTrialIssuance(in lic.TrialIssuanceInput) (*lic.TrialIssuance, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return recordTrialIssuance(s.s, s.clock, in)
+}
+
+// FindTrialIssuance returns the most recent trial issuance for the pair, or nil.
+func (s *Storage) FindTrialIssuance(query lic.TrialIssuanceLookup) (*lic.TrialIssuance, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return findTrialIssuance(s.s, query)
+}
+
+// DeleteTrialIssuance hard-deletes a trial-issuance row.
+func (s *Storage) DeleteTrialIssuance(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return deleteTrialIssuance(s.s, id)
+}
+
 // WithTransaction runs fn atomically. On nil return, the cloned
 // snapshot is swapped in as the live state. On any error return, the
 // clone is discarded and the live state is unchanged.
@@ -545,6 +572,21 @@ func (t *memoryTx) GetAudit(id string) (*lic.AuditLogEntry, error) { return getA
 // ListAudit lists audit.
 func (t *memoryTx) ListAudit(filter lic.AuditLogFilter, page lic.PageRequest) (lic.Page[lic.AuditLogEntry], error) {
 	return listAudit(t.state, filter, page)
+}
+
+// RecordTrialIssuance records a trial-dedupe row inside a tx.
+func (t *memoryTx) RecordTrialIssuance(in lic.TrialIssuanceInput) (*lic.TrialIssuance, error) {
+	return recordTrialIssuance(t.state, t.clock, in)
+}
+
+// FindTrialIssuance returns the most recent trial issuance for the pair.
+func (t *memoryTx) FindTrialIssuance(query lic.TrialIssuanceLookup) (*lic.TrialIssuance, error) {
+	return findTrialIssuance(t.state, query)
+}
+
+// DeleteTrialIssuance hard-deletes a trial-issuance row inside a tx.
+func (t *memoryTx) DeleteTrialIssuance(id string) error {
+	return deleteTrialIssuance(t.state, id)
 }
 
 // ---------- Core CRUD, operating on a *state directly ----------
@@ -1180,12 +1222,80 @@ func listAudit(s *state, filter lic.AuditLogFilter, page lic.PageRequest) (lic.P
 		if filter.Event != nil && r.Event != *filter.Event {
 			continue
 		}
+		if len(filter.Events) > 0 && !slices.Contains(filter.Events, r.Event) {
+			continue
+		}
+		if filter.Actor != nil && r.Actor != *filter.Actor {
+			continue
+		}
+		if filter.Since != nil && r.OccurredAt < *filter.Since {
+			continue
+		}
+		if filter.Until != nil && r.OccurredAt >= *filter.Until {
+			continue
+		}
+		if filter.LicensableType != nil || filter.LicensableID != nil {
+			if r.LicenseID == nil {
+				continue
+			}
+			parent, ok := s.licenses[*r.LicenseID]
+			if !ok {
+				continue
+			}
+			if filter.LicensableType != nil && parent.LicensableType != *filter.LicensableType {
+				continue
+			}
+			if filter.LicensableID != nil && parent.LicensableID != *filter.LicensableID {
+				continue
+			}
+		}
 		rows = append(rows, r)
 	}
 	// AuditLog orders by occurred_at DESC, id DESC — no created_at on
 	// this entity. Pass occurred_at through the key extractor so
 	// paginate sorts correctly.
 	return paginate(rows, page, func(r lic.AuditLogEntry) (string, string) { return r.OccurredAt, r.ID }), nil
+}
+
+// TrialIssuances ------------------------------------------------------
+
+func recordTrialIssuance(s *state, clk lic.Clock, in lic.TrialIssuanceInput) (*lic.TrialIssuance, error) {
+	for _, row := range s.trialIssuances {
+		if ptrEq(row.TemplateID, in.TemplateID) && row.FingerprintHash == in.FingerprintHash {
+			return nil, uniqueViolation("template_fingerprint",
+				fmt.Sprintf("%s:%s", ptrOrNullStr(in.TemplateID), in.FingerprintHash))
+		}
+	}
+	row := lic.TrialIssuance{
+		ID:              lic.NewUUIDv7(),
+		TemplateID:      in.TemplateID,
+		FingerprintHash: in.FingerprintHash,
+		IssuedAt:        clk.NowISO(),
+	}
+	s.trialIssuances[row.ID] = row
+	return &row, nil
+}
+
+func findTrialIssuance(s *state, query lic.TrialIssuanceLookup) (*lic.TrialIssuance, error) {
+	var best *lic.TrialIssuance
+	for _, row := range s.trialIssuances {
+		if !ptrEq(row.TemplateID, query.TemplateID) {
+			continue
+		}
+		if row.FingerprintHash != query.FingerprintHash {
+			continue
+		}
+		if best == nil || row.IssuedAt > best.IssuedAt {
+			r := row
+			best = &r
+		}
+	}
+	return best, nil
+}
+
+func deleteTrialIssuance(s *state, id string) error {
+	delete(s.trialIssuances, id)
+	return nil
 }
 
 // ---------- Internal utility helpers ----------

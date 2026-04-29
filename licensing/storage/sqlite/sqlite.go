@@ -255,6 +255,22 @@ func (s *Storage) ListAudit(filter lic.AuditLogFilter, page lic.PageRequest) (li
 	return listAudit(s.db, filter, page)
 }
 
+// RecordTrialIssuance writes a trial-dedupe row. CodeUniqueConstraintViolation
+// when (template_id, fingerprint_hash) already exists.
+func (s *Storage) RecordTrialIssuance(in lic.TrialIssuanceInput) (*lic.TrialIssuance, error) {
+	return recordTrialIssuance(s.db, s.clock, in)
+}
+
+// FindTrialIssuance returns the most recent trial issuance for the pair, or nil.
+func (s *Storage) FindTrialIssuance(query lic.TrialIssuanceLookup) (*lic.TrialIssuance, error) {
+	return findTrialIssuance(s.db, query)
+}
+
+// DeleteTrialIssuance hard-deletes a trial-issuance row.
+func (s *Storage) DeleteTrialIssuance(id string) error {
+	return deleteTrialIssuance(s.db, id)
+}
+
 // WithTransaction runs fn atomically inside BEGIN / COMMIT. On error,
 // ROLLBACK is issued. Nested transactions are rejected at the type
 // level — sqliteTx has no WithTransaction method.
@@ -441,6 +457,21 @@ func (t *sqliteTx) GetAudit(id string) (*lic.AuditLogEntry, error) {
 // ListAudit lists audit.
 func (t *sqliteTx) ListAudit(filter lic.AuditLogFilter, page lic.PageRequest) (lic.Page[lic.AuditLogEntry], error) {
 	return listAudit(t.tx, filter, page)
+}
+
+// RecordTrialIssuance records a trial-dedupe row inside a tx.
+func (t *sqliteTx) RecordTrialIssuance(in lic.TrialIssuanceInput) (*lic.TrialIssuance, error) {
+	return recordTrialIssuance(t.tx, t.clock, in)
+}
+
+// FindTrialIssuance returns the most recent trial issuance for the pair.
+func (t *sqliteTx) FindTrialIssuance(query lic.TrialIssuanceLookup) (*lic.TrialIssuance, error) {
+	return findTrialIssuance(t.tx, query)
+}
+
+// DeleteTrialIssuance hard-deletes a trial-issuance row inside a tx.
+func (t *sqliteTx) DeleteTrialIssuance(id string) error {
+	return deleteTrialIssuance(t.tx, id)
 }
 
 // ---------- queryable abstraction ----------
@@ -1011,25 +1042,190 @@ func getAudit(q queryable, id string) (*lic.AuditLogEntry, error) {
 }
 
 func listAudit(q queryable, filter lic.AuditLogFilter, page lic.PageRequest) (lic.Page[lic.AuditLogEntry], error) {
-	wb := whereBuilder{}
+	// The licensable + extended filters require a join + custom SQL.
+	// Fall back to the existing queryPage helper for the simple cases so we
+	// preserve cursor + ordering behaviour.
+	needsCustomPath := filter.LicensableType != nil ||
+		filter.LicensableID != nil ||
+		len(filter.Events) > 0 ||
+		filter.Actor != nil ||
+		filter.Since != nil ||
+		filter.Until != nil
+	if !needsCustomPath {
+		wb := whereBuilder{}
+		if filter.LicenseIDSet {
+			if filter.LicenseID == nil {
+				wb.add("license_id IS NULL")
+			} else {
+				wb.addParam("license_id = ?", *filter.LicenseID)
+			}
+		}
+		if filter.ScopeIDSet {
+			if filter.ScopeID == nil {
+				wb.add("scope_id IS NULL")
+			} else {
+				wb.addParam("scope_id = ?", *filter.ScopeID)
+			}
+		}
+		if filter.Event != nil {
+			wb.addParam("event = ?", *filter.Event)
+		}
+		return queryPage(q, scanRowAudit, extractAudit, "audit_logs", "occurred_at", wb, page)
+	}
+	return listAuditExtended(q, filter, page)
+}
+
+func listAuditExtended(q queryable, filter lic.AuditLogFilter, page lic.PageRequest) (lic.Page[lic.AuditLogEntry], error) {
+	conds := []string{"1=1"}
+	args := []any{}
+	from := "audit_logs a"
 	if filter.LicenseIDSet {
 		if filter.LicenseID == nil {
-			wb.add("license_id IS NULL")
+			conds = append(conds, "a.license_id IS NULL")
 		} else {
-			wb.addParam("license_id = ?", *filter.LicenseID)
+			conds = append(conds, "a.license_id = ?")
+			args = append(args, *filter.LicenseID)
 		}
 	}
 	if filter.ScopeIDSet {
 		if filter.ScopeID == nil {
-			wb.add("scope_id IS NULL")
+			conds = append(conds, "a.scope_id IS NULL")
 		} else {
-			wb.addParam("scope_id = ?", *filter.ScopeID)
+			conds = append(conds, "a.scope_id = ?")
+			args = append(args, *filter.ScopeID)
 		}
 	}
-	if filter.Event != nil {
-		wb.addParam("event = ?", *filter.Event)
+	if filter.Event != nil && len(filter.Events) == 0 {
+		conds = append(conds, "a.event = ?")
+		args = append(args, *filter.Event)
 	}
-	return queryPage(q, scanRowAudit, extractAudit, "audit_logs", "occurred_at", wb, page)
+	if len(filter.Events) > 0 {
+		placeholders := make([]string, len(filter.Events))
+		for i, e := range filter.Events {
+			placeholders[i] = "?"
+			args = append(args, e)
+		}
+		conds = append(conds, "a.event IN ("+strings.Join(placeholders, ",")+")")
+	}
+	if filter.Actor != nil {
+		conds = append(conds, "a.actor = ?")
+		args = append(args, *filter.Actor)
+	}
+	if filter.Since != nil {
+		conds = append(conds, "a.occurred_at >= ?")
+		args = append(args, *filter.Since)
+	}
+	if filter.Until != nil {
+		conds = append(conds, "a.occurred_at < ?")
+		args = append(args, *filter.Until)
+	}
+	if filter.LicensableType != nil || filter.LicensableID != nil {
+		from = "audit_logs a INNER JOIN licenses l ON l.id = a.license_id"
+		if filter.LicensableType != nil {
+			conds = append(conds, "l.licensable_type = ?")
+			args = append(args, *filter.LicensableType)
+		}
+		if filter.LicensableID != nil {
+			conds = append(conds, "l.licensable_id = ?")
+			args = append(args, *filter.LicensableID)
+		}
+	}
+	limit := max(1, min(page.Limit, 500))
+	cursor, hasCursor := lic.DecodeCursor(page.Cursor)
+	if hasCursor {
+		conds = append(conds, "(a.occurred_at, a.id) < (?, ?)")
+		args = append(args, cursor.CreatedAt, cursor.ID)
+	}
+	query := fmt.Sprintf(
+		"SELECT a.* FROM %s WHERE %s ORDER BY a.occurred_at DESC, a.id DESC LIMIT %d",
+		from, strings.Join(conds, " AND "), limit+1,
+	)
+	rows, err := q.Query(query, args...)
+	if err != nil {
+		return lic.Page[lic.AuditLogEntry]{}, mapSqliteError(err)
+	}
+	defer rows.Close()
+	items := make([]lic.AuditLogEntry, 0)
+	for rows.Next() {
+		row, err := scanRowAudit(rows)
+		if err != nil {
+			return lic.Page[lic.AuditLogEntry]{}, mapSqliteError(err)
+		}
+		items = append(items, *row)
+	}
+	if err := rows.Err(); err != nil {
+		return lic.Page[lic.AuditLogEntry]{}, mapSqliteError(err)
+	}
+	hasMore := len(items) > limit
+	if hasMore {
+		items = items[:limit]
+	}
+	cur := ""
+	if hasMore && len(items) > 0 {
+		last := items[len(items)-1]
+		cur = lic.EncodeCursor(lic.CursorTuple{CreatedAt: last.OccurredAt, ID: last.ID})
+	}
+	return lic.Page[lic.AuditLogEntry]{Items: items, Cursor: cur}, nil
+}
+
+// --- TrialIssuance ---
+
+func recordTrialIssuance(q queryable, clk lic.Clock, in lic.TrialIssuanceInput) (*lic.TrialIssuance, error) {
+	id := lic.NewUUIDv7()
+	now := clk.NowISO()
+	_, err := q.Exec(
+		`INSERT INTO trial_issuances (id, template_id, fingerprint_hash, issued_at)
+		 VALUES (?,?,?,?)`,
+		id, in.TemplateID, in.FingerprintHash, now,
+	)
+	if err != nil {
+		return nil, mapSqliteError(err)
+	}
+	row := lic.TrialIssuance{
+		ID:              id,
+		TemplateID:      in.TemplateID,
+		FingerprintHash: in.FingerprintHash,
+		IssuedAt:        now,
+	}
+	return &row, nil
+}
+
+func findTrialIssuance(q queryable, query lic.TrialIssuanceLookup) (*lic.TrialIssuance, error) {
+	var row *sql.Row
+	if query.TemplateID == nil {
+		row = q.QueryRow(
+			`SELECT id, template_id, fingerprint_hash, issued_at
+			   FROM trial_issuances
+			  WHERE template_id IS NULL AND fingerprint_hash = ?
+			  ORDER BY issued_at DESC LIMIT 1`,
+			query.FingerprintHash,
+		)
+	} else {
+		row = q.QueryRow(
+			`SELECT id, template_id, fingerprint_hash, issued_at
+			   FROM trial_issuances
+			  WHERE template_id = ? AND fingerprint_hash = ?
+			  ORDER BY issued_at DESC LIMIT 1`,
+			*query.TemplateID, query.FingerprintHash,
+		)
+	}
+	var ti lic.TrialIssuance
+	err := row.Scan(&ti.ID, &ti.TemplateID, &ti.FingerprintHash, &ti.IssuedAt)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, mapSqliteError(err)
+	}
+	return &ti, nil
+}
+
+func deleteTrialIssuance(q queryable, id string) error {
+	_, err := q.Exec(`DELETE FROM trial_issuances WHERE id = ?`, id)
+	if err != nil {
+		return mapSqliteError(err)
+	}
+	return nil
 }
 
 // ---------- Row scanners ----------
