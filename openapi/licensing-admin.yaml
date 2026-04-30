@@ -38,11 +38,32 @@ paths:
       operationId: getHealth
       tags: [Client]
       summary: Liveness + build info
-      description: Unauthenticated liveness probe returning issuer `status` and semver `version`. Safe for load-balancer health checks.
+      description: |
+        Unauthenticated probe returning issuer `status`, semver `version`, and the
+        server's current time as RFC 3339. Issuers MUST exercise a cheap storage
+        read (e.g. limited audit-log scan) so the probe distinguishes "process is
+        listening" from "process can serve requests".
+
+        - **200 OK** with `data.status == "ok"` → issuer is fully serviceable.
+        - **503 Service Unavailable** with `data.status == "error"` → issuer process
+          is up but its dependencies (database, keystore) are not. The high-level
+          client uses this status to disambiguate `IssuerUnreachable` (network) from
+          partial outages where `/refresh` is broken but the process is alive.
+
+        Note: the 503 response intentionally keeps the success envelope shape
+        (`success: true, data: {status: "error"}`) so transports that decode the
+        envelope without inspecting the HTTP status do not surface a typed
+        protocol error. Liveness disambiguation is HTTP-status based.
       security: []
       responses:
         '200':
-          description: OK
+          description: Issuer is serviceable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthEnvelope'
+        '503':
+          description: Issuer is up but a dependency probe failed.
           content:
             application/json:
               schema:
@@ -719,10 +740,21 @@ components:
         success: { type: boolean, enum: [true] }
         data:
           type: object
-          required: [status, version]
+          required: [status, version, time]
           properties:
-            status: { type: string, enum: [ok] }
-            version: { type: string }
+            status:
+              type: string
+              enum: [ok, error]
+              description: |
+                `ok` is paired with HTTP 200 (issuer is serviceable). `error` is
+                paired with HTTP 503 (process is up, dependency probe failed).
+            version:
+              type: string
+              description: Issuer build semver.
+            time:
+              type: string
+              format: date-time
+              description: Server current time, RFC 3339.
       additionalProperties: false
 
     TokenEnvelope:
