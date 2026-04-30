@@ -46,6 +46,15 @@ export interface ValidateOptions {
   /** Clock-skew tolerance applied to `nbf` and `exp` checks in both
    *  directions. Default 60s. Set to 0 for strict checks. */
   readonly skewSec?: number;
+  /** Optional audience pin. When set, the token's `aud` claim MUST match
+   *  (string equal, OR — when the token's `aud` is an array — contain
+   *  this value). Mismatches throw {@link clientErrors.audienceMismatch}.
+   *  When omitted, the `aud` claim is advisory and ignored. */
+  readonly expectedAudience?: string;
+  /** Optional issuer pin. When set, the token's `iss` claim MUST equal
+   *  this value. Mismatches throw {@link clientErrors.issuerMismatch}.
+   *  When omitted, the `iss` claim is advisory and ignored. */
+  readonly expectedIssuer?: string;
 }
 
 export interface ValidateResult {
@@ -62,6 +71,11 @@ export interface ValidateResult {
   /** Absolute unix-seconds deadline, absent when the token doesn't carry one. */
   readonly forceOnlineAfter: number | null;
   readonly entitlements: Readonly<Record<string, unknown>> | null;
+  /** Audience claim, when present. Either a single string or an array
+   *  of strings. `null` when the token does not carry one. */
+  readonly aud: string | readonly string[] | null;
+  /** Issuer claim, when present. `null` when the token does not carry one. */
+  readonly iss: string | null;
 }
 
 /**
@@ -123,11 +137,42 @@ export async function validate(token: string, opts: ValidateOptions): Promise<Va
     );
   }
 
-  // 5. Fingerprint match — last so earlier failures dominate. A fingerprint
-  //    mismatch usually means the user moved hardware and needs activation,
-  //    whereas exp/status failures are recoverable differently.
+  // 5. Fingerprint match — last of the always-on checks so earlier failures
+  //    dominate. A fingerprint mismatch usually means the user moved
+  //    hardware and needs activation, whereas exp/status failures are
+  //    recoverable differently.
   if (claims.usage_fingerprint !== opts.fingerprint) {
     throw clientErrors.fingerprintMismatch();
+  }
+
+  // 6. Audience pin (optional). When the verifier supplies expectedAudience,
+  //    the token's `aud` claim MUST match — either as a string equal to the
+  //    pin, or as an array containing it. Tokens without an `aud` claim fail
+  //    the pin (the absence is itself a mismatch in a multi-audience deployment).
+  if (opts.expectedAudience !== undefined) {
+    const aud = claims.aud;
+    const matches =
+      typeof aud === 'string'
+        ? aud === opts.expectedAudience
+        : Array.isArray(aud)
+          ? aud.includes(opts.expectedAudience)
+          : false;
+    if (!matches) {
+      throw clientErrors.audienceMismatch(
+        `expected aud=${opts.expectedAudience}, token has ${audDescription(aud)}`,
+      );
+    }
+  }
+
+  // 7. Issuer pin (optional). When the verifier supplies expectedIssuer,
+  //    the token's `iss` claim MUST equal it. Tokens without an `iss`
+  //    claim fail the pin for the same reason as aud.
+  if (opts.expectedIssuer !== undefined) {
+    if (claims.iss !== opts.expectedIssuer) {
+      throw clientErrors.issuerMismatch(
+        `expected iss=${opts.expectedIssuer}, token has ${claims.iss === null ? 'no iss' : `iss=${claims.iss}`}`,
+      );
+    }
   }
 
   return {
@@ -143,7 +188,17 @@ export async function validate(token: string, opts: ValidateOptions): Promise<Va
     exp: claims.exp,
     forceOnlineAfter: claims.force_online_after,
     entitlements: claims.entitlements,
+    aud: claims.aud,
+    iss: claims.iss,
   };
+}
+
+/** Human-readable summary for mismatch error messages. Avoids leaking the
+ *  whole audience array into a log when it could be large. */
+function audDescription(aud: string | readonly string[] | null): string {
+  if (aud === null) return 'no aud';
+  if (typeof aud === 'string') return `aud=${aud}`;
+  return `aud=[${aud.length} values]`;
 }
 
 /**
@@ -197,6 +252,10 @@ interface RequiredClaims {
   readonly max_usages: number;
   readonly force_online_after: number | null;
   readonly entitlements: Readonly<Record<string, unknown>> | null;
+  /** Optional audience. `string`, array of strings, or null when absent. */
+  readonly aud: string | readonly string[] | null;
+  /** Optional issuer. `string` or null when absent. */
+  readonly iss: string | null;
 }
 
 function assertClaimShape(payload: Readonly<Record<string, unknown>>): RequiredClaims {
@@ -244,7 +303,34 @@ function assertClaimShape(payload: Readonly<Record<string, unknown>>): RequiredC
             return v as Readonly<Record<string, unknown>>;
           })()
         : null,
+    aud: parseAud(payload.aud),
+    iss: parseIss(payload.iss),
   };
+}
+
+/** Parse an optional `aud` claim. Accepts string, array-of-strings, or
+ *  absent/null (returned as `null`). Wrong-type values throw
+ *  `InvalidTokenFormat` so a malformed token can't degrade silently to
+ *  "advisory ignored" mode. */
+function parseAud(v: unknown): string | readonly string[] | null {
+  if (v === undefined || v === null) return null;
+  if (typeof v === 'string') return v;
+  if (Array.isArray(v)) {
+    for (const item of v) {
+      if (typeof item !== 'string') {
+        throw clientErrors.invalidTokenFormat('aud array must contain only strings');
+      }
+    }
+    return v as readonly string[];
+  }
+  throw clientErrors.invalidTokenFormat('aud must be a string or array of strings');
+}
+
+/** Parse an optional `iss` claim. Accepts string or absent/null. */
+function parseIss(v: unknown): string | null {
+  if (v === undefined || v === null) return null;
+  if (typeof v === 'string') return v;
+  throw clientErrors.invalidTokenFormat('iss must be a string');
 }
 
 /** Translate a core `verify()` error into the client-side taxonomy. Core

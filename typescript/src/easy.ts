@@ -426,6 +426,16 @@ export interface ClientVerifyConfig {
   readonly keys: ReadonlyMap<string, KeyRecord>;
   /** Optional clock-skew tolerance in seconds for `nbf`/`exp` (default 60). */
   readonly skewSec?: number;
+  /** Optional audience pin. When set, the token's `aud` claim MUST match
+   *  (string equal, OR — when array — contain this value). Mismatches
+   *  throw `LicensingClientError{code: 'AudienceMismatch'}`. When
+   *  omitted, the claim is advisory. */
+  readonly expectedAudience?: string;
+  /** Optional issuer pin. When set, the token's `iss` claim MUST equal
+   *  this value. Mismatches throw
+   *  `LicensingClientError{code: 'IssuerMismatch'}`. When omitted, the
+   *  claim is advisory. */
+  readonly expectedIssuer?: string;
 }
 
 export interface ClientConfig {
@@ -583,6 +593,10 @@ export class Client {
       fingerprint: input.fingerprint,
       nowSec: this.#nowSec(),
       ...(verify.skewSec !== undefined ? { skewSec: verify.skewSec } : {}),
+      ...(verify.expectedAudience !== undefined
+        ? { expectedAudience: verify.expectedAudience }
+        : {}),
+      ...(verify.expectedIssuer !== undefined ? { expectedIssuer: verify.expectedIssuer } : {}),
     });
   }
 
@@ -696,6 +710,10 @@ export class Client {
       fingerprint: input.fingerprint,
       nowSec: this.#nowSec(),
       ...(verify.skewSec !== undefined ? { skewSec: verify.skewSec } : {}),
+      ...(verify.expectedAudience !== undefined
+        ? { expectedAudience: verify.expectedAudience }
+        : {}),
+      ...(verify.expectedIssuer !== undefined ? { expectedIssuer: verify.expectedIssuer } : {}),
     });
 
     return {

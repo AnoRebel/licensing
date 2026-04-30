@@ -18,6 +18,8 @@
 export type ClientErrorCode =
   | 'InvalidLicenseKey'
   | 'FingerprintMismatch'
+  | 'AudienceMismatch'
+  | 'IssuerMismatch'
   | 'TokenExpired'
   | 'TokenNotYetValid'
   | 'SeatLimitExceeded'
@@ -80,6 +82,12 @@ export const clientErrors = {
   fingerprintMismatch: (
     msg = 'token fingerprint does not match current device',
   ): LicensingClientError => new LicensingClientError('FingerprintMismatch', msg),
+  audienceMismatch: (
+    msg = 'token audience does not match the verifier-pinned audience',
+  ): LicensingClientError => new LicensingClientError('AudienceMismatch', msg),
+  issuerMismatch: (
+    msg = 'token issuer does not match the verifier-pinned issuer',
+  ): LicensingClientError => new LicensingClientError('IssuerMismatch', msg),
   tokenExpired: (
     msg = 'token exp is in the past beyond the skew tolerance',
   ): LicensingClientError => new LicensingClientError('TokenExpired', msg),
