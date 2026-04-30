@@ -198,10 +198,43 @@ func decodeBody(w http.ResponseWriter, r *http.Request, out any) bool {
 
 // ---------------- /health ----------------
 
+// handleHealth probes storage with a cheap read to verify the issuer is
+// actually capable of serving requests (not just listening on the port).
+// Returns 200 with `{status, version, time}` on success and 503 with
+// `{status: "error", version, time}` when the storage probe fails. The
+// probe is intentionally bounded — a `ListAudit` with limit 1 — so it
+// catches connection drops and permission issues without paying for a
+// full table scan or a write.
+//
+// The 503 response is still wrapped in the standard success envelope
+// (`success: true, data: {status: "error", ...}`) because the high-level
+// client uses `/health` as a *liveness* signal, not as a request that can
+// itself fail with a typed protocol error. Switching the envelope's
+// `success` flag here would force the client to special-case parsing and
+// blur the boundary between "issuer is unreachable" and "issuer rejected
+// the request".
 func (h *ClientHandler) handleHealth(w http.ResponseWriter, _ *http.Request) {
+	now := time.Now().UTC().Format(time.RFC3339)
+	if h.ctx.Storage == nil {
+		writeOKStatus(w, http.StatusServiceUnavailable, map[string]any{
+			"status":  "error",
+			"version": h.ctx.Version,
+			"time":    now,
+		})
+		return
+	}
+	if _, err := h.ctx.Storage.ListAudit(lic.AuditLogFilter{}, lic.PageRequest{Limit: 1}); err != nil {
+		writeOKStatus(w, http.StatusServiceUnavailable, map[string]any{
+			"status":  "error",
+			"version": h.ctx.Version,
+			"time":    now,
+		})
+		return
+	}
 	writeOK(w, map[string]any{
 		"status":  "ok",
 		"version": h.ctx.Version,
+		"time":    now,
 	})
 }
 

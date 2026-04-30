@@ -3,10 +3,12 @@ package http
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	lic "github.com/AnoRebel/licensing/licensing"
 	ed "github.com/AnoRebel/licensing/licensing/crypto/ed25519"
@@ -147,6 +149,55 @@ func TestClientHandler_Health(t *testing.T) {
 	}
 	if data["version"] != "test-1.0.0" {
 		t.Fatalf("version drift: %v", data["version"])
+	}
+	timeStr, ok := data["time"].(string)
+	if !ok || timeStr == "" {
+		t.Fatalf("time field missing or wrong type: %v", data["time"])
+	}
+	if _, err := time.Parse(time.RFC3339, timeStr); err != nil {
+		t.Fatalf("time field is not RFC3339: %s (%v)", timeStr, err)
+	}
+}
+
+// failingStorage wraps a real Storage but makes ListAudit fail; everything
+// else delegates. Used to exercise /health's 503 path.
+type failingStorage struct {
+	lic.Storage
+}
+
+func (failingStorage) ListAudit(_ lic.AuditLogFilter, _ lic.PageRequest) (lic.Page[lic.AuditLogEntry], error) {
+	return lic.Page[lic.AuditLogEntry]{}, errors.New("simulated db failure")
+}
+
+func TestClientHandler_Health_503OnStorageFailure(t *testing.T) {
+	h := newHarness(t)
+	// Swap in a failing storage just for this request.
+	h.ctx.Storage = failingStorage{Storage: h.ctx.Storage}
+	handler := NewClientHandler(h.ctx, "/api/licensing/v1")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/licensing/v1/health", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status: want 503, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var env Envelope
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatal(err)
+	}
+	if !env.Success {
+		t.Fatalf("envelope success flag should remain true on 503; got %+v", env)
+	}
+	data := env.Data.(map[string]any)
+	if data["status"] != "error" {
+		t.Fatalf("status drift: want error, got %v", data["status"])
+	}
+	if data["version"] != "test-1.0.0" {
+		t.Fatalf("version drift: %v", data["version"])
+	}
+	if _, ok := data["time"].(string); !ok {
+		t.Fatalf("time missing on 503: %v", data["time"])
 	}
 }
 

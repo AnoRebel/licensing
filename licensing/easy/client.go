@@ -3,6 +3,7 @@ package easy
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -212,8 +213,23 @@ func (c *Client) Validate(in ValidateInput) (*client.ValidateResult, error) {
 // result (refreshed / not-due / grace-entered / grace-continued) on
 // success, or a *client.ClientError on hard failures (LicenseRevoked,
 // GraceExpired, …).
+//
+// When the primitive enters or continues grace because /refresh was
+// unreachable, this wrapper probes GET /health to disambiguate a real
+// outage from a partial outage where /refresh is broken but the issuer
+// process is up. Health-OK + refresh-fail rolls back the just-written
+// grace marker (if any) and surfaces ErrIssuerProtocolError instead —
+// preserving grace semantics for actual network failures only.
 func (c *Client) Refresh() (*client.RefreshOutcome, error) {
-	return client.Refresh(client.RefreshOptions{
+	// Snapshot grace state BEFORE the primitive runs, so we can roll back
+	// if the disambiguation probe says the issuer is actually up.
+	preState, err := c.storage.Read()
+	if err != nil {
+		return nil, fmt.Errorf("read token store: %w", err)
+	}
+	preGrace := preState.GraceStartSec
+
+	out, err := client.Refresh(client.RefreshOptions{
 		Store:          c.storage,
 		Path:           c.pathPrefix + "/refresh",
 		Transport:      c.transport,
@@ -221,6 +237,66 @@ func (c *Client) Refresh() (*client.RefreshOutcome, error) {
 		GraceWindowSec: c.gracePeriodSec,
 		GraceWindowSet: true,
 	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Only the grace branches need disambiguation. Refreshed / NotDue
+	// pass through unchanged.
+	if out.Kind != client.RefreshKindGraceEntered && out.Kind != client.RefreshKindGraceContinued {
+		return out, nil
+	}
+
+	healthy, _ := c.probeHealth()
+	if !healthy {
+		// Real outage — keep grace state, return outcome.
+		return out, nil
+	}
+
+	// Issuer is up but /refresh failed. Roll back any grace marker we
+	// just wrote (only for GraceEntered — GraceContinued didn't change
+	// the state) and surface a typed protocol error.
+	if out.Kind == client.RefreshKindGraceEntered {
+		if writeErr := c.storage.Write(client.StoredTokenState{
+			Token:         preState.Token,
+			GraceStartSec: preGrace,
+		}); writeErr != nil {
+			return nil, fmt.Errorf("rollback grace marker: %w", writeErr)
+		}
+	}
+	return nil, &client.ClientError{
+		Code: client.CodeIssuerProtocolError,
+		Message: "/refresh failed but /health is OK — issuer process is up but the " +
+			"refresh route is broken; not entering grace",
+	}
+}
+
+// probeHealth issues a single GET to {pathPrefix}/health and reports
+// whether the issuer responded with HTTP 200 (any body shape). Any
+// non-200 status — 503, 4xx, or a transport error — counts as "not
+// healthy". The probe reuses the configured transport's *http.Client
+// when set so tests can plug a fake; otherwise falls back to a 5s
+// short-lived client (the probe must be cheap, even if /refresh has a
+// longer timeout).
+func (c *Client) probeHealth() (bool, error) {
+	httpClient := c.transport.Client
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: 5 * time.Second}
+	}
+	url := strings.TrimRight(c.transport.BaseURL, "/") + "/" + strings.TrimLeft(c.pathPrefix+"/health", "/")
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return false, err
+	}
+	for k, v := range c.transport.Headers {
+		req.Header.Set(k, v)
+	}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+	return resp.StatusCode == http.StatusOK, nil
 }
 
 // Guard is the single-call lifecycle: verify the stored token offline,

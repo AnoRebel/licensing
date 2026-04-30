@@ -319,6 +319,25 @@ func runContractSuite(t *testing.T, doc *openAPIDoc, b conformBackend) {
 			},
 		},
 		{
+			name: "GET_health_503_HealthEnvelope_on_storage_failure",
+			run: func(t *testing.T, s lic.Storage) {
+				// Wrap storage so ListAudit fails — flips /health into the
+				// 503 + status=error branch. Schema still validates because
+				// HealthEnvelope.status enum permits both ok and error.
+				wrapped := failingStorage{Storage: s}
+				h := NewClientHandler(&ClientContext{
+					Storage: wrapped, Clock: clk, Backends: reg,
+					Version:           "test",
+					SigningPassphrase: "sign-pw",
+				}, specPrefix)
+				rec := doRequest(t, h, http.MethodGet, specPrefix+"/health", nil)
+				if rec.Code != http.StatusServiceUnavailable {
+					t.Fatalf("want 503, got %d body=%s", rec.Code, rec.Body.String())
+				}
+				expectEnvelope(t, doc, "HealthEnvelope", rec)
+			},
+		},
+		{
 			name: "POST_activate_unknown_license_ErrorEnvelope",
 			run: func(t *testing.T, s lic.Storage) {
 				rec := doRequest(t, newClient(s), http.MethodPost, specPrefix+"/activate", map[string]any{
