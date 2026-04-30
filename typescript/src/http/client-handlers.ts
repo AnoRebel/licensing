@@ -123,8 +123,25 @@ async function verifyClientToken(
   return parts;
 }
 
+/**
+ * Probe the issuer with a cheap storage read. Returns 200 + `{status, version,
+ * time}` on success and 503 + `{status: "error", version, time}` when the
+ * probe fails. Mirrors the Go `handleHealth`.
+ *
+ * The 503 keeps the success-envelope shape (`success: true, data: {...}`)
+ * because the high-level client probes `/health` purely on HTTP status —
+ * switching the envelope flag here would force the transport layer to
+ * special-case parsing and blur the boundary between "issuer is unreachable"
+ * and "issuer rejected the request".
+ */
 async function handleHealth(ctx: ClientHandlerContext): Promise<HandlerResponse> {
-  return ok({ status: 'ok', version: ctx.version });
+  const time = new Date().toISOString();
+  try {
+    await ctx.storage.listAudit({}, { limit: 1 });
+  } catch {
+    return ok({ status: 'error', version: ctx.version, time }, 503);
+  }
+  return ok({ status: 'ok', version: ctx.version, time });
 }
 
 async function handleActivate(

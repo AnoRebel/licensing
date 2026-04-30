@@ -27,6 +27,7 @@ export type ClientErrorCode =
   | 'GraceExpired'
   | 'NoToken'
   | 'IssuerUnreachable'
+  | 'IssuerProtocolError'
   | 'RateLimited'
   | 'InvalidTokenFormat'
   | 'UnsupportedAlgorithm'
@@ -104,6 +105,9 @@ export const clientErrors = {
     cause?: unknown,
   ): LicensingClientError =>
     new LicensingClientError('IssuerUnreachable', msg, cause !== undefined ? { cause } : {}),
+  issuerProtocolError: (
+    msg = 'issuer process is up but the requested route is broken',
+  ): LicensingClientError => new LicensingClientError('IssuerProtocolError', msg),
   rateLimited: (
     retryAfterSec: number,
     msg = 'issuer rate-limited this client',

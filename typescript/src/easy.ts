@@ -590,9 +590,19 @@ export class Client {
    * Refresh the persisted token. Returns a `RefreshOutcome` describing the
    * result (`refreshed` / `not-due` / `grace-entered` / `grace-continued`).
    * Throws on hard failures (`LicenseRevoked`, `GraceExpired`, …).
+   *
+   * When the primitive enters or continues grace because `/refresh` was
+   * unreachable, this wrapper probes `GET /health` to disambiguate a real
+   * outage from a partial outage where `/refresh` is broken but the issuer
+   * process is up. Health-OK + refresh-fail rolls back the just-written
+   * grace marker (if any) and throws `IssuerProtocolError` instead —
+   * preserving grace semantics for actual network failures only.
    */
   async refresh(): Promise<RefreshOutcome> {
-    return primRefresh({
+    // Snapshot grace state before the primitive runs so we can roll back
+    // if the disambiguation probe says the issuer is actually up.
+    const preState = await this.#storage.read();
+    const out = await primRefresh({
       baseUrl: this.#serverUrl,
       store: this.#storage,
       nowSec: this.#nowSec(),
@@ -600,6 +610,40 @@ export class Client {
       fetchImpl: this.#fetch,
       path: `${this.#pathPrefix}/refresh`,
     });
+    if (out.kind !== 'grace-entered' && out.kind !== 'grace-continued') {
+      return out;
+    }
+    const healthy = await this.#probeHealth();
+    if (!healthy) return out;
+
+    // Issuer is up but /refresh failed. Roll back any grace marker we
+    // just wrote (only for grace-entered) and surface a typed protocol
+    // error.
+    if (out.kind === 'grace-entered') {
+      await this.#storage.write({
+        token: preState.token ?? out.token,
+        graceStartSec: preState.graceStartSec,
+      });
+    }
+    throw clientErrors.issuerProtocolError(
+      '/refresh failed but /health is OK — issuer process is up but the ' +
+        'refresh route is broken; not entering grace',
+    );
+  }
+
+  /**
+   * Issue a single GET to `${pathPrefix}/health` and report whether the
+   * issuer responded with HTTP 200. Any non-200 status — 503, 4xx, or
+   * fetch error — counts as "not healthy".
+   */
+  async #probeHealth(): Promise<boolean> {
+    try {
+      const url = `${this.#serverUrl}${this.#pathPrefix}/health`;
+      const res = await this.#fetch(url, { method: 'GET' });
+      return res.status === 200;
+    } catch {
+      return false;
+    }
   }
 
   /**

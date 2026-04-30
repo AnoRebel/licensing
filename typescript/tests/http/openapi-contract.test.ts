@@ -228,6 +228,33 @@ for (const backend of BACKENDS) {
       }
     });
 
+    it('GET /health → 503 + HealthEnvelope when storage probe fails', async () => {
+      const { s: storage, cleanup } = await backend.make();
+      try {
+        // Wrap storage so listAudit fails — flips /health into the 503
+        // status=error branch. Schema still validates because the enum
+        // permits both ok and error.
+        const failing = new Proxy(storage, {
+          get(target, prop, receiver) {
+            if (prop === 'listAudit') {
+              return async () => {
+                throw new Error('simulated db failure');
+              };
+            }
+            return Reflect.get(target, prop, receiver);
+          },
+        });
+        const router = createRouter(
+          clientRoutes(mkClientCtx(failing as Storage), '/api/licensing/v1'),
+        );
+        const res = await call(router, req('GET', '/api/licensing/v1/health'));
+        expect(res.status).toBe(503);
+        expectEnvelope('HealthEnvelope', res.body);
+      } finally {
+        await cleanup();
+      }
+    });
+
     it('POST /activate invalid key → ErrorEnvelope (404)', async () => {
       const { s: storage, cleanup } = await backend.make();
       try {
