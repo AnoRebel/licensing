@@ -205,7 +205,7 @@ See `docs/security.md` (landing in task 14.3) for full details.
 - Pull requests run the full matrix: `ts.yml`, `go.yml`, `admin-ui.yml`,
   `openapi-contract.yml`, `interop.yml`. All five are required for merge.
 - Versions are pinned exactly in `package.json`, `go.mod`, and `VERSIONS.md`.
-  Bumps go through a dedicated change proposal under `openspec/changes/`.
+  Bumps are reviewed deliberately and edited alongside the dependency change.
 
 ## License
 

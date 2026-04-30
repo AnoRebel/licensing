@@ -138,8 +138,7 @@ bunx licensing-keys rotate --scope scp_01HX... --alg ed25519
 go run github.com/AnoRebel/licensing/cmd/licensing-keys rotate --scope scp_01HX... --alg ed25519
 ```
 
-The admin UI's Keys page wraps the same operation (Phase 13.9). Under the
-hood:
+The admin UI's Keys page wraps the same operation. Under the hood:
 
 1. Generate a fresh Ed25519/RSA/HMAC key.
 2. Inside one transaction:
@@ -165,10 +164,9 @@ itself become the highest-value target in the system.
 
 ## Admin-API bearer token
 
-The admin UI (Phase 13) accepts a bearer token at sign-in and stores it
-server-only in a sealed httpOnly cookie (`nuxt-auth-utils` + iron-webcrypto,
-AES-256-GCM with a 32-byte session password). The browser never sees the
-token:
+The admin UI accepts a bearer token at sign-in and stores it server-only
+in a sealed httpOnly cookie (`nuxt-auth-utils` + iron-webcrypto, AES-256-GCM
+with a 32-byte session password). The browser never sees the token:
 
 - No `localStorage` / `sessionStorage` — XSS cannot read it.
 - Session cookie is `HttpOnly; Secure; SameSite=Strict`.

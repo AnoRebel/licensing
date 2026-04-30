@@ -1,8 +1,8 @@
 # Pinned toolchain & dependency versions
 
 This file is the single source of truth for the versions this repo targets.
-Every pin below is **exact** — no ranges. Bumps go through a change proposal
-under `openspec/changes/`.
+Every pin below is **exact** — no ranges. Bumps are reviewed deliberately;
+edit this file alongside the dependency change in the same commit.
 
 Last reviewed: 2026-04-12.
 
