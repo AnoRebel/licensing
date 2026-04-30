@@ -9,12 +9,23 @@ import (
 
 // ValidateOptions configures offline token validation.
 type ValidateOptions struct {
-	Registry    *lic.AlgorithmRegistry
-	Bindings    *lic.KeyAlgBindings
-	Keys        map[string]lic.KeyRecord
-	Fingerprint string
-	NowSec      int64
-	SkewSec     int64 // default 60
+	Registry *lic.AlgorithmRegistry
+	Bindings *lic.KeyAlgBindings
+	Keys     map[string]lic.KeyRecord
+	// ExpectedAudience, when non-empty, pins the audience the token
+	// MUST be issued for. The token's `aud` claim — string or array —
+	// MUST contain this value. Mismatches surface as
+	// CodeAudienceMismatch. Empty means the audience is unpinned and
+	// the claim is advisory.
+	ExpectedAudience string
+	// ExpectedIssuer, when non-empty, pins the issuer the token MUST
+	// have been signed by. The token's `iss` claim MUST equal this
+	// value. Mismatches surface as CodeIssuerMismatch. Empty means
+	// the issuer is unpinned and the claim is advisory.
+	ExpectedIssuer string
+	Fingerprint    string
+	NowSec         int64
+	SkewSec        int64 // default 60
 }
 
 func (o ValidateOptions) skew() int64 {
@@ -26,14 +37,16 @@ func (o ValidateOptions) skew() int64 {
 
 // ValidateResult carries the decoded and verified claims.
 type ValidateResult struct {
-	ForceOnlineAfter *int64
 	Entitlements     map[string]any
+	ForceOnlineAfter *int64
+	Iss              *string
+	LicenseID        string
 	Kid              string
 	Alg              lic.KeyAlg
-	LicenseID        string
 	UsageID          string
 	Scope            string
 	Status           string
+	Aud              []string
 	MaxUsages        int64
 	Iat              int64
 	Nbf              int64
@@ -115,6 +128,37 @@ func Validate(token string, opts ValidateOptions) (*ValidateResult, error) {
 				claims.UsageFingerprint, opts.Fingerprint))
 	}
 
+	// 6. Audience pin (optional). When the verifier supplies
+	//    ExpectedAudience, the token's `aud` MUST contain it. A token
+	//    without an `aud` claim fails the pin (the absence is itself
+	//    a mismatch in a multi-audience deployment).
+	if opts.ExpectedAudience != "" {
+		if !audContains(claims.Aud, opts.ExpectedAudience) {
+			return nil, AudienceMismatch(
+				fmt.Sprintf("expected aud=%s, token has %s",
+					opts.ExpectedAudience, audDescription(claims.Aud)))
+		}
+	}
+
+	// 7. Issuer pin (optional). When the verifier supplies
+	//    ExpectedIssuer, the token's `iss` MUST equal it. Tokens
+	//    without an `iss` claim fail the pin for the same reason.
+	if opts.ExpectedIssuer != "" {
+		actual := ""
+		if claims.Iss != nil {
+			actual = *claims.Iss
+		}
+		if actual != opts.ExpectedIssuer {
+			label := "no iss"
+			if claims.Iss != nil {
+				label = "iss=" + *claims.Iss
+			}
+			return nil, IssuerMismatch(
+				fmt.Sprintf("expected iss=%s, token has %s",
+					opts.ExpectedIssuer, label))
+		}
+	}
+
 	return &ValidateResult{
 		Kid:              parts.Header.Kid,
 		Alg:              parts.Header.Alg,
@@ -128,7 +172,31 @@ func Validate(token string, opts ValidateOptions) (*ValidateResult, error) {
 		Exp:              claims.Exp,
 		ForceOnlineAfter: claims.ForceOnlineAfter,
 		Entitlements:     claims.Entitlements,
+		Aud:              claims.Aud,
+		Iss:              claims.Iss,
 	}, nil
+}
+
+// audContains reports whether aud (which may be nil) contains target.
+func audContains(aud []string, target string) bool {
+	for _, a := range aud {
+		if a == target {
+			return true
+		}
+	}
+	return false
+}
+
+// audDescription is a compact human-readable summary for mismatch
+// error messages — avoids emitting a giant audience array into a log.
+func audDescription(aud []string) string {
+	if aud == nil {
+		return "no aud"
+	}
+	if len(aud) == 1 {
+		return "aud=" + aud[0]
+	}
+	return fmt.Sprintf("aud=[%d values]", len(aud))
 }
 
 // Peek performs a synchronous, unverified decode of a LIC1 token. Returns
@@ -157,14 +225,16 @@ func Peek(token string) (*PeekResult, error) {
 // ---------- claim extraction ----------
 
 type requiredClaims struct {
-	ForceOnlineAfter *int64
 	Entitlements     map[string]any
+	ForceOnlineAfter *int64
+	Iss              *string
+	LicenseID        string
 	Jti              string
 	Scope            string
-	LicenseID        string
 	UsageID          string
 	UsageFingerprint string
 	Status           string
+	Aud              []string
 	Iat              int64
 	Nbf              int64
 	Exp              int64
@@ -223,6 +293,38 @@ func assertClaimShape(p lic.LIC1Payload) (*requiredClaims, error) {
 			c.Entitlements = m
 		}
 	}
+
+	// Optional audience: string OR array-of-strings. Wrong types are
+	// hard-rejected so a malformed token can't degrade silently to
+	// "advisory ignored" mode.
+	if aud, exists := p["aud"]; exists && aud != nil {
+		switch v := aud.(type) {
+		case string:
+			c.Aud = []string{v}
+		case []any:
+			out := make([]string, 0, len(v))
+			for _, item := range v {
+				s, ok := item.(string)
+				if !ok {
+					return nil, InvalidTokenFormat("aud array must contain only strings", nil)
+				}
+				out = append(out, s)
+			}
+			c.Aud = out
+		default:
+			return nil, InvalidTokenFormat("aud must be a string or array of strings", nil)
+		}
+	}
+
+	// Optional issuer: string only.
+	if iss, exists := p["iss"]; exists && iss != nil {
+		s, ok := iss.(string)
+		if !ok {
+			return nil, InvalidTokenFormat("iss must be a string", nil)
+		}
+		c.Iss = &s
+	}
+
 	return c, nil
 }
 

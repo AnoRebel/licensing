@@ -19,6 +19,8 @@ type ClientErrorCode string
 const (
 	CodeInvalidLicenseKey     ClientErrorCode = "InvalidLicenseKey"
 	CodeFingerprintMismatch   ClientErrorCode = "FingerprintMismatch"
+	CodeAudienceMismatch      ClientErrorCode = "AudienceMismatch"
+	CodeIssuerMismatch        ClientErrorCode = "IssuerMismatch"
 	CodeTokenExpired          ClientErrorCode = "TokenExpired"
 	CodeTokenNotYetValid      ClientErrorCode = "TokenNotYetValid"
 	CodeSeatLimitExceeded     ClientErrorCode = "SeatLimitExceeded"
@@ -79,6 +81,8 @@ func (e *ClientError) Is(target error) bool {
 var (
 	ErrInvalidLicenseKey     = &ClientError{Code: CodeInvalidLicenseKey}
 	ErrFingerprintMismatch   = &ClientError{Code: CodeFingerprintMismatch}
+	ErrAudienceMismatch      = &ClientError{Code: CodeAudienceMismatch}
+	ErrIssuerMismatch        = &ClientError{Code: CodeIssuerMismatch}
 	ErrTokenExpired          = &ClientError{Code: CodeTokenExpired}
 	ErrTokenNotYetValid      = &ClientError{Code: CodeTokenNotYetValid}
 	ErrSeatLimitExceeded     = &ClientError{Code: CodeSeatLimitExceeded}
@@ -120,6 +124,26 @@ func FingerprintMismatch(msg string) *ClientError {
 		msg = "token fingerprint does not match this device"
 	}
 	return newClientError(CodeFingerprintMismatch, msg)
+}
+
+// AudienceMismatch constructs a CodeAudienceMismatch ClientError. Surfaces
+// when the verifier pinned an expected audience and the token's `aud`
+// claim does not match (or is absent).
+func AudienceMismatch(msg string) *ClientError {
+	if msg == "" {
+		msg = "token audience does not match the verifier-pinned audience"
+	}
+	return newClientError(CodeAudienceMismatch, msg)
+}
+
+// IssuerMismatch constructs a CodeIssuerMismatch ClientError. Surfaces
+// when the verifier pinned an expected issuer and the token's `iss`
+// claim does not match (or is absent).
+func IssuerMismatch(msg string) *ClientError {
+	if msg == "" {
+		msg = "token issuer does not match the verifier-pinned issuer"
+	}
+	return newClientError(CodeIssuerMismatch, msg)
 }
 
 // TokenExpired constructs a CodeTokenExpired ClientError.

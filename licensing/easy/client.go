@@ -25,6 +25,16 @@ type ClientVerifyConfig struct {
 	Bindings *lic.KeyAlgBindings
 	// Keys maps kid → trusted public key.
 	Keys map[string]lic.KeyRecord
+	// ExpectedAudience pins the audience the token MUST be issued for.
+	// When non-empty, mismatches surface as
+	// *client.ClientError{Code: CodeAudienceMismatch}. Empty means the
+	// audience is unpinned and the claim is advisory.
+	ExpectedAudience string
+	// ExpectedIssuer pins the issuer the token MUST have been signed by.
+	// When non-empty, mismatches surface as
+	// *client.ClientError{Code: CodeIssuerMismatch}. Empty means the
+	// issuer is unpinned and the claim is advisory.
+	ExpectedIssuer string
 	// SkewSec is the optional clock-skew tolerance in seconds for nbf/exp
 	// (default 60).
 	SkewSec int64
@@ -199,12 +209,14 @@ func (c *Client) Validate(in ValidateInput) (*client.ValidateResult, error) {
 		return nil, client.NoToken("")
 	}
 	return client.Validate(state.Token, client.ValidateOptions{
-		Registry:    verify.Registry,
-		Bindings:    verify.Bindings,
-		Keys:        verify.Keys,
-		Fingerprint: in.Fingerprint,
-		NowSec:      c.nowFunc(),
-		SkewSec:     verify.SkewSec,
+		Registry:         verify.Registry,
+		Bindings:         verify.Bindings,
+		Keys:             verify.Keys,
+		ExpectedAudience: verify.ExpectedAudience,
+		ExpectedIssuer:   verify.ExpectedIssuer,
+		Fingerprint:      in.Fingerprint,
+		NowSec:           c.nowFunc(),
+		SkewSec:          verify.SkewSec,
 	})
 }
 
@@ -344,12 +356,14 @@ func (c *Client) Guard(in ValidateInput) (*LicenseHandle, error) {
 
 	// Step 3: offline verify.
 	result, err := client.Validate(fresh.Token, client.ValidateOptions{
-		Registry:    verify.Registry,
-		Bindings:    verify.Bindings,
-		Keys:        verify.Keys,
-		Fingerprint: in.Fingerprint,
-		NowSec:      c.nowFunc(),
-		SkewSec:     verify.SkewSec,
+		Registry:         verify.Registry,
+		Bindings:         verify.Bindings,
+		Keys:             verify.Keys,
+		ExpectedAudience: verify.ExpectedAudience,
+		ExpectedIssuer:   verify.ExpectedIssuer,
+		Fingerprint:      in.Fingerprint,
+		NowSec:           c.nowFunc(),
+		SkewSec:          verify.SkewSec,
 	})
 	if err != nil {
 		return nil, err
