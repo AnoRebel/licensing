@@ -27,13 +27,15 @@ import { clientErrors, LicensingClientError } from './errors.ts';
 import type { TokenStore } from './token-store.ts';
 import { postJson, type TransportOptions } from './transport.ts';
 
+/**
+ * The request body sent to /heartbeat is just `{token}` — the server
+ * derives license_id, usage_id, fingerprint, etc. from the verified
+ * token's claims. Earlier shapes carried license_key / fingerprint /
+ * runtime_version / timestamp fields that were never read by the
+ * server; they were removed in this version.
+ */
 export interface HeartbeatOptions extends TransportOptions {
   readonly store: TokenStore;
-  readonly licenseKey: string;
-  readonly fingerprint: string;
-  /** Runtime version string included in the payload (e.g. `1.4.2`). The
-   *  issuer stores this on the LicenseUsage row for fleet observability. */
-  readonly runtimeVersion: string;
   /** Seconds between heartbeats. Minimum 60s — values below are clamped
    *  up with a warning via `onError`. Default 3600. */
   readonly intervalSec?: number;
@@ -45,8 +47,6 @@ export interface HeartbeatOptions extends TransportOptions {
   /** Invoked after every successful tick. Primarily useful for tests
    *  and for apps that want to light up a "last seen" UI. */
   readonly onSuccess?: () => void;
-  /** Time source, for tests. Defaults to `Date.now() / 1000`. */
-  readonly nowSec?: () => number;
 }
 
 export interface Heartbeat {
@@ -76,7 +76,6 @@ export function createHeartbeat(opts: HeartbeatOptions): Heartbeat {
   const interval = Math.max(opts.intervalSec ?? DEFAULT_INTERVAL_SEC, MIN_INTERVAL_SEC);
   const clamped = (opts.intervalSec ?? DEFAULT_INTERVAL_SEC) < MIN_INTERVAL_SEC;
   const path = opts.path ?? '/api/licensing/v1/heartbeat';
-  const now = opts.nowSec ?? (() => Math.floor(Date.now() / 1000));
 
   // Module-private state boxed in closures — avoids a class just to
   // hold two mutable slots.
@@ -95,33 +94,7 @@ export function createHeartbeat(opts: HeartbeatOptions): Heartbeat {
     if (inflight) return; // overlapping-tick guard
     inflight = true;
     try {
-      const body = {
-        license_key: opts.licenseKey,
-        fingerprint: opts.fingerprint,
-        runtime_version: opts.runtimeVersion,
-        timestamp: now(),
-      };
-      await postJson<HeartbeatResponseData>(path, body, opts);
-      // Success — clear grace if present. We re-read the store to avoid
-      // clobbering a token that may have been updated concurrently
-      // (e.g. by a refresh happening in parallel).
-      const state = await opts.store.read();
-      if (state.graceStartSec !== null) {
-        await opts.store.write({ token: state.token, graceStartSec: null });
-      }
-      opts.onSuccess?.();
-    } catch (err) {
-      const error = err instanceof Error ? err : new Error(String(err));
-      opts.onError?.(error);
-      // Non-LicensingClientError unexpected throws are already wrapped as
-      // Error above. We deliberately do NOT re-throw — heartbeat is
-      // fire-and-forget.
-      //
-      // We also do NOT enter grace here; grace is driven by `refresh()`,
-      // which has the `force_online_after` context needed to decide
-      // whether a network failure is "merciful" or "hard fail". A
-      // heartbeat failure alone isn't grounds to mask future validates.
-      void error;
+      await tickOnce(opts, path);
     } finally {
       inflight = false;
     }
@@ -154,24 +127,64 @@ export function createHeartbeat(opts: HeartbeatOptions): Heartbeat {
  *  exit with a nonzero status on repeated failures. */
 export async function sendOneHeartbeat(opts: HeartbeatOptions): Promise<boolean> {
   try {
-    const now = opts.nowSec ?? (() => Math.floor(Date.now() / 1000));
-    await postJson<HeartbeatResponseData>(
-      opts.path ?? '/api/licensing/v1/heartbeat',
-      {
-        license_key: opts.licenseKey,
-        fingerprint: opts.fingerprint,
-        runtime_version: opts.runtimeVersion,
-        timestamp: now(),
-      },
-      opts,
-    );
-    const state = await opts.store.read();
-    if (state.graceStartSec !== null) {
-      await opts.store.write({ token: state.token, graceStartSec: null });
-    }
-    return true;
+    return await tickOnce(opts, opts.path ?? '/api/licensing/v1/heartbeat');
   } catch (err) {
     opts.onError?.(err instanceof LicensingClientError ? err : new Error(String(err)));
+    return false;
+  }
+}
+
+/**
+ * One heartbeat tick. Shared between createHeartbeat() (scheduler) and
+ * sendOneHeartbeat() (fire-and-forget) so the protocol behaviour stays
+ * in lockstep.
+ *
+ * Behaviour on the typed-error response shape mirrors the Go client:
+ *
+ *   - LicenseRevoked / LicenseSuspended: the issuer's authoritative view
+ *     says the local token is no longer valid. Clear the store
+ *     (CAS-style — only if the store still holds the token we
+ *     heartbeated with, so a parallel Refresh that wrote a fresh token
+ *     isn't clobbered) and route the typed error through onError.
+ *   - IssuerUnreachable / RateLimited / other transport errors: leave
+ *     the store alone; the next refresh's grace logic handles outages.
+ *   - Successful 200: clear any grace marker, fire onSuccess.
+ *
+ * Returns `true` on success, `false` on any handled error (so the
+ * synchronous wrapper can surface a boolean to small CLIs).
+ */
+async function tickOnce(opts: HeartbeatOptions, path: string): Promise<boolean> {
+  const stateBefore = await opts.store.read();
+  if (stateBefore.token === null) {
+    // No token to heartbeat with. Skip silently — application hasn't
+    // activated yet.
+    return true;
+  }
+  try {
+    await postJson<HeartbeatResponseData>(path, { token: stateBefore.token }, opts);
+    // Success — clear any grace marker. CAS guard against a parallel
+    // refresh that wrote a fresh token.
+    const stateAfter = await opts.store.read();
+    if (stateAfter.token === stateBefore.token && stateAfter.graceStartSec !== null) {
+      await opts.store.write({ token: stateAfter.token, graceStartSec: null });
+    }
+    opts.onSuccess?.();
+    return true;
+  } catch (err) {
+    if (
+      err instanceof LicensingClientError &&
+      (err.code === 'LicenseRevoked' || err.code === 'LicenseSuspended')
+    ) {
+      // CAS clear: only blow away the store if the token we just got
+      // rejected is still the one persisted. A parallel refresh that
+      // already swapped in a fresh token must not be clobbered.
+      const stateNow = await opts.store.read();
+      if (stateNow.token === stateBefore.token) {
+        await opts.store.clear();
+      }
+    }
+    const error = err instanceof Error ? err : new Error(String(err));
+    opts.onError?.(error);
     return false;
   }
 }

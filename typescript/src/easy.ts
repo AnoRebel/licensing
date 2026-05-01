@@ -732,21 +732,18 @@ export class Client {
    * Build a {@link Heartbeat} scheduler. The returned object exposes
    * `start()`, `stop()`, `tickNow()` — call `start()` to begin ticking.
    * Defaults: 1-hour interval (clamped to 60s minimum).
+   *
+   * The wire body sent to `/heartbeat` is just `{token}` (read from the
+   * configured token store). Earlier shapes carried `licenseKey` /
+   * `fingerprint` / `runtimeVersion` parameters that were never read by
+   * the server; they were removed when the body shrank.
    */
-  heartbeat(input: {
-    licenseKey: string;
-    fingerprint: string;
-    runtimeVersion: string;
-    intervalSec?: number;
-    onError?: (err: Error) => void;
-    onSuccess?: () => void;
-  }): Heartbeat {
+  heartbeat(
+    input: { intervalSec?: number; onError?: (err: Error) => void; onSuccess?: () => void } = {},
+  ): Heartbeat {
     const opts: HeartbeatOptions = {
       baseUrl: this.#serverUrl,
       store: this.#storage,
-      licenseKey: input.licenseKey,
-      fingerprint: input.fingerprint,
-      runtimeVersion: input.runtimeVersion,
       ...(input.intervalSec !== undefined ? { intervalSec: input.intervalSec } : {}),
       ...(input.onError !== undefined ? { onError: input.onError } : {}),
       ...(input.onSuccess !== undefined ? { onSuccess: input.onSuccess } : {}),
