@@ -305,6 +305,18 @@ func parsePayload(b []byte) (LIC1Payload, error) {
 	return LIC1Payload(obj), nil
 }
 
+// parseJSONObject decodes the canonical JSON bytes of a LIC1 header or
+// payload into a map[string]any. Unlike a vanilla json.Unmarshal, it
+// rejects duplicate keys with CodeCanonicalJSONDuplicateKey BEFORE
+// signature verification runs — closing the threat-model gap where the
+// stdlib parser silently last-wins on duplicates and a tampered token
+// could shadow a claim the issuer signed.
+//
+// The caller-visible behaviour for any valid (non-duplicate) input is
+// byte-identical to the previous json.Unmarshal-based implementation:
+// numbers materialise as json.Number, objects as map[string]any, arrays
+// as []any, leaves as string/bool/nil. Existing fixtures and round-trip
+// tests verify this property byte-for-byte.
 func parseJSONObject(b []byte, label string) (map[string]any, error) {
 	if !utf8.Valid(b) {
 		return nil, newError(CodeTokenMalformed,
@@ -312,12 +324,11 @@ func parseJSONObject(b []byte, label string) (map[string]any, error) {
 	}
 	dec := json.NewDecoder(bytes.NewReader(b))
 	dec.UseNumber()
-	// Reject trailing garbage after the top-level object.
-	var v any
-	if err := dec.Decode(&v); err != nil {
-		return nil, newError(CodeTokenMalformed,
-			fmt.Sprintf("%s JSON parse failed: %s", label, err.Error()), nil)
+	v, err := decodeStrictValue(dec, label)
+	if err != nil {
+		return nil, err
 	}
+	// Reject trailing garbage after the top-level value.
 	if dec.More() {
 		return nil, newError(CodeTokenMalformed,
 			fmt.Sprintf("%s contains trailing data after JSON object", label), nil)
@@ -328,4 +339,87 @@ func parseJSONObject(b []byte, label string) (map[string]any, error) {
 			fmt.Sprintf("%s must decode to a JSON object", label), nil)
 	}
 	return obj, nil
+}
+
+// decodeStrictValue reads one JSON value from dec. Objects are walked
+// token-by-token so duplicate keys can be detected before they collapse
+// into a Go map (the stdlib silently keeps the last write). Arrays and
+// scalars delegate to the equivalent shape json.Decode would produce.
+//
+// label is the surface used to address errors back to the caller:
+// "header" / "payload" today, room for future call sites.
+func decodeStrictValue(dec *json.Decoder, label string) (any, error) {
+	tok, err := dec.Token()
+	if err != nil {
+		return nil, newError(CodeTokenMalformed,
+			fmt.Sprintf("%s JSON parse failed: %s", label, err.Error()), nil)
+	}
+	switch t := tok.(type) {
+	case json.Delim:
+		switch t {
+		case '{':
+			return decodeStrictObject(dec, label)
+		case '[':
+			return decodeStrictArray(dec, label)
+		default:
+			return nil, newError(CodeTokenMalformed,
+				fmt.Sprintf("%s unexpected delimiter: %s", label, t), nil)
+		}
+	case string, bool, json.Number, nil:
+		return t, nil
+	default:
+		return nil, newError(CodeTokenMalformed,
+			fmt.Sprintf("%s unexpected token type: %T", label, tok), nil)
+	}
+}
+
+func decodeStrictObject(dec *json.Decoder, label string) (map[string]any, error) {
+	obj := make(map[string]any)
+	for dec.More() {
+		// Key.
+		ktok, err := dec.Token()
+		if err != nil {
+			return nil, newError(CodeTokenMalformed,
+				fmt.Sprintf("%s object key parse failed: %s", label, err.Error()), nil)
+		}
+		key, ok := ktok.(string)
+		if !ok {
+			return nil, newError(CodeTokenMalformed,
+				fmt.Sprintf("%s object key is not a string: %T", label, ktok), nil)
+		}
+		if _, exists := obj[key]; exists {
+			return nil, newError(CodeCanonicalJSONDuplicateKey,
+				fmt.Sprintf("%s contains duplicate key: %s", label, key),
+				map[string]any{"key": key, "label": label})
+		}
+		// Value (recursive).
+		val, err := decodeStrictValue(dec, label)
+		if err != nil {
+			return nil, err
+		}
+		obj[key] = val
+	}
+	// Consume the closing '}'.
+	if _, err := dec.Token(); err != nil {
+		return nil, newError(CodeTokenMalformed,
+			fmt.Sprintf("%s object close parse failed: %s", label, err.Error()), nil)
+	}
+	return obj, nil
+}
+
+func decodeStrictArray(dec *json.Decoder, label string) ([]any, error) {
+	arr := make([]any, 0)
+	for dec.More() {
+		val, err := decodeStrictValue(dec, label)
+		if err != nil {
+			return nil, err
+		}
+		arr = append(arr, val)
+	}
+	// Consume the closing ']'.
+	if _, err := dec.Token(); err != nil {
+		return nil, newError(CodeTokenMalformed,
+			fmt.Sprintf("%s array close parse failed: %s", label, err.Error()), nil)
+	}
+	return arr, nil
 }
