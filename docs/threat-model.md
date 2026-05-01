@@ -108,23 +108,36 @@ locally and offline, see §2.1 below.
 ### 2.1 Offline-first revocation latency
 
 A revoked-but-cached token continues to verify locally until the
-client next refreshes. The protocol is offline-first by design; this
-is a feature, not a bug, but it has a security consequence.
+client next contacts the issuer. The protocol is offline-first by
+design; this is a feature, not a bug, but it has a security
+consequence.
 
-**Best-effort mitigation:** the optional `force_online_after` claim.
-When set, the client MUST attempt an online refresh once `now ≥
-force_online_after` and MUST surface `RequiresOnlineRefresh` if the
-issuer is reachable but rejects the refresh. After
-`force_online_after` lapses with the issuer unreachable, the client
-enters a configurable **grace window** (default 7 days); past the
-grace window, verification fails with `GraceExpired`.
+**Best-effort mitigations** (all configurable per-deployment):
 
-**Limit:** a malicious offline client can simply not call `/refresh`.
-`force_online_after` is a feature gate (push hard refresh deadlines
-from the issuer to the client) and a soft revocation hint, **not** a
-forge defense. Anyone designing a deployment where revocation latency
-must be tight should pair LIC1 with an online check at every
-high-stakes operation, not rely on the token alone.
+1. **`force_online_after` claim.** When set, the client MUST attempt
+   an online refresh once `now ≥ force_online_after` and MUST surface
+   `RequiresOnlineRefresh` if the issuer is reachable but rejects the
+   refresh. Past `force_online_after` with the issuer unreachable, the
+   client enters a configurable **grace window** (default 7 days);
+   past the grace window, verification fails with `GraceExpired`.
+
+2. **Heartbeat-driven revocation push.** The client's heartbeat
+   scheduler sends the bearer token to `/heartbeat`, where the
+   issuer checks the license's authoritative status. A revoked or
+   suspended license response (`LicenseRevoked` / `LicenseSuspended`)
+   causes the client to clear its local token store with a CAS guard
+   that prevents clobbering a parallel `Refresh()` write. This
+   compresses the worst-case offline window from "until `exp`" to
+   "until next heartbeat tick", typically within the configured
+   interval (default 1 hour).
+
+**Limit:** a malicious offline client can simply not call `/refresh`
+or `/heartbeat`. The mitigations are honor-system; they tighten the
+window for cooperating clients but do not defend against a determined
+adversary who controls the device. Anyone designing a deployment
+where revocation latency must be tight should pair LIC1 with an
+online check at every high-stakes operation, not rely on the token
+alone.
 
 ### 2.2 Verifier compromise
 
