@@ -26,6 +26,7 @@ import type {
   SignatureBackend,
 } from './crypto/types.ts';
 import { errors, TokenFormatError } from './errors.ts';
+import { StrictJsonError, strictParse } from './strict-json.ts';
 import type { KeyAlg } from './types.ts';
 
 const TEXT_DECODER = new TextDecoder('utf-8', { fatal: true });
@@ -204,6 +205,15 @@ function parsePayload(bytes: Uint8Array): LIC1Payload {
   return obj;
 }
 
+/**
+ * Strict JSON parse used during verification.
+ *
+ * Rejects duplicate keys with `CanonicalJSONDuplicateKey` BEFORE signature
+ * verification runs, closing the gap where the stdlib `JSON.parse` silently
+ * last-wins on duplicates. Output is otherwise byte-identical to the
+ * previous `JSON.parse`-based implementation, so existing fixtures and
+ * round-trip tests continue to pass unchanged.
+ */
 function parseJSONObject(bytes: Uint8Array, label: string): Readonly<Record<string, unknown>> {
   let text: string;
   try {
@@ -213,8 +223,12 @@ function parseJSONObject(bytes: Uint8Array, label: string): Readonly<Record<stri
   }
   let v: unknown;
   try {
-    v = JSON.parse(text);
+    v = strictParse(text);
   } catch (e) {
+    if (e instanceof StrictJsonError && e.code === 'CanonicalJSONDuplicateKey') {
+      const key = (e.details as { key?: string } | undefined)?.key ?? '';
+      throw errors.canonicalDuplicateKey(key);
+    }
     throw errors.tokenMalformed(`${label} JSON parse failed: ${(e as Error).message}`);
   }
   if (v === null || typeof v !== 'object' || Array.isArray(v)) {
