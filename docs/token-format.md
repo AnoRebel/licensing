@@ -9,7 +9,13 @@ conforming issuer.
 This file is paired with:
 
 - [`fixtures/README.md`](../fixtures/README.md) — operational fixture layout.
-- [`fixtures/kat/`](../fixtures/kat/) — known-answer vectors per algorithm.
+- [`fixtures/tokens/`](../fixtures/tokens/) — known-answer test vectors
+  per algorithm (Ed25519, RSA-PSS, HS256), each containing locked key
+  material refs, payload, expected canonical bytes, and expected wire
+  token. Both ports verify against these in CI as a byte-determinism
+  floor; the deterministic algs (Ed25519, HS256) check exact wire-byte
+  equality, the probabilistic alg (RSA-PSS) checks header+payload byte
+  equality plus cross-verification.
 - [`docs/threat-model.md`](./threat-model.md) — what LIC1 defends against
   and what it deliberately does NOT.
 - [`docs/security.md`](./security.md) — system-level concerns (key hierarchy,
@@ -409,7 +415,21 @@ cross-language contract.
 
 ### 8.1 Known-answer test vectors
 
-`fixtures/kat/<alg>/` contains per-algorithm KAT vectors with locked key
-material, payload, expected canonical bytes, expected raw signature bytes,
-and expected wire token. Both ports verify against these in CI as a
-byte-determinism floor; once committed they are immutable.
+The `fixtures/tokens/<nnn>-<alg>-<status>/` directories serve as known-
+answer test vectors. Each has locked key material refs, locked payload,
+expected canonical bytes, and an expected wire token. Both ports verify
+against these in CI as a byte-determinism floor; once committed they are
+immutable.
+
+Determinism guarantees by algorithm:
+
+- **Ed25519**: byte-for-byte wire equality across both ports.
+- **HS256**: byte-for-byte wire equality across both ports.
+- **RSA-PSS**: header+payload byte equality across both ports; the
+  signature segment is fresh per-run by design (RSASSA-PSS mixes random
+  salt). Cross-port `verify(GoSig)` and `verify(TsSig)` against the
+  shared public key is the authoritative parity check.
+
+The `licensing/interop/` and `tools/interop/` packages drive the
+cross-port harness: TS signs → Go verifies, Go signs → TS verifies, plus
+canonical-JSON byte-equality on every fixture. CI fails on any drift.
