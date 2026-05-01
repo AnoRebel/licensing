@@ -21,6 +21,7 @@ const (
 	CodeFingerprintMismatch   ClientErrorCode = "FingerprintMismatch"
 	CodeAudienceMismatch      ClientErrorCode = "AudienceMismatch"
 	CodeIssuerMismatch        ClientErrorCode = "IssuerMismatch"
+	CodeTokenReplayed         ClientErrorCode = "TokenReplayed"
 	CodeTokenExpired          ClientErrorCode = "TokenExpired"
 	CodeTokenNotYetValid      ClientErrorCode = "TokenNotYetValid"
 	CodeSeatLimitExceeded     ClientErrorCode = "SeatLimitExceeded"
@@ -83,6 +84,7 @@ var (
 	ErrFingerprintMismatch   = &ClientError{Code: CodeFingerprintMismatch}
 	ErrAudienceMismatch      = &ClientError{Code: CodeAudienceMismatch}
 	ErrIssuerMismatch        = &ClientError{Code: CodeIssuerMismatch}
+	ErrTokenReplayed         = &ClientError{Code: CodeTokenReplayed}
 	ErrTokenExpired          = &ClientError{Code: CodeTokenExpired}
 	ErrTokenNotYetValid      = &ClientError{Code: CodeTokenNotYetValid}
 	ErrSeatLimitExceeded     = &ClientError{Code: CodeSeatLimitExceeded}
@@ -144,6 +146,17 @@ func IssuerMismatch(msg string) *ClientError {
 		msg = "token issuer does not match the verifier-pinned issuer"
 	}
 	return newClientError(CodeIssuerMismatch, msg)
+}
+
+// TokenReplayed constructs a CodeTokenReplayed ClientError. Surfaces
+// when the verifier has a JtiLedger configured and the token's jti
+// claim was previously recorded — the second use of a single-use
+// token is rejected at the validate step.
+func TokenReplayed(msg string) *ClientError {
+	if msg == "" {
+		msg = "token jti has already been used (replay rejected)"
+	}
+	return newClientError(CodeTokenReplayed, msg)
 }
 
 // TokenExpired constructs a CodeTokenExpired ClientError.

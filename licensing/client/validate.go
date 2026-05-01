@@ -12,6 +12,14 @@ type ValidateOptions struct {
 	Registry *lic.AlgorithmRegistry
 	Bindings *lic.KeyAlgBindings
 	Keys     map[string]lic.KeyRecord
+	// JtiLedger, when non-nil, gates each token by jti — a token whose
+	// jti was previously recorded surfaces as
+	// *ClientError{Code: CodeTokenReplayed}. Meaningful only for online
+	// verifiers; offline clients can't share state and should leave
+	// this nil. The ledger entry is recorded AFTER all other validate
+	// checks pass, so a malformed/expired/wrong-fingerprint token
+	// doesn't burn an entry it would have been rejected for anyway.
+	JtiLedger JtiLedger
 	// ExpectedAudience, when non-empty, pins the audience the token
 	// MUST be issued for. The token's `aud` claim — string or array —
 	// MUST contain this value. Mismatches surface as
@@ -156,6 +164,22 @@ func Validate(token string, opts ValidateOptions) (*ValidateResult, error) {
 			return nil, IssuerMismatch(
 				fmt.Sprintf("expected iss=%s, token has %s",
 					opts.ExpectedIssuer, label))
+		}
+	}
+
+	// 8. Replay-prevention ledger (optional). Records this jti's use
+	//    AFTER all other checks have passed so an expired / wrong-
+	//    fingerprint / etc. token doesn't burn a ledger entry it would
+	//    have been rejected for anyway. Second use of the same jti
+	//    surfaces as CodeTokenReplayed.
+	if opts.JtiLedger != nil {
+		firstUse, err := opts.JtiLedger.RecordJtiUse(claims.Jti, claims.Exp+skew)
+		if err != nil {
+			return nil, fmt.Errorf("jti ledger: %w", err)
+		}
+		if !firstUse {
+			return nil, TokenReplayed(
+				fmt.Sprintf("jti %s was previously recorded by this verifier", claims.Jti))
 		}
 	}
 
