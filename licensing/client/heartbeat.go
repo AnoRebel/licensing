@@ -2,22 +2,25 @@ package client
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 )
 
 // HeartbeatOptions configures the heartbeat sender.
+//
+// The request body sent to /heartbeat is just `{token}` — the server
+// derives license_id, usage_id, fingerprint, etc. from the verified
+// token's claims. Earlier shapes carried license_key / fingerprint /
+// runtime_version / timestamp fields that were never read by the
+// server; they were removed in this version.
 type HeartbeatOptions struct {
-	Store          TokenStore
-	OnError        func(error)
-	OnSuccess      func()
-	NowFunc        func() int64
-	LicenseKey     string
-	Fingerprint    string
-	RuntimeVersion string
-	Path           string
-	Transport      TransportOptions
-	IntervalSec    int
+	Store       TokenStore
+	OnError     func(error)
+	OnSuccess   func()
+	Path        string
+	Transport   TransportOptions
+	IntervalSec int
 }
 
 func (o HeartbeatOptions) path() string {
@@ -33,13 +36,6 @@ func (o HeartbeatOptions) interval() time.Duration {
 		sec = 3600
 	}
 	return time.Duration(sec) * time.Second
-}
-
-func (o HeartbeatOptions) now() int64 {
-	if o.NowFunc != nil {
-		return o.NowFunc()
-	}
-	return time.Now().Unix()
 }
 
 // Heartbeat sends periodic liveness signals to the issuer.
@@ -97,29 +93,69 @@ func (h *Heartbeat) loop(ctx context.Context) {
 	}
 }
 
+// heartbeatRequest matches the server-side handler at
+// licensing/http/client_handlers.go::handleHeartbeat. The server
+// extracts license_id, usage_id, status, etc. from the token claims —
+// no extra fields are needed. (license_key / fingerprint / runtime_version
+// / timestamp were sent in v0.0.x but the server never read them and the
+// mismatch caused 400 BadRequest in production.)
 type heartbeatRequest struct {
-	LicenseKey     string `json:"license_key"`
-	Fingerprint    string `json:"fingerprint"`
-	RuntimeVersion string `json:"runtime_version"`
-	Timestamp      int64  `json:"timestamp"`
+	Token string `json:"token"`
 }
 
 type heartbeatResponse struct{}
 
 func (h *Heartbeat) tick() {
-	ok := SendOneHeartbeat(h.opts)
-	_ = ok
+	SendOneHeartbeat(h.opts)
 }
 
 // SendOneHeartbeat fires a single heartbeat. Returns true on success.
+//
+// Behaviour on the typed-error response shape:
+//
+//   - LicenseRevoked / LicenseSuspended: the issuer's authoritative view
+//     says the local token is no longer valid. Clear the store (best-
+//     effort, with a CAS-style check so a parallel Refresh that already
+//     wrote a fresh token isn't clobbered) and surface the error via
+//     OnError so the application can prompt the user to re-activate.
+//   - IssuerUnreachable / RateLimited / other transport errors: leave the
+//     store alone; the next refresh's grace logic handles real outages.
+//   - Successful 200: clear any grace marker, fire OnSuccess.
 func SendOneHeartbeat(opts HeartbeatOptions) bool {
+	if opts.Store == nil {
+		// Heartbeat without a store has nothing to send (and nothing to
+		// react to revocation against). Treat as a no-op.
+		return true
+	}
+	state, readErr := opts.Store.Read()
+	if readErr != nil {
+		if opts.OnError != nil {
+			opts.OnError(readErr)
+		}
+		return false
+	}
+	if state.Token == "" {
+		// No token to heartbeat with. Skip silently — the application
+		// hasn't activated yet.
+		return true
+	}
+
 	_, err := PostJSON[heartbeatResponse](opts.path(), heartbeatRequest{
-		LicenseKey:     opts.LicenseKey,
-		Fingerprint:    opts.Fingerprint,
-		RuntimeVersion: opts.RuntimeVersion,
-		Timestamp:      opts.now(),
+		Token: state.Token,
 	}, opts.Transport)
 	if err != nil {
+		// Typed-error reaction: revoked / suspended → clear local store
+		// (CAS so a concurrent Refresh isn't clobbered).
+		var ce *ClientError
+		if errors.As(err, &ce) {
+			if ce.Code == CodeLicenseRevoked || ce.Code == CodeLicenseSuspended {
+				if cur, readErr2 := opts.Store.Read(); readErr2 == nil && cur.Token == state.Token {
+					if clearErr := opts.Store.Clear(); clearErr != nil && opts.OnError != nil {
+						opts.OnError(clearErr)
+					}
+				}
+			}
+		}
 		if opts.OnError != nil {
 			opts.OnError(err)
 		}
@@ -127,16 +163,9 @@ func SendOneHeartbeat(opts HeartbeatOptions) bool {
 	}
 
 	// On success, clear graceStartSec if present.
-	if opts.Store != nil {
-		state, readErr := opts.Store.Read()
-		if readErr != nil {
-			if opts.OnError != nil {
-				opts.OnError(readErr)
-			}
-		} else if state.GraceStartSec != nil {
-			if writeErr := opts.Store.Write(StoredTokenState{Token: state.Token}); writeErr != nil && opts.OnError != nil {
-				opts.OnError(writeErr)
-			}
+	if state.GraceStartSec != nil {
+		if writeErr := opts.Store.Write(StoredTokenState{Token: state.Token}); writeErr != nil && opts.OnError != nil {
+			opts.OnError(writeErr)
 		}
 	}
 

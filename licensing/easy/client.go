@@ -385,13 +385,15 @@ func (c *Client) Guard(in ValidateInput) (*LicenseHandle, error) {
 }
 
 // HeartbeatInput configures Client.Heartbeat.
+//
+// Earlier versions exposed LicenseKey / Fingerprint / RuntimeVersion
+// fields that were never sent on the wire (the server derives identity
+// from the bearer token). They were removed when the request body
+// shrank to `{token}`.
 type HeartbeatInput struct {
-	OnError        func(error)
-	OnSuccess      func()
-	LicenseKey     string
-	Fingerprint    string
-	RuntimeVersion string
-	IntervalSec    int
+	OnError     func(error)
+	OnSuccess   func()
+	IntervalSec int
 }
 
 // Heartbeat builds a *client.Heartbeat scheduler. The returned object
@@ -399,15 +401,11 @@ type HeartbeatInput struct {
 // primitive clamps anything below 60s to 3600s).
 func (c *Client) Heartbeat(in HeartbeatInput) *client.Heartbeat {
 	return client.NewHeartbeat(client.HeartbeatOptions{
-		Store:          c.storage,
-		OnError:        in.OnError,
-		OnSuccess:      in.OnSuccess,
-		NowFunc:        c.nowFunc,
-		LicenseKey:     in.LicenseKey,
-		Fingerprint:    in.Fingerprint,
-		RuntimeVersion: in.RuntimeVersion,
-		Path:           c.pathPrefix + "/heartbeat",
-		Transport:      c.transport,
-		IntervalSec:    in.IntervalSec,
+		Store:       c.storage,
+		OnError:     in.OnError,
+		OnSuccess:   in.OnSuccess,
+		Path:        c.pathPrefix + "/heartbeat",
+		Transport:   c.transport,
+		IntervalSec: in.IntervalSec,
 	})
 }

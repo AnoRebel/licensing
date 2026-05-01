@@ -443,10 +443,7 @@ func TestHeartbeat_ReturnsScheduler(t *testing.T) {
 		t.Fatal(err)
 	}
 	hb := c.Heartbeat(easy.HeartbeatInput{
-		LicenseKey:     "LIC-AAAA-BBBB-CCCC-DDDD-EEEE",
-		Fingerprint:    "fp-1",
-		RuntimeVersion: "0.0.0-test",
-		IntervalSec:    60,
+		IntervalSec: 60,
 	})
 	if hb == nil {
 		t.Fatal("heartbeat returned nil")

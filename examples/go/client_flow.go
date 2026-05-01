@@ -77,13 +77,13 @@ func main() {
 	state, _ := store.Read()
 	fmt.Println("Cached token present:", state.Token != "")
 
-	// 3. Heartbeat — returns a bool, reports errors via OnError.
+	// 3. Heartbeat — returns a bool, reports errors via OnError. The
+	//    body sent to the issuer is `{token}` read from Store; the
+	//    server derives identity from the token's claims.
 	ok := client.SendOneHeartbeat(client.HeartbeatOptions{
-		Transport:   transport,
-		Store:       store,
-		LicenseKey:  licenseKey,
-		Fingerprint: fingerprint,
-		OnError:     func(err error) { log.Printf("heartbeat err: %v", err) },
+		Transport: transport,
+		Store:     store,
+		OnError:   func(err error) { log.Printf("heartbeat err: %v", err) },
 	})
 	fmt.Println("Heartbeat OK:", ok)
 
