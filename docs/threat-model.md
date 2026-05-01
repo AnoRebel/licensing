@@ -172,6 +172,41 @@ rotate the pepper periodically; rotation invalidates all dedupe state
 (every fingerprint can issue a new trial), which is acceptable for
 most operations but should be planned as a maintenance window.
 
+### 2.4 Replay within `exp` (online verifiers only)
+
+A captured token replayed against the same verifier within
+`exp + skew` MUST verify successfully under the offline-first default
+configuration. LIC1's signature verification has no built-in nonce
+or jti-tracking layer; the codec gives you a strong unique `jti` per
+token, but binding "first use" semantics is the verifier's job.
+
+**Mitigation (online verifiers):** the optional
+`ValidateOptions.JtiLedger` (Go) / `ValidateOptions.jtiLedger` (TS).
+When supplied, validate records each token's `jti` after every other
+check passes; a second validate of the same token surfaces
+`TokenReplayed`. Three implementations ship out of the box:
+
+- `MemoryJtiLedger` — single-instance, in-process.
+- `SqliteJtiLedger` — single-instance with persistence, or shared via
+  a network filesystem.
+- `PostgresJtiLedger` — multi-instance with shared backing.
+
+The persistent adapters use the `jti_uses` table created by
+migration `0003_jti_uses.sql`; `INSERT ... ON CONFLICT DO NOTHING`
+distinguishes first-use from replay in a single round trip.
+Operators MAY call `PruneExpired(now)` from their own scheduler so
+the ledger doesn't grow without bound — entries past `exp + skew`
+are safe to delete.
+
+**Limit:** the ledger is meaningful only for **online verifiers**.
+Offline clients cannot consult a shared store, so the protocol's
+default offline-first use case ignores this layer. Online deployments
+that share a single trust domain (one verifier, or many sharing one
+ledger backing store) gain per-trust-domain replay protection;
+operators who run multiple independent verifiers without shared
+storage need a different design (e.g. one-time tokens minted per
+session, with the issuer enforcing single-use server-side).
+
 ## 3. Out of scope (the token does NOT defend)
 
 ### 3.1 Symmetric-key forgery (HS256)
@@ -189,19 +224,7 @@ defensible and when it absolutely is not.
 The default `Issuer` constructor in both ports generates Ed25519 keys.
 Operators choosing HS256 are expected to have read §6.1.
 
-### 3.2 Replay across one verifier
-
-A captured token, replayed against the same verifier within its
-`exp + skew` window, MUST verify successfully. LIC1 has no built-in
-nonce or jti-tracking layer.
-
-If your application needs replay protection (e.g. license tokens
-double as one-time activation receipts), layer a server-side `jti`
-ledger on top — record `jti` on first use, reject on second.
-The codec gives you a strong unique `jti` per token; binding "first
-use" semantics is application-domain.
-
-### 3.3 Side-channel attacks on private key material
+### 3.2 Side-channel attacks on private key material
 
 Timing attacks, cache attacks, EM-emission attacks, and other
 side channels against the signing primitive (Ed25519, RSA-PSS,
@@ -210,7 +233,7 @@ HMAC-SHA-256) are out of scope for LIC1. Use a library you trust
 and run signing in an environment where the threat model excludes
 the relevant adversary.
 
-### 3.4 Coercion / legal compulsion
+### 3.3 Coercion / legal compulsion
 
 LIC1 cannot defend against "show me your signing key or go to jail".
 Operators concerned about compelled key disclosure should investigate
