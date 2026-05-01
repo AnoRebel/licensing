@@ -1,0 +1,6 @@
+{
+  "source": "025-ed25519-aud-iss",
+  "variant": "missing-exp",
+  "kind": "missing-required-claim",
+  "claim": "exp"
+}

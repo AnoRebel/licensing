@@ -1,0 +1,5 @@
+{
+  "source": "025-ed25519-aud-iss",
+  "variant": "wrong-kid",
+  "kind": "wrong-kid"
+}

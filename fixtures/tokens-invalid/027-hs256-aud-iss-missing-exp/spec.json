@@ -1,0 +1,6 @@
+{
+  "source": "027-hs256-aud-iss",
+  "variant": "missing-exp",
+  "kind": "missing-required-claim",
+  "claim": "exp"
+}

@@ -1,0 +1,28 @@
+{
+  "alg": "hs256",
+  "kid": "fixture-hmac-1",
+  "key_ref": "hmac",
+  "header": {
+    "v": 1,
+    "typ": "lic",
+    "alg": "hs256",
+    "kid": "fixture-hmac-1"
+  },
+  "payload": {
+    "jti": "jti-aud-iss-hs256",
+    "iat": 1700000000,
+    "nbf": 1700000000,
+    "exp": 1702592000,
+    "force_online_after": null,
+    "scope": "example.app",
+    "license_id": "00000000-0000-4000-8000-000000000001",
+    "usage_id": "00000000-0000-4000-8000-000000000002",
+    "usage_fingerprint": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "status": "active",
+    "max_usages": 5,
+    "aud": "server-internal",
+    "iss": "licensing.acme.internal",
+    "entitlements": {},
+    "meta": {}
+  }
+}

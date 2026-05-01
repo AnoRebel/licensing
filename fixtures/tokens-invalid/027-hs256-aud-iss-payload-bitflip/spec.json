@@ -1,0 +1,5 @@
+{
+  "source": "027-hs256-aud-iss",
+  "variant": "payload-bitflip",
+  "kind": "payload-bitflip"
+}

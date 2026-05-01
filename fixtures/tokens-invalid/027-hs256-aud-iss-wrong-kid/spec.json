@@ -1,0 +1,5 @@
+{
+  "source": "027-hs256-aud-iss",
+  "variant": "wrong-kid",
+  "kind": "wrong-kid"
+}
