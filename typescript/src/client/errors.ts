@@ -20,6 +20,7 @@ export type ClientErrorCode =
   | 'FingerprintMismatch'
   | 'AudienceMismatch'
   | 'IssuerMismatch'
+  | 'TokenReplayed'
   | 'TokenExpired'
   | 'TokenNotYetValid'
   | 'SeatLimitExceeded'
@@ -88,6 +89,9 @@ export const clientErrors = {
   issuerMismatch: (
     msg = 'token issuer does not match the verifier-pinned issuer',
   ): LicensingClientError => new LicensingClientError('IssuerMismatch', msg),
+  tokenReplayed: (
+    msg = 'token jti has already been used (replay rejected)',
+  ): LicensingClientError => new LicensingClientError('TokenReplayed', msg),
   tokenExpired: (
     msg = 'token exp is in the past beyond the skew tolerance',
   ): LicensingClientError => new LicensingClientError('TokenExpired', msg),

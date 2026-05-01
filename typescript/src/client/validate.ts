@@ -24,6 +24,7 @@ import type { AlgorithmRegistry, KeyAlgBindings, KeyRecord } from '../crypto/ind
 import { decodeUnverified, type LIC1DecodedParts, verify } from '../lic1.ts';
 
 import { clientErrors } from './errors.ts';
+import type { JtiLedger } from './jti-ledger.ts';
 
 export interface ValidateOptions {
   /** Algorithm registry (populated with the same backends the issuer uses).
@@ -55,6 +56,16 @@ export interface ValidateOptions {
    *  this value. Mismatches throw {@link clientErrors.issuerMismatch}.
    *  When omitted, the `iss` claim is advisory and ignored. */
   readonly expectedIssuer?: string;
+  /** Optional replay-prevention ledger. When supplied, validate records
+   *  the token's `jti` after every other check passes; a second validate
+   *  of the same token throws {@link clientErrors.tokenReplayed}.
+   *
+   *  Meaningful only for online verifiers — offline clients can't share
+   *  state and should leave this undefined. The ledger entry is recorded
+   *  AFTER all other validate checks pass, so a malformed/expired/
+   *  wrong-fingerprint token doesn't burn an entry it would have been
+   *  rejected for anyway. */
+  readonly jtiLedger?: JtiLedger;
 }
 
 export interface ValidateResult {
@@ -171,6 +182,20 @@ export async function validate(token: string, opts: ValidateOptions): Promise<Va
     if (claims.iss !== opts.expectedIssuer) {
       throw clientErrors.issuerMismatch(
         `expected iss=${opts.expectedIssuer}, token has ${claims.iss === null ? 'no iss' : `iss=${claims.iss}`}`,
+      );
+    }
+  }
+
+  // 8. Replay-prevention ledger (optional). Records this jti's use AFTER
+  //    all other checks have passed so an expired / wrong-fingerprint /
+  //    etc. token doesn't burn a ledger entry it would have been
+  //    rejected for anyway. Second use of the same jti surfaces as
+  //    TokenReplayed.
+  if (opts.jtiLedger !== undefined) {
+    const firstUse = await opts.jtiLedger.recordJtiUse(claims.jti, claims.exp + skew);
+    if (!firstUse) {
+      throw clientErrors.tokenReplayed(
+        `jti ${claims.jti} was previously recorded by this verifier`,
       );
     }
   }

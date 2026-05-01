@@ -50,6 +50,10 @@ export {
   sendOneHeartbeat,
 } from './heartbeat.ts';
 export {
+  type JtiLedger,
+  MemoryJtiLedger,
+} from './jti-ledger.ts';
+export {
   type RefreshOptions,
   type RefreshOutcome,
   refresh,
