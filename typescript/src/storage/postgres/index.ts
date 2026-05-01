@@ -10,4 +10,5 @@
 // so deploy scripts can run them without instantiating an adapter.
 
 export { type PostgresAdapterOptions, PostgresStorage } from './adapter.ts';
+export { PostgresJtiLedger } from './jti-ledger.ts';
 export { POSTGRES_SCHEMA } from './schema.ts';

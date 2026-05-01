@@ -8,4 +8,5 @@
 // so deploy scripts can run them without instantiating an adapter.
 
 export { type SqliteAdapterOptions, SqliteStorage } from './adapter.ts';
+export { SqliteJtiLedger } from './jti-ledger.ts';
 export { SQLITE_SCHEMA } from './schema.ts';
