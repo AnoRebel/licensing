@@ -190,24 +190,24 @@ In TypeScript, `Object.keys` cannot return duplicates either, but a
 `Proxy` or hand-constructed property bag can produce them — both ports
 guard explicitly.)*
 
-#### 4.3.1 Parser caveat (KNOWN GAP)
+#### 4.3.1 Parser duplicate-key rejection
 
-The parsers used during verification (`encoding/json` in Go,
-`JSON.parse` in TypeScript) **silently last-wins on duplicate keys** in
-their input rather than rejecting them. A malicious token containing
-`{"status":"revoked","status":"active"}` will deserialize as
-`{"status":"active"}` on both ports.
+Both the encoder and the **parser** reject duplicate keys. A token
+containing `{"status":"revoked","status":"active"}` fails verification
+with `CanonicalJSONDuplicateKey` BEFORE signature verification runs:
 
-Today this is **not exploitable**: the signature is computed over the
-already-canonical bytes (which the issuer produces from a
-duplicate-free map), so an attacker cannot inject a duplicate key
-without invalidating the signature. The encoder side is what
-matters for the wire contract.
+- **Go**: `parseJSONObject` walks `json.Decoder.Token()` and detects
+  duplicates before they collapse into a `map[string]any`.
+- **TypeScript**: `src/strict-json.ts` is a small recursive-descent
+  parser that rejects duplicates at parse time; the rest of its
+  behaviour is byte-identical to `JSON.parse` for all valid (non-
+  duplicate) inputs, so existing fixtures and round-trip tests remain
+  unchanged.
 
-A defence-in-depth fix (a custom token-driven JSON parser that
-explicitly rejects duplicate keys before the signature is verified)
-is tracked under the canonicalizer fuzz work; see
-[`docs/threat-model.md`](./threat-model.md).
+This closes the threat-model gap previously documented under
+[`docs/threat-model.md`](./threat-model.md) §4.1; the parse-time
+rejection is defence-in-depth even though the encoder-side guarantee
+already prevented exploitable forgery.
 
 ### 4.4 Numbers
 

@@ -206,23 +206,26 @@ HSM-based key custody (deferred to a v0.2+ feature, see
 
 ## 4. Known gaps tracked for hardening
 
-### 4.1 Duplicate-key parser permissiveness
+### 4.1 Duplicate-key parser permissiveness — CLOSED
 
-Both ports' canonical-JSON **encoders** reject duplicate keys, but the
-**parsers** used during verification (`encoding/json` in Go,
-`JSON.parse` in TypeScript) silently last-wins on duplicate keys
-rather than rejecting them.
+**Status: closed.** Both ports' canonical-JSON encoders reject duplicate
+keys, AND the parsers used during verification now do too. The Go path
+walks `json.Decoder.Token()` to detect duplicates before they collapse
+into a `map[string]any`; the TypeScript path uses a small recursive-
+descent parser (`src/strict-json.ts`) that rejects duplicates at parse
+time. Both surface `CanonicalJSONDuplicateKey` BEFORE signature
+verification runs, so a tampered token with `{"status":"revoked",
+"status":"active"}` fails fast — even if an attacker somehow forged
+a valid signature over duplicate-key bytes, the parser stops the token
+before the signature check.
 
-Today this is **not exploitable**: the signature is computed over
-already-canonical bytes (which the issuer produced from a duplicate-free
-map), so an attacker cannot inject a duplicate without invalidating the
-signature. The encoder side is what matters for the wire contract.
+Test coverage:
 
-A defence-in-depth fix — a custom token-driven JSON parser that
-explicitly rejects duplicate keys before the signature is verified —
-is planned. Both ports also carry fuzz coverage of the canonicalizer
-so the rejection rule is exercised against adversarial input before
-the enforcement layer is tightened.
+- Go: `licensing/duplicate_key_test.go` — top-level, header, nested,
+  array-nested duplicates plus end-to-end "fails before sig check"
+- TypeScript: `tests/core/duplicate-key.test.ts` — same matrix plus a
+  round-trip parity block proving the strict parser produces the same
+  shape `JSON.parse` did for every valid (non-duplicate) input.
 
 ### 4.2 No CT-style transparency log
 
