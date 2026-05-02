@@ -79,9 +79,11 @@ export const sampleAuditEntry = {
 export const sampleTemplate = {
   id: TEMPLATE_ID,
   scope_id: SCOPE_ID,
+  parent_id: null as string | null,
   name: 'Enterprise 10-seat',
   max_usages: 10,
   trial_duration_sec: 0,
+  trial_cooldown_sec: null as number | null,
   grace_duration_sec: 60 * 60 * 24 * 7,
   force_online_after_sec: 60 * 60 * 24 * 30,
   entitlements: { seats: 10, features: ['sso', 'audit'] },
@@ -90,8 +92,38 @@ export const sampleTemplate = {
   updated_at: iso(now),
 };
 
+// Two extra templates to exercise the parent-picker flow + the
+// hierarchy preview on the detail page. `sampleTemplateChild`'s
+// parent_id matches `sampleTemplate.id` so detail-page specs can
+// assert the breadcrumb + child-list.
+const TEMPLATE_PARENT_ID = '018df9f1-0000-7000-8000-000000000041';
+const TEMPLATE_CHILD_ID = '018df9f1-0000-7000-8000-000000000042';
+
+export const sampleTemplateParent = {
+  ...sampleTemplate,
+  id: TEMPLATE_PARENT_ID,
+  name: 'Base SKU',
+  parent_id: null as string | null,
+};
+
+export const sampleTemplateChild = {
+  ...sampleTemplate,
+  id: TEMPLATE_CHILD_ID,
+  name: 'Trial — Base SKU',
+  parent_id: TEMPLATE_ID,
+  trial_cooldown_sec: 7 * 24 * 60 * 60,
+};
+
 export const cursorPage = <T>(items: T[]) => ({
   data: { items, next_cursor: null as string | null },
 });
 
-export const IDS = { LICENSE_ID, SCOPE_ID, KEY_ID, USAGE_ID, TEMPLATE_ID };
+export const IDS = {
+  LICENSE_ID,
+  SCOPE_ID,
+  KEY_ID,
+  USAGE_ID,
+  TEMPLATE_ID,
+  TEMPLATE_PARENT_ID,
+  TEMPLATE_CHILD_ID,
+};
