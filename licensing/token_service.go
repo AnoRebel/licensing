@@ -4,6 +4,8 @@ package licensing
 // typescript/packages/core/src/token-service.ts.
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"time"
 )
@@ -11,14 +13,49 @@ import (
 // IssueTokenInput carries the caller-supplied parameters for issuing a
 // LIC1 token.
 type IssueTokenInput struct {
-	ForceOnlineAfter  OptIntOverride
-	Entitlements      OptEntitlements
-	License           *License
-	Usage             *LicenseUsage
-	Meta              map[string]any
+	ForceOnlineAfter OptIntOverride
+	Entitlements     OptEntitlements
+	License          *License
+	Usage            *LicenseUsage
+	Meta             map[string]any
+	// TransparencyHook is an optional callback fired after a token is
+	// successfully signed. It receives the token's identifying metadata
+	// + a SHA-256 hash of the full wire-token bytes; operators MAY mirror
+	// this to an externally-verifiable append-only store (S3 with object
+	// lock, AWS QLDB, immudb, a managed CT-style log) so a stolen-key
+	// attacker who mints tokens cannot do so without leaving a trail
+	// on the operator's transparency vendor.
+	//
+	// The hook is fire-and-forget: any retry / async / error-surfacing
+	// concern lives in the operator's wrapper. The token is already
+	// signed and returned to the caller by the time the hook fires;
+	// hook failures do NOT fail the issuance.
+	//
+	// Leave nil to disable; the hook costs ~zero when unset.
+	TransparencyHook  TransparencyHook
 	Alg               KeyAlg
 	SigningPassphrase string
 	TTLSeconds        int
+}
+
+// TransparencyHook is the signature of the post-issue callback. The
+// event carries enough metadata to identify the token and verify its
+// integrity against an external log, without leaking the token bytes
+// themselves.
+type TransparencyHook func(event TokenIssuedEvent)
+
+// TokenIssuedEvent is the payload passed to TransparencyHook. All
+// fields are non-empty for a successful issue. TokenSHA256 is the
+// lowercase-hex SHA-256 of the full wire-token string (i.e. the same
+// bytes the consumer receives), 64 chars.
+type TokenIssuedEvent struct {
+	Jti         string
+	LicenseID   string
+	UsageID     string
+	Kid         string
+	TokenSHA256 string
+	Iat         int64
+	Exp         int64
 }
 
 // OptIntOverride distinguishes "not supplied" from "explicitly set".
@@ -191,6 +228,23 @@ func IssueToken(
 	})
 	if err != nil {
 		return nil, err
+	}
+
+	// Fire the transparency hook. Hash the full wire-token bytes —
+	// that's what an external log would record and what a third party
+	// would compare against the operator's local audit log to detect a
+	// stolen-key issuance. SHA-256 of UTF-8 bytes; 64-char lowercase hex.
+	if input.TransparencyHook != nil {
+		sum := sha256.Sum256([]byte(token))
+		input.TransparencyHook(TokenIssuedEvent{
+			Jti:         jti,
+			LicenseID:   input.License.ID,
+			UsageID:     input.Usage.ID,
+			Kid:         signing.Kid,
+			Iat:         iat,
+			Exp:         exp,
+			TokenSHA256: hex.EncodeToString(sum[:]),
+		})
 	}
 
 	return &IssueTokenResult{
