@@ -434,6 +434,10 @@ paths:
         - name: scope_id
           in: query
           schema: { type: string, format: uuid }
+        - name: parent_id
+          in: query
+          description: Filter by parent template. Pass a UUID to list immediate children, or `null` to list root templates (templates with no parent).
+          schema: { type: string }
       responses:
         '200':
           description: OK
@@ -445,7 +449,7 @@ paths:
       operationId: createTemplate
       tags: [Admin Templates]
       summary: Create a license template
-      description: Creates a reusable `LicenseTemplate`. Defaults captured here (`max_usages`, `trial_duration_sec`, `grace_duration_sec`, `force_online_after_sec`, `entitlements`) are copied onto new licenses that reference this template, with per-license overrides taking precedence.
+      description: Creates a reusable `LicenseTemplate`. Defaults captured here (`max_usages`, `trial_duration_sec`, `trial_cooldown_sec`, `grace_duration_sec`, `force_online_after_sec`, `entitlements`) are copied onto new licenses that reference this template, with per-license overrides taking precedence. When `parent_id` is set the template inherits unset fields from its ancestor chain at resolve time.
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -460,6 +464,11 @@ paths:
               schema: { $ref: '#/components/schemas/TemplateEnvelope' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
+        '409':
+          description: Parent reference would form a cycle (`TemplateCycle`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
 
   /admin/templates/{id}:
     parameters: [{ $ref: '#/components/parameters/IdPath' }]
@@ -497,6 +506,11 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Re-parenting would form a cycle (`TemplateCycle`).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
     delete:
       operationId: deleteTemplate
       tags: [Admin Templates]
@@ -1069,9 +1083,15 @@ components:
       required: [name, max_usages, trial_duration_sec, grace_duration_sec]
       properties:
         scope_id: { type: string, format: uuid, nullable: true }
+        # Self-FK enabling template inheritance — unset numeric fields
+        # resolve up the parent chain at creation time.
+        parent_id: { type: string, format: uuid, nullable: true }
         name: { type: string, maxLength: 128 }
         max_usages: { type: integer, minimum: 1 }
         trial_duration_sec: { type: integer, minimum: 0 }
+        # Minimum gap between successive trials of this template against
+        # the same fingerprint. Null means "use IssuerConfig default".
+        trial_cooldown_sec: { type: integer, minimum: 0, nullable: true }
         grace_duration_sec: { type: integer, minimum: 0 }
         force_online_after_sec: { type: integer, minimum: 0, nullable: true }
         entitlements: { type: object, additionalProperties: true }
@@ -1082,8 +1102,13 @@ components:
       type: object
       properties:
         name: { type: string, maxLength: 128 }
+        # Re-parenting. Pass `null` to detach to a root template;
+        # the server returns 409 `TemplateCycle` if the new parent
+        # chain would loop back through this template.
+        parent_id: { type: string, format: uuid, nullable: true }
         max_usages: { type: integer, minimum: 1 }
         trial_duration_sec: { type: integer, minimum: 0 }
+        trial_cooldown_sec: { type: integer, minimum: 0, nullable: true }
         grace_duration_sec: { type: integer, minimum: 0 }
         force_online_after_sec: { type: integer, minimum: 0, nullable: true }
         entitlements: { type: object, additionalProperties: true }
