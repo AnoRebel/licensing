@@ -263,19 +263,47 @@ Test coverage:
   round-trip parity block proving the strict parser produces the same
   shape `JSON.parse` did for every valid (non-duplicate) input.
 
-### 4.2 No CT-style transparency log
+### 4.2 CT-style transparency — opt-in hook
 
-LIC1 has no public, append-only log of issued tokens analogous to
-Certificate Transparency. A compromised issuer with stolen keys can
-mint tokens that no third party can detect after the fact (only the
-operator's own audit log records issuance, and that log is
-local-trust).
+LIC1 has no built-in public, append-only log of issued tokens
+analogous to Certificate Transparency. Full CT semantics (witness
+servers, gossip protocols, third-party log monitors) are out of scope
+for v0.1.0 — the deployment surface is too heavy for the licensing
+market today.
 
-This is intentional for v0.1.0 — full CT semantics multiply the
-deployment surface (witness servers, gossip protocols) and the
-licensing market does not yet demand it. Operators who need it should
-mirror their `audit_log` to an externally-verifiable append-only
-store (S3 with object lock, AWS QLDB, immudb).
+A **lightweight opt-in mitigation** ships in both ports: a transparency
+hook on the token-issue path. When the operator wires
+`IssueTokenInput.TransparencyHook` (Go) /
+`IssueTokenInput.transparencyHook` (TS) — or surfaces it on
+`ClientHandlerContext.TransparencyHook` / `.transparencyHook` so the
+HTTP layer fires it on every `/activate` and `/refresh` issuance — the
+hook receives:
+
+- `Jti` / `jti` — the token's unique identifier
+- `LicenseID`, `UsageID`, `Kid` — context for indexing
+- `Iat`, `Exp` — when it was issued and when it expires
+- `TokenSHA256` / `tokenSha256` — lowercase-hex SHA-256 of the
+  full wire-token bytes (64 chars)
+
+Operators can mirror these events to an externally-verifiable
+append-only store (S3 with object lock, AWS QLDB, immudb, a managed
+CT-style log). A third party with read access to that store can
+compare against the operator's local audit log to detect a stolen-
+key attacker who minted tokens that didn't appear in the external
+log.
+
+The hook is fire-and-forget: any retry / async / error-surfacing
+concern lives in the operator's wrapper, and a hook failure does NOT
+fail the token issuance. The token is already signed and returned to
+the caller by the time the hook fires; throwing from the hook in
+TypeScript or panicking from it in Go propagates to the caller, but
+that's an operator choice — wrap with `try` / `recover` if you want
+issuance to succeed even when the transparency vendor is degraded.
+
+This is **80% of CT's detection property at 5% of the cost.** It does
+not provide gossip-based public verifiability without operator
+buy-in, and operators concerned about supply-chain attacks on the
+transparency vendor itself need additional layers.
 
 ### 4.3 No formal proof of canonicalization byte-equality
 
