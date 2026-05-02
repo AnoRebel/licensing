@@ -5,7 +5,7 @@
  * small and makes wiring adapters (Hono/Express/Fastify) uniform.
  */
 
-import type { Clock, KeyAlg, SignatureBackend, Storage } from '../index.ts';
+import type { Clock, KeyAlg, SignatureBackend, Storage, TransparencyHook } from '../index.ts';
 
 export interface HandlerContext {
   /** Storage adapter — any `Storage` implementation works (memory,
@@ -31,6 +31,14 @@ export interface ClientHandlerContext extends HandlerContext {
   /** Force-online-after override for issued tokens (absolute unix seconds).
    *  When undefined, `issueToken` falls back to `license.meta.force_online_after_sec`. */
   readonly forceOnlineAfter?: number | null;
+  /** Optional transparency hook fired after every successful token issue
+   *  (activate / refresh paths). Receives `{jti, licenseId, usageId, kid,
+   *  iat, exp, tokenSha256}`; operators MAY mirror this to an externally-
+   *  verifiable append-only store so a stolen-key attacker who mints
+   *  tokens cannot do so without leaving a trail on the operator's
+   *  transparency vendor. Fire-and-forget — hook failures do NOT fail
+   *  the issuance. */
+  readonly transparencyHook?: TransparencyHook;
 }
 
 /** Admin-specific context. Key-rotation endpoints require the root + signing

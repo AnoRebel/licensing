@@ -179,6 +179,7 @@ async function handleActivate(
       alg,
       signingPassphrase: ctx.signingPassphrase,
       ...(ctx.forceOnlineAfter !== undefined ? { forceOnlineAfter: ctx.forceOnlineAfter } : {}),
+      ...(ctx.transparencyHook !== undefined ? { transparencyHook: ctx.transparencyHook } : {}),
     });
     // `refresh_recommended_at` is the 75%-of-lifetime mark: clients
     // proactively refresh when less than 25% remains.
@@ -246,6 +247,7 @@ async function reissueFromToken(
     alg,
     signingPassphrase: ctx.signingPassphrase,
     ...(ctx.forceOnlineAfter !== undefined ? { forceOnlineAfter: ctx.forceOnlineAfter } : {}),
+    ...(ctx.transparencyHook !== undefined ? { transparencyHook: ctx.transparencyHook } : {}),
   });
   const decoded = decodeUnverified(issued.token);
   const foa = decoded.payload.force_online_after;

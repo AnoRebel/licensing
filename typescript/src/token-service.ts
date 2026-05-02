@@ -49,6 +49,8 @@
  *   - A `refreshToken(oldToken, ...)` API — clients simply re-call issue.
  */
 
+import { createHash } from 'node:crypto';
+
 import type { SignatureBackend } from './crypto/types.ts';
 import { errors } from './errors.ts';
 import type { Clock } from './id.ts';
@@ -95,6 +97,39 @@ export interface IssueTokenInput {
   /** Optional freeform meta to include in the claim set. Not merged with
    *  the license's meta — this is a token-scoped claim only. */
   readonly meta?: Readonly<Record<string, JSONValue>>;
+  /**
+   * Optional callback fired after a token is successfully signed. Receives
+   * the token's identifying metadata + a SHA-256 hash of the full
+   * wire-token bytes; operators MAY mirror this to an externally-verifiable
+   * append-only store (S3 with object lock, AWS QLDB, immudb, a managed
+   * CT-style log) so a stolen-key attacker who mints tokens cannot do so
+   * without leaving a trail on the operator's transparency vendor.
+   *
+   * Fire-and-forget: any retry / async / error-surfacing concern lives in
+   * the operator's wrapper. The token is already signed and returned to
+   * the caller by the time the hook fires; hook failures do NOT fail the
+   * issuance.
+   *
+   * Leave undefined to disable; the hook costs ~zero when unset.
+   */
+  readonly transparencyHook?: TransparencyHook;
+}
+
+/** Signature of the post-issue transparency callback. */
+export type TransparencyHook = (event: TokenIssuedEvent) => void;
+
+/** Payload passed to the transparency hook. All fields are non-empty for
+ *  a successful issue. `tokenSha256` is the lowercase-hex SHA-256 of the
+ *  full wire-token string (i.e. the same bytes the consumer receives),
+ *  64 chars. */
+export interface TokenIssuedEvent {
+  readonly jti: string;
+  readonly licenseId: string;
+  readonly usageId: string;
+  readonly kid: string;
+  readonly iat: number;
+  readonly exp: number;
+  readonly tokenSha256: string;
 }
 
 export interface IssueTokenResult {
@@ -241,6 +276,23 @@ export async function issueToken(
     kid: signing.kid,
   };
   const token = await encodeLic1({ header, payload, privateKey: handle, backend });
+
+  // Fire the transparency hook. Hash the full wire-token bytes — that's
+  // what an external log would record and what a third party would
+  // compare against the operator's local audit log to detect a stolen-
+  // key issuance. SHA-256 of UTF-8 bytes; 64-char lowercase hex.
+  if (input.transparencyHook !== undefined) {
+    const tokenSha256 = createHash('sha256').update(token).digest('hex').toLowerCase();
+    input.transparencyHook({
+      jti,
+      licenseId: input.license.id,
+      usageId: input.usage.id,
+      kid: signing.kid,
+      iat,
+      exp,
+      tokenSha256,
+    });
+  }
 
   return { token, kid: signing.kid, iat, exp, jti };
 }
