@@ -10,9 +10,17 @@ import (
 )
 
 // CreateTemplateInput is the caller-supplied shape for creating a template.
+//
+// ParentID is the optional self-FK enabling template inheritance. When
+// set, unset numeric fields on this template resolve up the parent chain
+// at issuance time (see ResolveTemplate). TrialCooldownSec, if non-nil,
+// overrides IssuerConfig.TrialCooldownSec for trials minted from this
+// template; nil falls back to the issuer-wide default.
 type CreateTemplateInput struct {
 	ScopeID             *string
+	ParentID            *string
 	ForceOnlineAfterSec *int
+	TrialCooldownSec    *int
 	Entitlements        map[string]any
 	Meta                map[string]any
 	Name                string
@@ -55,9 +63,11 @@ func CreateTemplate(storage Storage, clock Clock, input CreateTemplateInput, opt
 		var err error
 		created, err = tx.CreateTemplate(LicenseTemplateInput{
 			ScopeID:             input.ScopeID,
+			ParentID:            input.ParentID,
 			Name:                input.Name,
 			MaxUsages:           input.MaxUsages,
 			TrialDurationSec:    input.TrialDurationSec,
+			TrialCooldownSec:    input.TrialCooldownSec,
 			GraceDurationSec:    input.GraceDurationSec,
 			ForceOnlineAfterSec: input.ForceOnlineAfterSec,
 			Entitlements:        entitlements,

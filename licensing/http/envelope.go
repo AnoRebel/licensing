@@ -89,6 +89,7 @@ var errorStatus = map[lic.ErrorCode]int{
 	lic.CodeUniqueConstraintViolation:  409,
 	lic.CodeSeatLimitExceeded:          409,
 	lic.CodeIllegalLifecycleTransition: 409,
+	lic.CodeTemplateCycle:              409,
 	// 422 — crypto preconditions
 	lic.CodeUnsupportedAlgorithm:       422,
 	lic.CodeAlgorithmAlreadyRegistered: 422,

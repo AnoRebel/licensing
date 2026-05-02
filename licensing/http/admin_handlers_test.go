@@ -392,6 +392,125 @@ func TestAdmin_Template_CRUD(t *testing.T) {
 	}
 }
 
+// TestAdmin_Template_PersistsParentAndCooldown pins the wire shape so a
+// future refactor can't silently drop parent_id / trial_cooldown_sec
+// from the create body — both fields shipped after the original handler
+// and the regression risk is real.
+func TestAdmin_Template_PersistsParentAndCooldown(t *testing.T) {
+	h := newAdminHarness(t)
+
+	rec, env := h.do(http.MethodPost, "/api/licensing/v1/admin/templates", map[string]any{
+		"name":               "Base",
+		"max_usages":         5,
+		"trial_duration_sec": 0,
+		"grace_duration_sec": 0,
+	})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("parent create: %d body=%s", rec.Code, rec.Body.String())
+	}
+	parentID, _ := dataAsMap(t, env)["id"].(string)
+
+	rec, env = h.do(http.MethodPost, "/api/licensing/v1/admin/templates", map[string]any{
+		"name":               "Trial",
+		"parent_id":          parentID,
+		"max_usages":         1,
+		"trial_duration_sec": 86400,
+		"trial_cooldown_sec": 604800,
+		"grace_duration_sec": 0,
+	})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("child create: %d body=%s", rec.Code, rec.Body.String())
+	}
+	child := dataAsMap(t, env)
+	if got, _ := child["parent_id"].(string); got != parentID {
+		t.Fatalf("parent_id round-trip: got %q want %q", got, parentID)
+	}
+	if got, _ := child["trial_cooldown_sec"].(float64); got != 604800 {
+		t.Fatalf("trial_cooldown_sec round-trip: got %v want 604800", got)
+	}
+}
+
+// TestAdmin_Template_RejectsParentCycle confirms the storage-level
+// TemplateCycle guard surfaces as a 409 through the HTTP layer.
+func TestAdmin_Template_RejectsParentCycle(t *testing.T) {
+	h := newAdminHarness(t)
+
+	rec, env := h.do(http.MethodPost, "/api/licensing/v1/admin/templates", map[string]any{
+		"name": "A", "max_usages": 1,
+		"trial_duration_sec": 0, "grace_duration_sec": 0,
+	})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("A: %d", rec.Code)
+	}
+	aID, _ := dataAsMap(t, env)["id"].(string)
+
+	rec, env = h.do(http.MethodPost, "/api/licensing/v1/admin/templates", map[string]any{
+		"name": "B", "parent_id": aID, "max_usages": 1,
+		"trial_duration_sec": 0, "grace_duration_sec": 0,
+	})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("B: %d", rec.Code)
+	}
+	bID, _ := dataAsMap(t, env)["id"].(string)
+
+	// Re-parenting A under B closes the cycle A -> B -> A.
+	rec, env = h.do(http.MethodPatch, "/api/licensing/v1/admin/templates/"+aID, map[string]any{
+		"parent_id": bID,
+	})
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("expected 409 TemplateCycle, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if env.Error == nil || env.Error.Code != string(lic.CodeTemplateCycle) {
+		t.Fatalf("error = %+v", env.Error)
+	}
+}
+
+// TestAdmin_Template_ListByParent exercises the parent_id query filter:
+// "null" (literal) lists root templates, a UUID lists immediate children.
+func TestAdmin_Template_ListByParent(t *testing.T) {
+	h := newAdminHarness(t)
+
+	rec, env := h.do(http.MethodPost, "/api/licensing/v1/admin/templates", map[string]any{
+		"name": "Root", "max_usages": 1,
+		"trial_duration_sec": 0, "grace_duration_sec": 0,
+	})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("root: %d", rec.Code)
+	}
+	rootID, _ := dataAsMap(t, env)["id"].(string)
+	rec, _ = h.do(http.MethodPost, "/api/licensing/v1/admin/templates", map[string]any{
+		"name": "Child", "parent_id": rootID, "max_usages": 1,
+		"trial_duration_sec": 0, "grace_duration_sec": 0,
+	})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("child: %d", rec.Code)
+	}
+
+	rec, env = h.do(http.MethodGet, "/api/licensing/v1/admin/templates?parent_id=null", nil)
+	if rec.Code != 200 {
+		t.Fatalf("list root: %d", rec.Code)
+	}
+	items, _ := dataAsMap(t, env)["items"].([]any)
+	for _, it := range items {
+		m, _ := it.(map[string]any)
+		if m["parent_id"] != nil {
+			t.Fatalf("expected only root templates, got parent_id=%v", m["parent_id"])
+		}
+	}
+
+	rec, env = h.do(http.MethodGet, "/api/licensing/v1/admin/templates?parent_id="+rootID, nil)
+	if rec.Code != 200 {
+		t.Fatalf("list children: %d", rec.Code)
+	}
+	items, _ = dataAsMap(t, env)["items"].([]any)
+	if len(items) != 1 {
+		t.Fatalf("expected 1 child, got %d", len(items))
+	}
+	if got, _ := items[0].(map[string]any)["parent_id"].(string); got != rootID {
+		t.Fatalf("child parent_id = %q want %q", got, rootID)
+	}
+}
+
 func TestAdmin_Template_Delete_409WhenReferenced(t *testing.T) {
 	h := newAdminHarness(t)
 	rec, env := h.do(http.MethodPost, "/api/licensing/v1/admin/templates", map[string]any{

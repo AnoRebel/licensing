@@ -586,6 +586,15 @@ func (h *AdminHandler) handleListTemplates(w http.ResponseWriter, r *http.Reques
 		filter.ScopeID = v
 		filter.ScopeIDSet = true
 	}
+	// parent_id filter accepts a UUID OR the literal string "null" to
+	// list root templates (templates with no parent). The OpenAPI schema
+	// types this as plain string for that reason.
+	if v := stringQuery(r, "parent_id"); v != nil {
+		filter.ParentIDSet = true
+		if *v != "null" {
+			filter.ParentID = v
+		}
+	}
 	p, err := h.ctx.Storage.ListTemplates(filter, page)
 	if err != nil {
 		writeErrorFromLicensing(w, err)
@@ -596,7 +605,9 @@ func (h *AdminHandler) handleListTemplates(w http.ResponseWriter, r *http.Reques
 
 type createTemplateBody struct {
 	ScopeID             *string        `json:"scope_id,omitempty"`
+	ParentID            *string        `json:"parent_id,omitempty"`
 	ForceOnlineAfterSec *int           `json:"force_online_after_sec,omitempty"`
+	TrialCooldownSec    *int           `json:"trial_cooldown_sec,omitempty"`
 	Entitlements        map[string]any `json:"entitlements,omitempty"`
 	Meta                map[string]any `json:"meta,omitempty"`
 	Name                string         `json:"name"`
@@ -618,11 +629,17 @@ func (h *AdminHandler) handleCreateTemplate(w http.ResponseWriter, r *http.Reque
 		writeError(w, 400, "BadRequest", "max_usages must be >= 1")
 		return
 	}
+	if b.TrialCooldownSec != nil && *b.TrialCooldownSec < 0 {
+		writeError(w, 400, "BadRequest", "trial_cooldown_sec must be >= 0")
+		return
+	}
 	tmpl, err := lic.CreateTemplate(h.ctx.Storage, h.ctx.Clock, lic.CreateTemplateInput{
 		ScopeID:             b.ScopeID,
+		ParentID:            b.ParentID,
 		Name:                b.Name,
 		MaxUsages:           b.MaxUsages,
 		TrialDurationSec:    b.TrialDurationSec,
+		TrialCooldownSec:    b.TrialCooldownSec,
 		GraceDurationSec:    b.GraceDurationSec,
 		ForceOnlineAfterSec: b.ForceOnlineAfterSec,
 		Entitlements:        b.Entitlements,
@@ -655,6 +672,8 @@ type updateTemplateBody struct {
 	GraceDurationSec    *int            `json:"grace_duration_sec,omitempty"`
 	Entitlements        map[string]any  `json:"entitlements,omitempty"`
 	Meta                map[string]any  `json:"meta,omitempty"`
+	ParentID            json.RawMessage `json:"parent_id,omitempty"`
+	TrialCooldownSec    json.RawMessage `json:"trial_cooldown_sec,omitempty"`
 	ForceOnlineAfterSec json.RawMessage `json:"force_online_after_sec,omitempty"`
 }
 
@@ -668,6 +687,16 @@ func (h *AdminHandler) handleUpdateTemplate(w http.ResponseWriter, r *http.Reque
 		MaxUsages:        b.MaxUsages,
 		TrialDurationSec: b.TrialDurationSec,
 		GraceDurationSec: b.GraceDurationSec,
+	}
+	if opt, ok := decodeOptString(b.ParentID); ok {
+		patch.ParentID = opt
+	}
+	if opt, ok := decodeOptInt(b.TrialCooldownSec); ok {
+		if opt.Value != nil && *opt.Value < 0 {
+			writeError(w, 400, "BadRequest", "trial_cooldown_sec must be >= 0")
+			return
+		}
+		patch.TrialCooldownSec = opt
 	}
 	if opt, ok := decodeOptInt(b.ForceOnlineAfterSec); ok {
 		patch.ForceOnlineAfterSec = opt
