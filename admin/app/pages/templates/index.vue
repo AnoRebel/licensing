@@ -52,6 +52,17 @@ const nextCursor = computed(() => data.value?.data?.next_cursor ?? null);
 const { data: scopesData } = await useLicensing('/admin/scopes', { query: { limit: 100 } });
 const scopes = computed(() => scopesData.value?.data?.items ?? []);
 
+// All templates (capped at 200) feed the parent_id combobox in the
+// create dialog. Loaded eagerly because the dialog opens too quickly
+// for a search-as-you-type round-trip to feel responsive on cold open.
+// 200 is well past the typical operator's working set; if a tenant
+// outgrows it we'll switch to remote search inside the popover.
+const { data: allTemplatesData } = await useLicensing('/admin/templates', {
+  query: { limit: 200 },
+  key: 'admin-templates-all-for-parent-picker',
+});
+const allTemplates = computed<Template[]>(() => allTemplatesData.value?.data?.items ?? []);
+
 const cursorStack = ref<string[]>([]);
 
 function applyServerFilter(patch: Record<string, string | undefined>) {
@@ -90,6 +101,7 @@ const createOpen = ref(false);
 // the detail page — keeping the create dialog focused.
 const CreateSchema = v.object({
   scope_id: v.pipe(v.string(), v.uuid('Must be a scope UUID')),
+  parent_id: v.optional(v.pipe(v.string(), v.uuid('Must be a template UUID'))),
   name: v.pipe(
     v.string(),
     v.trim(),
@@ -106,6 +118,13 @@ const CreateSchema = v.object({
     v.number('Must be a number'),
     v.integer('Must be an integer'),
     v.minValue(0, 'Non-negative'),
+  ),
+  trial_cooldown_sec: v.optional(
+    v.pipe(
+      v.number('Must be a number'),
+      v.integer('Must be an integer'),
+      v.minValue(0, 'Non-negative'),
+    ),
   ),
   grace_duration_sec: v.pipe(
     v.number('Must be a number'),
@@ -136,9 +155,11 @@ function errorToMessage(err: unknown, fallback: string): string {
 // any) so operators can "filter → new" without reselecting.
 interface CreateTemplateValues {
   scope_id: string;
+  parent_id: string | undefined;
   name: string;
   max_usages: number;
   trial_duration_sec: number;
+  trial_cooldown_sec: number | undefined;
   grace_duration_sec: number;
   force_online_after_sec: number | undefined;
 }
@@ -152,9 +173,11 @@ function validateCreateTemplate(value: CreateTemplateValues) {
 const createForm = useForm({
   defaultValues: {
     scope_id: '',
+    parent_id: undefined as string | undefined,
     name: '',
     max_usages: 1,
     trial_duration_sec: 0,
+    trial_cooldown_sec: undefined as number | undefined,
     grace_duration_sec: 0,
     force_online_after_sec: undefined as number | undefined,
   },
@@ -168,9 +191,11 @@ const createForm = useForm({
         method: 'POST',
         body: {
           scope_id: value.scope_id,
+          parent_id: value.parent_id ?? null,
           name: value.name.trim(),
           max_usages: value.max_usages,
           trial_duration_sec: value.trial_duration_sec,
+          trial_cooldown_sec: value.trial_cooldown_sec ?? null,
           grace_duration_sec: value.grace_duration_sec,
           force_online_after_sec: value.force_online_after_sec ?? null,
         },
@@ -186,6 +211,19 @@ const createForm = useForm({
     }
   },
 });
+
+// Combobox state — the popover is its own concern; tracking open state
+// inline so we can close after a pick without binding the picker to the
+// form library's submit lifecycle.
+const parentPickerOpen = ref(false);
+const parentPickerSearch = ref('');
+const parentOptions = computed(() =>
+  allTemplates.value.map((t) => ({ id: t.id, label: t.name, scope_id: t.scope_id })),
+);
+function parentLabelFor(id: string | undefined): string {
+  if (!id) return 'No parent (root template)';
+  return parentOptions.value.find((o) => o.id === id)?.label ?? id;
+}
 
 function openCreate() {
   // Pre-fill scope from current filter for fast iteration.
@@ -342,6 +380,62 @@ function toOptionalNumber(v: unknown): number | undefined {
             </template>
           </createForm.Field>
 
+          <createForm.Field name="parent_id">
+            <template #default="{ field, state }">
+              <div class="space-y-1.5">
+                <Label :for="field.name" class="text-xs font-normal text-muted-foreground">
+                  Parent template
+                  <span class="text-muted-foreground">(optional)</span>
+                </Label>
+                <Popover v-model:open="parentPickerOpen">
+                  <PopoverTrigger as-child>
+                    <Button
+                      :id="field.name"
+                      type="button"
+                      variant="outline"
+                      role="combobox"
+                      :aria-expanded="parentPickerOpen"
+                      class="w-full justify-between font-normal"
+                    >
+                      <span :class="{ 'text-muted-foreground': !state.value }">
+                        {{ parentLabelFor(state.value) }}
+                      </span>
+                      <span aria-hidden="true" class="ml-2 text-muted-foreground">⌄</span>
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent class="w-[--reka-popover-trigger-width] p-0" align="start">
+                    <Command v-model:search-term="parentPickerSearch">
+                      <CommandInput placeholder="Search templates…" />
+                      <CommandList>
+                        <CommandEmpty>No templates match.</CommandEmpty>
+                        <CommandGroup>
+                          <CommandItem
+                            value=""
+                            @select="() => { field.handleChange(undefined); parentPickerOpen = false; parentPickerSearch = ''; }"
+                          >
+                            <span class="font-mono text-xs">— none (root) —</span>
+                          </CommandItem>
+                          <CommandItem
+                            v-for="opt in parentOptions"
+                            :key="opt.id"
+                            :value="opt.label"
+                            @select="() => { field.handleChange(opt.id); parentPickerOpen = false; parentPickerSearch = ''; }"
+                          >
+                            <span class="truncate">{{ opt.label }}</span>
+                            <span class="ml-auto font-mono text-[10px] text-muted-foreground">{{ opt.id.slice(0, 8) }}</span>
+                          </CommandItem>
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+                <p class="text-xs text-muted-foreground">
+                  Children inherit unset numeric defaults from the parent chain at creation time.
+                </p>
+              </div>
+            </template>
+          </createForm.Field>
+
           <div class="grid grid-cols-2 gap-4">
             <createForm.Field name="max_usages">
               <template #default="{ field, state }">
@@ -390,6 +484,38 @@ function toOptionalNumber(v: unknown): number | undefined {
                     :aria-invalid="state.meta.isTouched && !state.meta.isValid ? 'true' : undefined"
                     :aria-describedby="state.meta.isTouched && !state.meta.isValid ? `${field.name}-error` : undefined"
                     @update:model-value="(v: string | number) => field.handleChange(toNumber(v))"
+                    @blur="field.handleBlur"
+                  />
+                  <p
+                    v-if="state.meta.isTouched && !state.meta.isValid"
+                    :id="`${field.name}-error`"
+                    class="text-xs text-destructive"
+                    role="alert"
+                  >
+                    {{ fieldErrors(state.meta.errors) }}
+                  </p>
+                </div>
+              </template>
+            </createForm.Field>
+
+            <createForm.Field name="trial_cooldown_sec">
+              <template #default="{ field, state }">
+                <div class="space-y-1.5">
+                  <Label :for="field.name" class="text-xs font-normal text-muted-foreground">
+                    trial_cooldown_sec
+                    <span class="text-muted-foreground">(optional)</span>
+                  </Label>
+                  <Input
+                    :id="field.name"
+                    type="number"
+                    inputmode="numeric"
+                    min="0"
+                    :model-value="state.value ?? ''"
+                    class="font-mono"
+                    placeholder="—"
+                    :aria-invalid="state.meta.isTouched && !state.meta.isValid ? 'true' : undefined"
+                    :aria-describedby="state.meta.isTouched && !state.meta.isValid ? `${field.name}-error` : undefined"
+                    @update:model-value="(v: string | number) => field.handleChange(toOptionalNumber(v))"
                     @blur="field.handleBlur"
                   />
                   <p
