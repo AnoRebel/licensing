@@ -467,6 +467,157 @@ for (const backend of BACKENDS) {
       }
     });
 
+    it('POST /admin/templates persists parent_id + trial_cooldown_sec', async () => {
+      // Three handlers ignored these two fields prior to v0.1.0; this
+      // pin captures the wire shape so a refactor can't silently drop
+      // them again.
+      const { s: storage, cleanup } = await backend.make();
+      try {
+        const { scope } = await seed(storage);
+        const router = createRouter(adminRoutes(mkAdminCtx(storage), '/api/licensing/v1'));
+
+        const parentRes = await call(
+          router,
+          req('POST', '/api/licensing/v1/admin/templates', {
+            body: {
+              scope_id: scope.id,
+              name: 'Base',
+              max_usages: 5,
+              trial_duration_sec: 0,
+              grace_duration_sec: 0,
+            },
+          }),
+        );
+        expect(parentRes.status).toBe(201);
+        const parent = (parentRes.body as { data: { id: string } }).data;
+
+        const childRes = await call(
+          router,
+          req('POST', '/api/licensing/v1/admin/templates', {
+            body: {
+              scope_id: scope.id,
+              parent_id: parent.id,
+              name: 'Trial',
+              max_usages: 1,
+              trial_duration_sec: 86400,
+              trial_cooldown_sec: 604800,
+              grace_duration_sec: 0,
+            },
+          }),
+        );
+        expect(childRes.status).toBe(201);
+        const child = (
+          childRes.body as { data: { parent_id: string | null; trial_cooldown_sec: number | null } }
+        ).data;
+        expect(child.parent_id).toBe(parent.id);
+        expect(child.trial_cooldown_sec).toBe(604800);
+      } finally {
+        await cleanup();
+      }
+    });
+
+    it('PATCH /admin/templates/{id} re-parent into cycle → 409 TemplateCycle', async () => {
+      const { s: storage, cleanup } = await backend.make();
+      try {
+        const { scope } = await seed(storage);
+        const router = createRouter(adminRoutes(mkAdminCtx(storage), '/api/licensing/v1'));
+        const a = (
+          (
+            await call(
+              router,
+              req('POST', '/api/licensing/v1/admin/templates', {
+                body: {
+                  scope_id: scope.id,
+                  name: 'A',
+                  max_usages: 1,
+                  trial_duration_sec: 0,
+                  grace_duration_sec: 0,
+                },
+              }),
+            )
+          ).body as { data: { id: string } }
+        ).data;
+        const b = (
+          (
+            await call(
+              router,
+              req('POST', '/api/licensing/v1/admin/templates', {
+                body: {
+                  scope_id: scope.id,
+                  parent_id: a.id,
+                  name: 'B',
+                  max_usages: 1,
+                  trial_duration_sec: 0,
+                  grace_duration_sec: 0,
+                },
+              }),
+            )
+          ).body as { data: { id: string } }
+        ).data;
+
+        const res = await call(
+          router,
+          req('PATCH', `/api/licensing/v1/admin/templates/${a.id}`, {
+            body: { parent_id: b.id },
+          }),
+        );
+        expect(res.status).toBe(409);
+        expect((res.body as { error: { code: string } }).error.code).toBe('TemplateCycle');
+      } finally {
+        await cleanup();
+      }
+    });
+
+    it('GET /admin/templates?parent_id=null lists root-only templates', async () => {
+      const { s: storage, cleanup } = await backend.make();
+      try {
+        const { scope } = await seed(storage);
+        const router = createRouter(adminRoutes(mkAdminCtx(storage), '/api/licensing/v1'));
+        const root = (
+          (
+            await call(
+              router,
+              req('POST', '/api/licensing/v1/admin/templates', {
+                body: {
+                  scope_id: scope.id,
+                  name: 'Root',
+                  max_usages: 1,
+                  trial_duration_sec: 0,
+                  grace_duration_sec: 0,
+                },
+              }),
+            )
+          ).body as { data: { id: string } }
+        ).data;
+        await call(
+          router,
+          req('POST', '/api/licensing/v1/admin/templates', {
+            body: {
+              scope_id: scope.id,
+              parent_id: root.id,
+              name: 'Child',
+              max_usages: 1,
+              trial_duration_sec: 0,
+              grace_duration_sec: 0,
+            },
+          }),
+        );
+
+        const res = await call(
+          router,
+          req('GET', '/api/licensing/v1/admin/templates', { query: { parent_id: 'null' } }),
+        );
+        expect(res.status).toBe(200);
+        const items = (
+          res.body as { data: { items: ReadonlyArray<{ id: string; parent_id: string | null }> } }
+        ).data.items;
+        expect(items.every((t) => t.parent_id === null)).toBe(true);
+        expect(items.some((t) => t.id === root.id)).toBe(true);
+      } finally {
+        await cleanup();
+      }
+    });
+
     // ---------- Admin — usages ----------
 
     it('GET /admin/usages → UsageListEnvelope', async () => {

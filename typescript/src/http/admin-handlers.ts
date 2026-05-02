@@ -475,13 +475,24 @@ async function handleListTemplates(
 ): Promise<HandlerResponse> {
   const limit = parseLimit(req);
   if (!limit.ok) return limit.response;
-  const filter: Parameters<typeof ctx.storage.listTemplates>[0] = {};
+  const filter: { scope_id?: string | null; parent_id?: string | null } = {};
   const scopeId = parseUuidQuery(req.query.scope_id);
-  if (scopeId !== null) (filter as { scope_id?: string | null }).scope_id = scopeId;
-  const p = await ctx.storage.listTemplates(filter, {
-    limit: limit.value,
-    cursor: parseCursor(req),
-  });
+  if (scopeId !== null) filter.scope_id = scopeId;
+  // parent_id filter accepts a UUID OR the literal string "null" (root
+  // templates only). Empty / absent leaves the filter unset, matching all
+  // templates regardless of parent.
+  const rawParent = req.query.parent_id;
+  const parentStr = Array.isArray(rawParent) ? rawParent[0] : rawParent;
+  if (typeof parentStr === 'string' && parentStr.length > 0) {
+    filter.parent_id = parentStr === 'null' ? null : parentStr;
+  }
+  const p = await ctx.storage.listTemplates(
+    filter as Parameters<typeof ctx.storage.listTemplates>[0],
+    {
+      limit: limit.value,
+      cursor: parseCursor(req),
+    },
+  );
   return page(p.items, p.cursor, (t) => asJson(t));
 }
 
@@ -504,6 +515,8 @@ async function handleCreateTemplate(
 
   const scopeId = optionalString(b, 'scope_id');
   if (!scopeId.ok) return scopeId.response;
+  const parentId = optionalString(b, 'parent_id');
+  if (!parentId.ok) return parentId.response;
   const entitlements = optionalObject(b, 'entitlements');
   if (!entitlements.ok) return entitlements.response;
   const meta = optionalObject(b, 'meta');
@@ -516,6 +529,14 @@ async function handleCreateTemplate(
     if (!n.ok) return n.response;
     foa = n.value;
   }
+  // trial_cooldown_sec: nullable non-negative integer. Null/absent => no
+  // per-template cooldown override (caller falls back to IssuerConfig).
+  let cooldown: number | null = null;
+  if (b.trial_cooldown_sec !== undefined && b.trial_cooldown_sec !== null) {
+    const n = requireInt(b, 'trial_cooldown_sec', { min: 0 });
+    if (!n.ok) return n.response;
+    cooldown = n.value;
+  }
 
   return guard(async () => {
     const tpl = await createTemplate(
@@ -523,9 +544,11 @@ async function handleCreateTemplate(
       ctx.clock,
       {
         scope_id: scopeId.value,
+        parent_id: parentId.value,
         name: name.value,
         max_usages: maxUsages.value,
         trial_duration_sec: trial.value,
+        trial_cooldown_sec: cooldown,
         grace_duration_sec: grace.value,
         force_online_after_sec: foa,
         entitlements: (entitlements.value ?? {}) as Readonly<Record<string, JSONValue>>,
@@ -564,6 +587,18 @@ async function handleUpdateTemplate(
     if (!v.ok) return v.response;
     patch.name = v.value;
   }
+  if (b.parent_id !== undefined) {
+    // Re-parent semantics: null detaches to root; string is required to
+    // be a UUID (server-side cycle check fires from storage if the new
+    // parent chain loops through this template).
+    if (b.parent_id === null) {
+      patch.parent_id = null;
+    } else {
+      const v = requireString(b, 'parent_id');
+      if (!v.ok) return v.response;
+      patch.parent_id = v.value;
+    }
+  }
   if (b.max_usages !== undefined) {
     const v = requireInt(b, 'max_usages', { min: 1 });
     if (!v.ok) return v.response;
@@ -573,6 +608,15 @@ async function handleUpdateTemplate(
     const v = requireInt(b, 'trial_duration_sec', { min: 0 });
     if (!v.ok) return v.response;
     patch.trial_duration_sec = v.value;
+  }
+  if (b.trial_cooldown_sec !== undefined) {
+    if (b.trial_cooldown_sec === null) {
+      patch.trial_cooldown_sec = null;
+    } else {
+      const v = requireInt(b, 'trial_cooldown_sec', { min: 0 });
+      if (!v.ok) return v.response;
+      patch.trial_cooldown_sec = v.value;
+    }
   }
   if (b.grace_duration_sec !== undefined) {
     const v = requireInt(b, 'grace_duration_sec', { min: 0 });
