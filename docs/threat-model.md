@@ -139,18 +139,81 @@ where revocation latency must be tight should pair LIC1 with an
 online check at every high-stakes operation, not rely on the token
 alone.
 
-### 2.2 Verifier compromise
+### 2.2 Verifier compromise — limits and escalation paths
 
-If an attacker compromises a machine running the verifier, they can:
+If an attacker compromises a machine running the verifier, they can
+bypass any check that runs INSIDE the verifier — signature
+verification, expiry, fingerprint match, the JtiLedger lookup, the
+TransparencyHook delivery. **By definition, no protocol-level
+mechanism inside the verifier can defeat an attacker who already has
+that level of access.** The verifier is the trust boundary; you
+cannot build a defense inside the trust boundary against an attacker
+who is also inside it.
 
-- Bypass step 8 (signature verification) entirely.
-- Or hold a valid token indefinitely past `exp` by lying about `now`.
+LIC1 therefore makes no claim against this attack. But "by
+definition" is doing a lot of work in that sentence — the cost of
+bypass varies enormously across deployment patterns, and operators
+concerned about verifier compromise have several layers available to
+them outside the LIC1 envelope:
 
-**Mitigation:** none, by definition — the threat model treats the
-verifier as a trusted component. Operators concerned about
-verifier-side compromise should layer attestation (TPM, Secure
-Enclave) and runtime integrity checks **outside** the LIC1 envelope.
-LIC1 makes no claim against this attack.
+**Tighten the offline window (already supported by LIC1).** The
+default `tokenTtlSec` of 3600 leaves a 1-hour window where a
+bypassed verifier accepts a stolen token. Operators concerned about
+verifier compromise should crank this to 300s or less and set
+aggressive `force_online_after` so the verifier MUST re-check soon.
+Combined with the heartbeat-driven revocation push (§2.1), this
+shrinks the window from "until exp" to "until next heartbeat tick"
+for cooperating clients — a compromised verifier still bypasses, but
+only briefly.
+
+**Hardware-rooted attestation.** TPM, TEE (Intel SGX, AMD SEV-SNP),
+or Secure Enclave deployments raise the bypass cost from "edit the
+binary" to "compromise the enclave." Code identity (only the signed
+verifier binary runs), sealed storage (tokens decrypt only inside
+the enclave), and remote attestation (a third party verifies the
+verifier is unmodified) move the threat qualitatively. LIC1 doesn't
+ship with attestation today; future work could add a
+`verifier-attestation` claim that the issuer demands at activation
+time so non-attested verifiers can't get tokens at all.
+
+**Anti-tamper packaging.** For binary verifiers (CLI tools, native
+apps), strip symbols, add anti-debugging traps, and have the
+verifier integrity-check itself at startup. None of these defeat a
+determined attacker, but they raise the floor — what was a 5-minute
+patch becomes a multi-day reverse-engineering job. Whether that's
+enough depends on the prize.
+
+**Out-of-band revocation signals.** Push notifications (FCM, APNs)
+or polled-DNS revocation lists let the issuer notify a verifier that
+a license should be invalidated even when the verifier hasn't asked
+recently. Combined with attestation, this approaches "online check
+at every high-stakes operation" without paying the latency on the
+hot path.
+
+**Forensics over prevention.** The JtiLedger (§2.4) + TransparencyHook
+(§4.2) stack lets operators DETECT compromise after the fact even
+when prevention failed. Replayed tokens surface as `TokenReplayed`,
+and an external transparency log diverging from the operator's audit
+log is a clear signal. Forensic readiness doesn't stop the first
+attack, but it caps the damage — the attacker can't stay undetected
+indefinitely.
+
+**Online-only authorization at high-stakes operations.** The strongest
+mitigation: don't trust the verifier at all for actions that matter.
+The verifier becomes a ticket-holder; the issuer (or a separate
+authorization service) makes the actual decision. This defeats the
+LIC1 offline-first pitch — but for deployments where the value
+protected exceeds the cost of always-online authorization, it's the
+right answer. Pair LIC1 with a second authorization layer rather
+than relying on token validation alone.
+
+No combination of these turns LIC1 into a system that defends against
+verifier compromise. The right combination shifts the threat from
+"indefinite undetected access" to "limited window of bypass that
+leaves forensic evidence" — which may or may not be enough.
+Deployments where it isn't should treat LIC1 as licensing infrastructure
+(who paid, what tier, when does it expire) and layer separate
+authorization infrastructure for the actions that matter.
 
 ### 2.3 Trial-issuance fingerprint enumeration
 
