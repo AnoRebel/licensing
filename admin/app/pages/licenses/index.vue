@@ -2,6 +2,7 @@
 import type { components } from '#open-fetch-schemas/licensing';
 import { computed, ref } from 'vue';
 import type { FilterFacet } from '~/components/DataTable/types';
+import BulkActionsMenu from '~/components/license/BulkActionsMenu.vue';
 import { licenseColumns } from './columns';
 
 type License = components['schemas']['License'];
@@ -119,6 +120,23 @@ const facets: FilterFacet[] = [
 const errorMessage = computed(() =>
   error.value ? 'Could not load licenses. Check the upstream API and try again.' : null,
 );
+
+// --- Bulk-action selection -------------------------------------------
+//
+// DataTable owns the selection model and emits the row originals on
+// every change. We keep them in a local ref so the BulkActionsMenu
+// can read the current set on click, and we re-fetch on completion
+// to reflect the new statuses.
+const selectedLicenses = ref<License[]>([]);
+
+function onSelectionChange(rows: License[]) {
+  selectedLicenses.value = rows;
+}
+
+async function onBulkActionComplete() {
+  selectedLicenses.value = [];
+  await refresh();
+}
 </script>
 
 <template>
@@ -130,9 +148,16 @@ const errorMessage = computed(() =>
         </p>
         <h1 class="text-2xl font-semibold tracking-tight">Licenses</h1>
       </div>
-      <Button variant="outline" size="sm" @click="refresh()">
-        Refresh
-      </Button>
+      <div class="flex items-center gap-3">
+        <BulkActionsMenu
+          v-if="selectedLicenses.length > 0"
+          :selected="selectedLicenses"
+          @completed="onBulkActionComplete"
+        />
+        <Button variant="outline" size="sm" @click="refresh()">
+          Refresh
+        </Button>
+      </div>
     </header>
 
     <!-- Server-side filter controls. Commit-on-change; no submit button. -->
@@ -222,6 +247,7 @@ const errorMessage = computed(() =>
       :columns="licenseColumns"
       :data="items"
       :loading="pending"
+      selectable
       search-column="assignee"
       search-placeholder="Filter by assignee…"
       :filter-facets="facets"
@@ -230,6 +256,7 @@ const errorMessage = computed(() =>
       :can-go-prev="cursorStack.length > 0"
       empty-message="No licenses match these filters."
       @row-click="(row) => router.push(`/licenses/${(row as License).id}`)"
+      @selection-change="(rows) => onSelectionChange(rows as License[])"
       @prev="goPrev"
       @next="goNext"
     />
