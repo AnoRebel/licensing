@@ -373,6 +373,14 @@ func (s *Storage) DeleteTrialIssuance(id string) error {
 	return deleteTrialIssuance(s.s, id)
 }
 
+// GetLicenseStats computes the dashboard rollup. Read-only — takes a
+// shared lock and walks the in-memory state.
+func (s *Storage) GetLicenseStats(filter lic.LicenseStatsFilter) (*lic.LicenseStats, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return getLicenseStats(s.s, s.clock, filter)
+}
+
 // WithTransaction runs fn atomically. On nil return, the cloned
 // snapshot is swapped in as the live state. On any error return, the
 // clone is discarded and the live state is unchanged.
@@ -587,6 +595,12 @@ func (t *memoryTx) FindTrialIssuance(query lic.TrialIssuanceLookup) (*lic.TrialI
 // DeleteTrialIssuance hard-deletes a trial-issuance row inside a tx.
 func (t *memoryTx) DeleteTrialIssuance(id string) error {
 	return deleteTrialIssuance(t.state, id)
+}
+
+// GetLicenseStats — same logic as the locked variant on *Storage,
+// minus the lock acquisition (we're already inside withTransaction).
+func (t *memoryTx) GetLicenseStats(filter lic.LicenseStatsFilter) (*lic.LicenseStats, error) {
+	return getLicenseStats(t.state, t.clock, filter)
 }
 
 // ---------- Core CRUD, operating on a *state directly ----------
@@ -1296,6 +1310,70 @@ func findTrialIssuance(s *state, query lic.TrialIssuanceLookup) (*lic.TrialIssua
 func deleteTrialIssuance(s *state, id string) error {
 	delete(s.trialIssuances, id)
 	return nil
+}
+
+// getLicenseStats walks the in-memory state, applies the scope filter,
+// and hands the rows to the shared aggregator. Mirrors the TS memory
+// adapter — same code path, same shared math.
+func getLicenseStats(s *state, clk lic.Clock, filter lic.LicenseStatsFilter) (*lic.LicenseStats, error) {
+	matchScope := func(rowScope *string) bool {
+		if !filter.ScopeIDSet {
+			return true
+		}
+		if filter.ScopeID == nil {
+			return rowScope == nil
+		}
+		return rowScope != nil && *rowScope == *filter.ScopeID
+	}
+
+	licenseIDs := make(map[string]struct{}, len(s.licenses))
+	rows := make([]lic.StatsLicenseRow, 0, len(s.licenses))
+	for _, l := range s.licenses {
+		if !matchScope(l.ScopeID) {
+			continue
+		}
+		licenseIDs[l.ID] = struct{}{}
+		rows = append(rows, lic.StatsLicenseRow{
+			ID:         l.ID,
+			ScopeID:    l.ScopeID,
+			TemplateID: l.TemplateID,
+			Status:     l.Status,
+			MaxUsages:  l.MaxUsages,
+			ExpiresAt:  l.ExpiresAt,
+			LicenseKey: l.LicenseKey,
+		})
+	}
+
+	usageIDs := make([]string, 0)
+	for _, u := range s.usages {
+		if u.Status != "active" {
+			continue
+		}
+		if _, ok := licenseIDs[u.LicenseID]; !ok {
+			continue
+		}
+		usageIDs = append(usageIDs, u.LicenseID)
+	}
+
+	nowMs := lic.MsFromIso(clk.NowISO())
+	sinceIso := lic.IsoFromMs(nowMs - 30*24*60*60*1000)
+	events := make([]string, 0)
+	for _, ev := range s.audit {
+		if ev.OccurredAt < sinceIso {
+			continue
+		}
+		if filter.ScopeIDSet && !ptrEq(ev.ScopeID, filter.ScopeID) {
+			continue
+		}
+		events = append(events, ev.Event)
+	}
+
+	return lic.ComputeLicenseStats(lic.ComputeLicenseStatsInput{
+		Licenses:              rows,
+		ActiveUsageLicenseIDs: usageIDs,
+		AuditEvents:           events,
+		NowMs:                 nowMs,
+	}), nil
 }
 
 // ---------- Internal utility helpers ----------

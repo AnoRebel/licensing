@@ -34,6 +34,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -256,6 +257,11 @@ func (s *Storage) DeleteTrialIssuance(id string) error {
 	return deleteTrialIssuance(context.Background(), s.pool, id)
 }
 
+// GetLicenseStats computes the aggregate dashboard rollup.
+func (s *Storage) GetLicenseStats(filter lic.LicenseStatsFilter) (*lic.LicenseStats, error) {
+	return getLicenseStats(context.Background(), s.pool, s.clock, filter)
+}
+
 // WithTransaction runs fn atomically inside BEGIN/COMMIT. On error,
 // ROLLBACK is issued. Nested transactions are rejected.
 func (s *Storage) WithTransaction(fn func(tx lic.StorageTx) error) error {
@@ -458,6 +464,12 @@ func (t *postgresTx) FindTrialIssuance(query lic.TrialIssuanceLookup) (*lic.Tria
 // DeleteTrialIssuance hard-deletes a trial-issuance row inside a tx.
 func (t *postgresTx) DeleteTrialIssuance(id string) error {
 	return deleteTrialIssuance(context.Background(), t.tx, id)
+}
+
+// GetLicenseStats — same logic as the *Storage variant; both share
+// the helper because every read goes through the queryable abstraction.
+func (t *postgresTx) GetLicenseStats(filter lic.LicenseStatsFilter) (*lic.LicenseStats, error) {
+	return getLicenseStats(context.Background(), t.tx, t.clock, filter)
 }
 
 // ---------- Core CRUD (queryable-polymorphic) ----------
@@ -1183,6 +1195,143 @@ func deleteTrialIssuance(ctx context.Context, q queryable, id string) error {
 		return mapPgError(err)
 	}
 	return nil
+}
+
+// getLicenseStats: fetch the minimum row set, hand to ComputeLicenseStats.
+// Doing the math in Go (rather than SQL aggregates) keeps cross-port byte
+// parity trivial and avoids float-rounding mismatches between Postgres
+// + Go double types.
+func getLicenseStats(ctx context.Context, q queryable, clk lic.Clock, filter lic.LicenseStatsFilter) (*lic.LicenseStats, error) {
+	scope := buildPgScopePred(filter)
+
+	licSQL := `SELECT id, scope_id, template_id, status, max_usages, expires_at, license_key
+	           FROM licenses` + scope.where
+	licRows, err := q.Query(ctx, licSQL, scope.args...)
+	if err != nil {
+		return nil, mapPgError(err)
+	}
+	defer licRows.Close()
+	licenses := make([]lic.StatsLicenseRow, 0)
+	for licRows.Next() {
+		var (
+			id, status, key string
+			scopeID, tmplID *string
+			expires         *string
+			maxU            int
+		)
+		if err := licRows.Scan(&id, &scopeID, &tmplID, &status, &maxU, &expires, &key); err != nil {
+			return nil, mapPgError(err)
+		}
+		licenses = append(licenses, lic.StatsLicenseRow{
+			ID:         id,
+			ScopeID:    scopeID,
+			TemplateID: tmplID,
+			Status:     lic.LicenseStatus(status),
+			MaxUsages:  maxU,
+			ExpiresAt:  expires,
+			LicenseKey: key,
+		})
+	}
+	if err := licRows.Err(); err != nil {
+		return nil, mapPgError(err)
+	}
+
+	usageSQL := `SELECT u.license_id
+	             FROM license_usages u
+	             JOIN licenses l ON l.id = u.license_id
+	             WHERE u.status = 'active'` + scope.andOn("l.scope_id")
+	usageRows, err := q.Query(ctx, usageSQL, scope.args...)
+	if err != nil {
+		return nil, mapPgError(err)
+	}
+	defer usageRows.Close()
+	usageIDs := make([]string, 0)
+	for usageRows.Next() {
+		var id string
+		if err := usageRows.Scan(&id); err != nil {
+			return nil, mapPgError(err)
+		}
+		usageIDs = append(usageIDs, id)
+	}
+	if err := usageRows.Err(); err != nil {
+		return nil, mapPgError(err)
+	}
+
+	nowMs := lic.MsFromIso(clk.NowISO())
+	sinceIso := lic.IsoFromMs(nowMs - 30*24*60*60*1000)
+	auditSQL := `SELECT event FROM audit_logs
+	             WHERE event = ANY($` + itoa(len(scope.args)+1) + `::text[])
+	               AND occurred_at >= $` + itoa(len(scope.args)+2) + scope.andOn("scope_id")
+	auditEvents := []string{
+		"license.created",
+		"license.activated",
+		"license.revoked",
+		"license.expired",
+		"license.suspended",
+	}
+	auditArgs := append(append([]any{}, scope.args...), auditEvents, sinceIso)
+	auditRows, err := q.Query(ctx, auditSQL, auditArgs...)
+	if err != nil {
+		return nil, mapPgError(err)
+	}
+	defer auditRows.Close()
+	events := make([]string, 0)
+	for auditRows.Next() {
+		var ev string
+		if err := auditRows.Scan(&ev); err != nil {
+			return nil, mapPgError(err)
+		}
+		events = append(events, ev)
+	}
+	if err := auditRows.Err(); err != nil {
+		return nil, mapPgError(err)
+	}
+
+	return lic.ComputeLicenseStats(lic.ComputeLicenseStatsInput{
+		Licenses:              licenses,
+		ActiveUsageLicenseIDs: usageIDs,
+		AuditEvents:           events,
+		NowMs:                 nowMs,
+	}), nil
+}
+
+// pgScopePred is the Postgres equivalent of sqlite's scopePred —
+// builds a $1-style WHERE fragment plus an AND-tail variant for
+// queries that already have a WHERE.
+type pgScopePred struct {
+	andOn func(col string) string
+	where string
+	args  []any
+}
+
+func buildPgScopePred(filter lic.LicenseStatsFilter) pgScopePred {
+	if !filter.ScopeIDSet {
+		return pgScopePred{where: "", andOn: func(string) string { return "" }, args: nil}
+	}
+	if filter.ScopeID == nil {
+		return pgScopePred{
+			where: " WHERE scope_id IS NULL",
+			andOn: func(col string) string { return " AND " + col + " IS NULL" },
+			args:  nil,
+		}
+	}
+	return pgScopePred{
+		where: " WHERE scope_id = $1",
+		andOn: func(col string) string { return " AND " + col + " = $1" },
+		args:  []any{*filter.ScopeID},
+	}
+}
+
+// itoa is a tiny inline helper for inlining placeholder indices into
+// SQL fragments. strconv.Itoa would work too but reads less cleanly
+// inside the multi-line strings above.
+func itoa(n int) string {
+	if n < 10 {
+		return string(rune('0' + n))
+	}
+	// We never expect more than two-digit placeholder counts in this
+	// query, but a tiny fallback keeps the helper honest.
+	return strconv.Itoa(n)
 }
 
 func scanTrialIssuance(rows pgx.Rows) (*lic.TrialIssuance, error) {

@@ -220,6 +220,19 @@ type StorageTx interface {
 	RecordTrialIssuance(input TrialIssuanceInput) (*TrialIssuance, error)
 	FindTrialIssuance(query TrialIssuanceLookup) (*TrialIssuance, error)
 	DeleteTrialIssuance(id string) error
+
+	// ---------- Aggregates ----------
+	//
+	// GetLicenseStats computes the dashboard rollup in a single read pass.
+	// Adapters SHOULD do the aggregation in one transaction (or one read
+	// query per sub-aggregate) so the dashboard doesn't hold a connection
+	// any longer than necessary. The 30-day window is computed against
+	// the adapter's clock so tests can pin time.
+	//
+	// filter.ScopeIDSet=false  -> include every scope.
+	// ScopeIDSet=true, ScopeID nil    -> global-scope only.
+	// ScopeIDSet=true, ScopeID set    -> that scope only.
+	GetLicenseStats(filter LicenseStatsFilter) (*LicenseStats, error)
 }
 
 // Storage is the full adapter contract. In addition to everything on

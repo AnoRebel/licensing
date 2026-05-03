@@ -64,6 +64,8 @@ func (h *AdminHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.routeKeys(w, r, segs[1:])
 	case "audit":
 		h.routeAudit(w, r, segs[1:])
+	case "stats":
+		h.routeStats(w, r, segs[1:])
 	default:
 		writeError(w, 404, "NotFound", "no handler for "+r.Method+" "+r.URL.Path)
 	}
@@ -1040,6 +1042,42 @@ func (h *AdminHandler) routeAudit(w http.ResponseWriter, r *http.Request, segs [
 		return
 	}
 	writePage(w, p)
+}
+
+// ---------------- Stats ----------------
+
+func (h *AdminHandler) routeStats(w http.ResponseWriter, r *http.Request, segs []string) {
+	// Only /admin/stats/licenses ships in v0.1.0; other resources can
+	// hang off the same prefix later without churning the routing.
+	if len(segs) != 1 || segs[0] != "licenses" {
+		writeError(w, 404, "NotFound", "no handler for "+r.Method+" "+r.URL.Path)
+		return
+	}
+	if r.Method != http.MethodGet {
+		writeError(w, 405, "MethodNotAllowed", "method "+r.Method+" not allowed for "+r.URL.Path)
+		return
+	}
+	h.handleGetLicenseStats(w, r)
+}
+
+func (h *AdminHandler) handleGetLicenseStats(w http.ResponseWriter, r *http.Request) {
+	// scope_id semantics match /admin/stats/licenses in OpenAPI:
+	//   - omitted        → every scope
+	//   - "null" literal → global-scope only
+	//   - UUID string    → that scope
+	filter := lic.LicenseStatsFilter{}
+	if raw := r.URL.Query().Get("scope_id"); raw != "" {
+		filter.ScopeIDSet = true
+		if raw != "null" {
+			filter.ScopeID = &raw
+		}
+	}
+	stats, err := h.ctx.Storage.GetLicenseStats(filter)
+	if err != nil {
+		writeErrorFromLicensing(w, err)
+		return
+	}
+	writeOK(w, stats)
 }
 
 // ---------------- Opt* JSON decoding ----------------

@@ -368,6 +368,66 @@ type LicenseTemplateFilter struct {
 	ParentIDSet bool
 }
 
+// LicenseStatsFilter narrows GetLicenseStats. ScopeIDSet=false means
+// "every scope"; ScopeIDSet=true with ScopeID=nil means "global-scope
+// only"; ScopeIDSet=true with a non-nil pointer means "that scope".
+type LicenseStatsFilter struct {
+	ScopeID    *string
+	ScopeIDSet bool
+}
+
+// LicenseStatusCounts is the per-status histogram returned by
+// GetLicenseStats. Every status is present even when zero — the wire
+// shape is stable so dashboards can render a fixed tile set.
+type LicenseStatusCounts struct {
+	Pending   int `json:"pending"`
+	Active    int `json:"active"`
+	Grace     int `json:"grace"`
+	Expired   int `json:"expired"`
+	Suspended int `json:"suspended"`
+	Revoked   int `json:"revoked"`
+}
+
+// LicenseDelta30d carries trailing-30d audit-derived movement on the
+// active license set. The signed delta is `Added - Removed`.
+type LicenseDelta30d struct {
+	Added   int `json:"added"`
+	Removed int `json:"removed"`
+}
+
+// LicenseSeatTopEntry is a single row in the seat-utilisation top-N.
+type LicenseSeatTopEntry struct {
+	LicenseID    string `json:"license_id"`
+	LicenseKey   string `json:"license_key"`
+	MaxUsages    int    `json:"max_usages"`
+	ActiveUsages int    `json:"active_usages"`
+}
+
+// LicenseSeatUtilization is the seat-utilisation rollup. Top-N is
+// bounded at 10 entries by the storage adapter.
+type LicenseSeatUtilization struct {
+	TopN              []LicenseSeatTopEntry `json:"top_n"`
+	ActiveUsagesTotal int                   `json:"active_usages_total"`
+	MaxUsagesTotal    int                   `json:"max_usages_total"`
+}
+
+// LicenseTemplateCount is one entry in the top-templates list.
+type LicenseTemplateCount struct {
+	TemplateID   string `json:"template_id"`
+	LicenseCount int    `json:"license_count"`
+}
+
+// LicenseStats is the aggregate dashboard payload returned by
+// Storage.GetLicenseStats. Mirrors the TS port byte-for-byte; the
+// cross-port contract test enforces parity.
+type LicenseStats struct {
+	TopTemplates      []LicenseTemplateCount `json:"top_templates"`
+	SeatUtilization   LicenseSeatUtilization `json:"seat_utilization"`
+	Counts            LicenseStatusCounts    `json:"counts"`
+	ActiveDelta30d    LicenseDelta30d        `json:"active_delta_30d"`
+	ExpiringWithin30d int                    `json:"expiring_within_30d"`
+}
+
 // LicenseUsageFilter narrows ListUsages results.
 type LicenseUsageFilter struct {
 	LicenseID   *string
@@ -388,13 +448,22 @@ type LicenseKeyFilter struct {
 
 // AuditLogFilter narrows ListAudits results. The *Set fields distinguish
 // "don't filter" from "filter on nil" for the nullable pointer columns.
+//
+// The two *Set booleans intentionally duplicate the nil-vs-non-nil
+// information of the matching pointers — the explicit bool lets callers
+// disambiguate "no filter" (Set=false) from "filter for global scope"
+// (Set=true, ID=nil), which a bare *string cannot express. fieldalignment
+// flags the resulting layout as wider than the strictly-pointer-only
+// optimum; the disambiguation is more valuable than the saved bytes.
+//
+//nolint:govet // explicit *Set flags chosen over a bitmask for readability
 type AuditLogFilter struct {
+	// Events allows multi-event filtering (taken in preference to Event when
+	// non-empty). Added in v0002.
+	Events    []string
 	LicenseID *string
 	ScopeID   *string
 	Event     *string
-	// Events allows multi-event filtering (taken in preference to Event when
-	// non-empty). Added in v0002.
-	Events []string
 	// LicensableType/LicensableID join via the licenses table; uses the
 	// (licensable_type, licensable_id) index from v0002.
 	LicensableType *string

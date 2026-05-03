@@ -561,6 +561,32 @@ func runContractSuite(t *testing.T, doc *openAPIDoc, b conformBackend) {
 				expectEnvelope(t, doc, "AuditListEnvelope", rec)
 			},
 		},
+		// ---------- Admin: stats ----------
+		{
+			name: "GET_admin_stats_licenses_LicenseStatsEnvelope",
+			run: func(t *testing.T, s lic.Storage) {
+				_ = seedConformance(t, s, clk, reg, "root-pw", "sign-pw")
+				rec := doRequest(t, newAdmin(s), http.MethodGet, specPrefix+"/admin/stats/licenses", nil)
+				if rec.Code != http.StatusOK {
+					t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+				}
+				expectEnvelope(t, doc, "LicenseStatsEnvelope", rec)
+			},
+		},
+		{
+			name: "GET_admin_stats_licenses_scope_filter",
+			run: func(t *testing.T, s lic.Storage) {
+				_ = seedConformance(t, s, clk, reg, "root-pw", "sign-pw")
+				// scope_id=null restricts to global-scope licenses; the
+				// envelope must still parse and counts must be non-negative.
+				rec := doRequest(t, newAdmin(s), http.MethodGet,
+					specPrefix+"/admin/stats/licenses?scope_id=null", nil)
+				if rec.Code != http.StatusOK {
+					t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+				}
+				expectEnvelope(t, doc, "LicenseStatsEnvelope", rec)
+			},
+		},
 		// ---------- Router-level negatives ----------
 		{
 			name: "unknown_path_ErrorEnvelope_404",

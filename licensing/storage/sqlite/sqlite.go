@@ -271,6 +271,11 @@ func (s *Storage) DeleteTrialIssuance(id string) error {
 	return deleteTrialIssuance(s.db, id)
 }
 
+// GetLicenseStats computes the aggregate dashboard rollup.
+func (s *Storage) GetLicenseStats(filter lic.LicenseStatsFilter) (*lic.LicenseStats, error) {
+	return getLicenseStats(s.db, s.clock, filter)
+}
+
 // WithTransaction runs fn atomically inside BEGIN / COMMIT. On error,
 // ROLLBACK is issued. Nested transactions are rejected at the type
 // level — sqliteTx has no WithTransaction method.
@@ -472,6 +477,12 @@ func (t *sqliteTx) FindTrialIssuance(query lic.TrialIssuanceLookup) (*lic.TrialI
 // DeleteTrialIssuance hard-deletes a trial-issuance row inside a tx.
 func (t *sqliteTx) DeleteTrialIssuance(id string) error {
 	return deleteTrialIssuance(t.tx, id)
+}
+
+// GetLicenseStats — same logic as the *Storage variant; both share
+// the helper because every read goes through the queryable abstraction.
+func (t *sqliteTx) GetLicenseStats(filter lic.LicenseStatsFilter) (*lic.LicenseStats, error) {
+	return getLicenseStats(t.tx, t.clock, filter)
 }
 
 // ---------- queryable abstraction ----------
@@ -1226,6 +1237,128 @@ func deleteTrialIssuance(q queryable, id string) error {
 		return mapSqliteError(err)
 	}
 	return nil
+}
+
+// getLicenseStats does the same job as the memory adapter — pulls the
+// minimum row set, hands it to ComputeLicenseStats. Doing the math in
+// Go (rather than SQL aggregates) keeps cross-port byte parity trivial
+// and dodges float-rounding mismatches between SQLite + JS engines.
+func getLicenseStats(q queryable, clk lic.Clock, filter lic.LicenseStatsFilter) (*lic.LicenseStats, error) {
+	scope := buildScopePred(filter)
+
+	licSQL := `SELECT id, scope_id, template_id, status, max_usages, expires_at, license_key
+	           FROM licenses` + scope.where
+	licRows, err := q.Query(licSQL, scope.args...)
+	if err != nil {
+		return nil, mapSqliteError(err)
+	}
+	defer licRows.Close()
+	licenses := make([]lic.StatsLicenseRow, 0)
+	for licRows.Next() {
+		var (
+			id, status, key string
+			scopeID, tmplID *string
+			expires         *string
+			maxU            int
+		)
+		if err := licRows.Scan(&id, &scopeID, &tmplID, &status, &maxU, &expires, &key); err != nil {
+			return nil, mapSqliteError(err)
+		}
+		licenses = append(licenses, lic.StatsLicenseRow{
+			ID:         id,
+			ScopeID:    scopeID,
+			TemplateID: tmplID,
+			Status:     lic.LicenseStatus(status),
+			MaxUsages:  maxU,
+			ExpiresAt:  expires,
+			LicenseKey: key,
+		})
+	}
+	if err := licRows.Err(); err != nil {
+		return nil, mapSqliteError(err)
+	}
+
+	usageSQL := `SELECT u.license_id
+	             FROM license_usages u
+	             JOIN licenses l ON l.id = u.license_id
+	             WHERE u.status = 'active'` + scope.andOn("l.scope_id")
+	usageRows, err := q.Query(usageSQL, scope.args...)
+	if err != nil {
+		return nil, mapSqliteError(err)
+	}
+	defer usageRows.Close()
+	usageIDs := make([]string, 0)
+	for usageRows.Next() {
+		var id string
+		if err := usageRows.Scan(&id); err != nil {
+			return nil, mapSqliteError(err)
+		}
+		usageIDs = append(usageIDs, id)
+	}
+	if err := usageRows.Err(); err != nil {
+		return nil, mapSqliteError(err)
+	}
+
+	nowMs := lic.MsFromIso(clk.NowISO())
+	sinceIso := lic.IsoFromMs(nowMs - 30*24*60*60*1000)
+	auditSQL := `SELECT event FROM audit_logs
+	             WHERE event IN ('license.created','license.activated','license.revoked','license.expired','license.suspended')
+	               AND occurred_at >= ?` + scope.andOn("scope_id")
+	auditArgs := append([]any{sinceIso}, scope.args...)
+	auditRows, err := q.Query(auditSQL, auditArgs...)
+	if err != nil {
+		return nil, mapSqliteError(err)
+	}
+	defer auditRows.Close()
+	events := make([]string, 0)
+	for auditRows.Next() {
+		var ev string
+		if err := auditRows.Scan(&ev); err != nil {
+			return nil, mapSqliteError(err)
+		}
+		events = append(events, ev)
+	}
+	if err := auditRows.Err(); err != nil {
+		return nil, mapSqliteError(err)
+	}
+
+	return lic.ComputeLicenseStats(lic.ComputeLicenseStatsInput{
+		Licenses:              licenses,
+		ActiveUsageLicenseIDs: usageIDs,
+		AuditEvents:           events,
+		NowMs:                 nowMs,
+	}), nil
+}
+
+// scopePred carries the SQL fragment + args needed for a scope_id
+// filter that distinguishes "every scope" / "global only" / "specific
+// scope". `where` includes the leading WHERE; `andOn` returns an
+// AND-tail clause on a different column for queries that already have
+// a WHERE.
+type scopePred struct {
+	// andOn is parametrised on column name so it can refer to either
+	// `licenses.scope_id` (most queries) or `audit_logs.scope_id`.
+	andOn func(col string) string
+	where string
+	args  []any
+}
+
+func buildScopePred(filter lic.LicenseStatsFilter) scopePred {
+	if !filter.ScopeIDSet {
+		return scopePred{where: "", andOn: func(string) string { return "" }, args: nil}
+	}
+	if filter.ScopeID == nil {
+		return scopePred{
+			where: " WHERE scope_id IS NULL",
+			andOn: func(col string) string { return " AND " + col + " IS NULL" },
+			args:  nil,
+		}
+	}
+	return scopePred{
+		where: " WHERE scope_id = ?",
+		andOn: func(col string) string { return " AND " + col + " = ?" },
+		args:  []any{*filter.ScopeID},
+	}
 }
 
 // ---------- Row scanners ----------

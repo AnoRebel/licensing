@@ -162,6 +162,9 @@ func (m *mockTx) FindTrialIssuance(_ TrialIssuanceLookup) (*TrialIssuance, error
 	return nil, nil
 }
 func (m *mockTx) DeleteTrialIssuance(_ string) error { return nil }
+func (m *mockTx) GetLicenseStats(_ LicenseStatsFilter) (*LicenseStats, error) {
+	return &LicenseStats{}, nil
+}
 
 // ---------- Activate ----------
 
