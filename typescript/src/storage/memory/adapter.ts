@@ -55,6 +55,8 @@ import {
   type LicenseScopeFilter,
   type LicenseScopeInput,
   type LicenseScopePatch,
+  type LicenseStats,
+  type LicenseStatsFilter,
   type LicenseTemplate,
   type LicenseTemplateFilter,
   type LicenseTemplateInput,
@@ -76,6 +78,7 @@ import {
   type UUIDv7,
 } from '../../index.ts';
 
+import { computeLicenseStats } from '../stats.ts';
 import { compareDesc, decodeCursor, encodeCursor, isAfter } from './cursor.ts';
 import { MEMORY_SCHEMA } from './schema.ts';
 
@@ -699,6 +702,41 @@ export class MemoryStorage implements Storage {
   async deleteTrialIssuance(id: UUIDv7): Promise<void> {
     return this.writeOp((s) => {
       s.trialIssuances.delete(id);
+    });
+  }
+
+  // ---------- Aggregates ----------
+
+  async getLicenseStats(filter: LicenseStatsFilter): Promise<LicenseStats> {
+    const matchesScope = (row: { scope_id: UUIDv7 | null }): boolean => {
+      // `undefined` => every scope; `null` => global-scope only; UUID => match.
+      if (filter.scope_id === undefined) return true;
+      return row.scope_id === filter.scope_id;
+    };
+
+    const licenses = [...this.state.licenses.values()].filter(matchesScope);
+    const licenseIds = new Set(licenses.map((l) => l.id));
+    const activeUsageLicenseIds: string[] = [];
+    for (const usage of this.state.usages.values()) {
+      if (usage.status !== 'active') continue;
+      if (!licenseIds.has(usage.license_id)) continue;
+      activeUsageLicenseIds.push(usage.license_id);
+    }
+
+    const nowMs = this.clock.nowMs();
+    const sinceIso = isoFromMs(nowMs - 30 * 24 * 60 * 60 * 1000);
+    const auditEvents: string[] = [];
+    for (const ev of this.state.audit.values()) {
+      if (ev.occurred_at < sinceIso) continue;
+      if (filter.scope_id !== undefined && ev.scope_id !== filter.scope_id) continue;
+      auditEvents.push(ev.event);
+    }
+
+    return computeLicenseStats({
+      licenses,
+      activeUsageLicenseIds,
+      auditEvents,
+      nowMs,
     });
   }
 

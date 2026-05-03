@@ -879,6 +879,24 @@ async function handleListAudit(
   return page(p.items, p.cursor, (a) => asJson(a));
 }
 
+// ---------- Stats ----------
+
+async function handleGetLicenseStats(
+  ctx: AdminHandlerContext,
+  req: HandlerRequest,
+): Promise<HandlerResponse> {
+  // scope_id query: UUID, the literal "null" for global-scope-only,
+  // or omitted for every scope. Mirrors the templates list filter.
+  const filter: Parameters<typeof ctx.storage.getLicenseStats>[0] = {};
+  const raw = req.query.scope_id;
+  const scopeStr = Array.isArray(raw) ? raw[0] : raw;
+  if (typeof scopeStr === 'string' && scopeStr.length > 0) {
+    (filter as { scope_id?: string | null }).scope_id = scopeStr === 'null' ? null : scopeStr;
+  }
+  const stats = await ctx.storage.getLicenseStats(filter);
+  return ok(asJson(stats));
+}
+
 // ---------- Route factory ----------
 
 /** Build the admin route set. Prefix typically `/api/licensing/v1`. None of
@@ -957,6 +975,10 @@ export function adminRoutes(ctx: AdminHandlerContext, prefix = ''): readonly Rou
 
     // Audit
     get0(p('/admin/audit'), (req) => handleListAudit(ctx, req)),
+
+    // Stats — single-shot dashboard rollup. Aggregates server-side so
+    // the admin UI doesn't have to walk paginated lists.
+    get0(p('/admin/stats/licenses'), (req) => handleGetLicenseStats(ctx, req)),
   ];
 }
 

@@ -237,6 +237,62 @@ export interface TrialIssuanceLookup {
   readonly fingerprint_hash: string;
 }
 
+// ---------- Aggregate-stats query ----------
+//
+// Backs the /admin/stats/licenses endpoint and (eventually) any other
+// dashboard rollup. Adapters compute these in one transaction so the
+// handler doesn't have to round-trip per sub-aggregate.
+
+export interface LicenseStatsFilter {
+  /** `undefined` = every scope; `null` = global-scope only; UUID = that scope. */
+  readonly scope_id?: UUIDv7 | null;
+}
+
+/** Counts of licenses keyed by status. Every status is present (zero-fill). */
+export interface LicenseStatusCounts {
+  readonly pending: number;
+  readonly active: number;
+  readonly grace: number;
+  readonly expired: number;
+  readonly suspended: number;
+  readonly revoked: number;
+}
+
+/** 30-day audit-log-derived movement on the active set. */
+export interface LicenseDelta30d {
+  /** `license.created` + `license.activated` events in the trailing 30d. */
+  readonly added: number;
+  /** `license.revoked` + `license.expired` + `license.suspended` events in the trailing 30d. */
+  readonly removed: number;
+}
+
+export interface LicenseSeatTopEntry {
+  readonly license_id: UUIDv7;
+  readonly license_key: string;
+  readonly max_usages: number;
+  readonly active_usages: number;
+}
+
+export interface LicenseSeatUtilization {
+  readonly active_usages_total: number;
+  readonly max_usages_total: number;
+  /** Top 10 active licenses by `active_usages / max_usages` ratio (DESC). */
+  readonly top_n: readonly LicenseSeatTopEntry[];
+}
+
+export interface LicenseTemplateCount {
+  readonly template_id: UUIDv7;
+  readonly license_count: number;
+}
+
+export interface LicenseStats {
+  readonly counts: LicenseStatusCounts;
+  readonly expiring_within_30d: number;
+  readonly active_delta_30d: LicenseDelta30d;
+  readonly seat_utilization: LicenseSeatUtilization;
+  readonly top_templates: readonly LicenseTemplateCount[];
+}
+
 // ---------- Schema-parity accessor ----------
 
 /** A single column in the canonical entity schema. Matches a row in
@@ -347,6 +403,23 @@ export interface Storage {
   findTrialIssuance(query: TrialIssuanceLookup): Promise<TrialIssuance | null>;
   /** Hard-deletes a trial-issuance row. Used by the admin "Reset trial" action. */
   deleteTrialIssuance(id: UUIDv7): Promise<void>;
+
+  // ---------- Aggregates ----------
+  /**
+   * Compute aggregate dashboard stats. Implementations SHOULD do the
+   * aggregation in a single transaction (or a single read-only SQL query
+   * per sub-aggregate) so the dashboard doesn't tie up a connection.
+   *
+   * `filter.scope_id` semantics:
+   *   - `undefined`      → include every scope.
+   *   - `null`           → restrict to global-scope licenses only.
+   *   - UUID string      → restrict to that scope.
+   *
+   * The trailing 30-day window is computed against the adapter's clock
+   * so tests can pin time without the handler reaching for a clock of
+   * its own.
+   */
+  getLicenseStats(filter: LicenseStatsFilter): Promise<LicenseStats>;
 
   // ---------- Transactions & schema introspection ----------
   /** Run `fn` atomically. A thrown error MUST roll back every write made

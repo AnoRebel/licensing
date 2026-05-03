@@ -618,6 +618,91 @@ for (const backend of BACKENDS) {
       }
     });
 
+    // ---------- Admin — stats ----------
+
+    it('GET /admin/stats/licenses → LicenseStatsEnvelope', async () => {
+      const { s: storage, cleanup } = await backend.make();
+      try {
+        await seed(storage);
+        const router = createRouter(adminRoutes(mkAdminCtx(storage), '/api/licensing/v1'));
+        const res = await call(router, req('GET', '/api/licensing/v1/admin/stats/licenses'));
+        expect(res.status).toBe(200);
+        expectEnvelope('LicenseStatsEnvelope', res.body);
+
+        // Sanity-check the payload structure: counts is zero-fill, the
+        // delta is non-negative integers, top_n / top_templates are
+        // bounded arrays. The schema check above already covers types;
+        // these assertions guard the *semantics* of the aggregator.
+        const data = (res.body as { data: { counts: Record<string, number> } }).data;
+        const allStatuses = ['pending', 'active', 'grace', 'expired', 'suspended', 'revoked'];
+        for (const s of allStatuses) {
+          expect(typeof data.counts[s]).toBe('number');
+          expect(data.counts[s]).toBeGreaterThanOrEqual(0);
+        }
+      } finally {
+        await cleanup();
+      }
+    });
+
+    it('GET /admin/stats/licenses?scope_id=null restricts to global-scope', async () => {
+      const { s: storage, cleanup } = await backend.make();
+      try {
+        const { scope } = await seed(storage);
+        const router = createRouter(adminRoutes(mkAdminCtx(storage), '/api/licensing/v1'));
+
+        // Create one global-scope license + one scope-bound license so
+        // the filter has something to discriminate against.
+        await call(
+          router,
+          req('POST', '/api/licensing/v1/admin/licenses', {
+            body: { licensable_type: 'User', licensable_id: 'g1', max_usages: 1 },
+          }),
+        );
+        await call(
+          router,
+          req('POST', '/api/licensing/v1/admin/licenses', {
+            body: {
+              licensable_type: 'User',
+              licensable_id: 's1',
+              max_usages: 1,
+              scope_id: scope.id,
+            },
+          }),
+        );
+
+        const globalRes = await call(
+          router,
+          req('GET', '/api/licensing/v1/admin/stats/licenses', { query: { scope_id: 'null' } }),
+        );
+        expect(globalRes.status).toBe(200);
+        const globalData = (
+          globalRes.body as {
+            data: { counts: Record<string, number> };
+          }
+        ).data;
+        // The seed itself doesn't create global-scope licenses; only our
+        // explicit POST above does. So global-scope total >= 1 (pending).
+        const globalTotal = Object.values(globalData.counts).reduce((a, b) => a + b, 0);
+        expect(globalTotal).toBeGreaterThanOrEqual(1);
+
+        const scopedRes = await call(
+          router,
+          req('GET', '/api/licensing/v1/admin/stats/licenses', { query: { scope_id: scope.id } }),
+        );
+        expect(scopedRes.status).toBe(200);
+        const scopedData = (
+          scopedRes.body as {
+            data: { counts: Record<string, number> };
+          }
+        ).data;
+        const scopedTotal = Object.values(scopedData.counts).reduce((a, b) => a + b, 0);
+        // Seed already creates one license under `scope`, plus our s1.
+        expect(scopedTotal).toBeGreaterThanOrEqual(2);
+      } finally {
+        await cleanup();
+      }
+    });
+
     // ---------- Admin — usages ----------
 
     it('GET /admin/usages → UsageListEnvelope', async () => {

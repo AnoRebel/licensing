@@ -58,6 +58,8 @@ import type {
   LicenseScopeFilter,
   LicenseScopeInput,
   LicenseScopePatch,
+  LicenseStats,
+  LicenseStatsFilter,
   LicenseTemplate,
   LicenseTemplateFilter,
   LicenseTemplateInput,
@@ -77,6 +79,7 @@ import type {
 } from '../../index.ts';
 import { errors, isoFromMs, newUuidV7, type SchemaDescription, systemClock } from '../../index.ts';
 
+import { computeLicenseStats } from '../stats.ts';
 import { decodeCursor, encodeCursor } from './cursor.ts';
 
 /** Cast an array of unknown query parameters to bun:sqlite's binding type.
@@ -951,6 +954,86 @@ export class SqliteStorage implements Storage {
 
   async deleteTrialIssuance(id: UUIDv7): Promise<void> {
     this.#db.query('DELETE FROM trial_issuances WHERE id = ?').run(id);
+  }
+
+  // ---------- Aggregates ----------
+
+  async getLicenseStats(filter: LicenseStatsFilter): Promise<LicenseStats> {
+    // Same approach as the Postgres adapter — pull just the fields we
+    // aggregate on and let the shared `computeLicenseStats` do the work.
+    // Matches the Postgres adapter byte-for-byte (and the memory adapter)
+    // because the shared module is the only place ordering + roll-up
+    // logic lives.
+    const scopeWhere = this.#scopeWhere(filter.scope_id);
+
+    const licenseRows = this.#db
+      .query(
+        `SELECT id, scope_id, template_id, status, max_usages, expires_at, license_key
+         FROM licenses${scopeWhere.clause}`,
+      )
+      .all(...scopeWhere.params) as Array<{
+      id: string;
+      scope_id: string | null;
+      template_id: string | null;
+      status: License['status'];
+      max_usages: number;
+      expires_at: string | null;
+      license_key: string;
+    }>;
+
+    const usageRows = this.#db
+      .query(
+        `SELECT u.license_id
+         FROM license_usages u
+         JOIN licenses l ON l.id = u.license_id
+         WHERE u.status = 'active'${scopeWhere.andClause('l.scope_id')}`,
+      )
+      .all(...scopeWhere.params) as Array<{ license_id: string }>;
+
+    const nowMs = this.#clock.nowMs();
+    const sinceIso = isoFromMs(nowMs - 30 * 24 * 60 * 60 * 1000);
+    const auditRows = this.#db
+      .query(
+        `SELECT event
+         FROM audit_logs
+         WHERE event IN ('license.created', 'license.activated', 'license.revoked', 'license.expired', 'license.suspended')
+           AND occurred_at >= ?${scopeWhere.andClause('scope_id')}`,
+      )
+      .all(sinceIso, ...scopeWhere.params) as Array<{ event: string }>;
+
+    return computeLicenseStats({
+      licenses: licenseRows,
+      activeUsageLicenseIds: usageRows.map((r) => r.license_id),
+      auditEvents: auditRows.map((r) => r.event),
+      nowMs,
+    });
+  }
+
+  /**
+   * Build a scope-filter predicate for SQLite. Mirrors the Postgres
+   * helper but with `?` placeholders. Returns both standalone-WHERE and
+   * AND-tail forms because the three queries above mix them.
+   */
+  #scopeWhere(scopeFilter: UUIDv7 | null | undefined): {
+    clause: string;
+    andClause: (col: string) => string;
+    params: SQLQueryBindings[];
+  } {
+    if (scopeFilter === undefined) {
+      return { clause: '', andClause: () => '', params: [] };
+    }
+    if (scopeFilter === null) {
+      return {
+        clause: ' WHERE scope_id IS NULL',
+        andClause: (col) => ` AND ${col} IS NULL`,
+        params: [],
+      };
+    }
+    return {
+      clause: ' WHERE scope_id = ?',
+      andClause: (col) => ` AND ${col} = ?`,
+      params: [scopeFilter],
+    };
   }
 
   // ---------- Transactions & schema ----------

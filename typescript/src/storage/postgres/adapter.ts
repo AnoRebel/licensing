@@ -55,6 +55,8 @@ import type {
   LicenseScopeFilter,
   LicenseScopeInput,
   LicenseScopePatch,
+  LicenseStats,
+  LicenseStatsFilter,
   LicenseTemplate,
   LicenseTemplateFilter,
   LicenseTemplateInput,
@@ -74,6 +76,7 @@ import type {
 } from '../../index.ts';
 import { errors, isoFromMs, newUuidV7, type SchemaDescription, systemClock } from '../../index.ts';
 
+import { computeLicenseStats } from '../stats.ts';
 import { decodeCursor, encodeCursor } from './cursor.ts';
 import { mapPgError } from './errors.ts';
 import { POSTGRES_SCHEMA } from './schema.ts';
@@ -875,6 +878,97 @@ export class PostgresStorage implements Storage {
 
   async deleteTrialIssuance(id: UUIDv7): Promise<void> {
     await this.#q.query('DELETE FROM trial_issuances WHERE id = $1', [id]);
+  }
+
+  // ---------- Aggregates ----------
+
+  async getLicenseStats(filter: LicenseStatsFilter): Promise<LicenseStats> {
+    // Pull just enough to aggregate in JS — keeps the cross-port byte-
+    // parity test trivial (memory + sqlite + postgres run identical
+    // logic) and side-steps subtle JS/SQL float ordering. The dashboard
+    // isn't latency-critical; admin tenants are bounded by scope.
+    const scopePred = this.#scopePredicate(filter.scope_id);
+
+    const licenseSql = `
+      SELECT id, scope_id, template_id, status, max_usages, expires_at, license_key
+      FROM licenses${scopePred.where}
+    `;
+    const licenseRes = await this.#q.query<{
+      id: string;
+      scope_id: string | null;
+      template_id: string | null;
+      status: License['status'];
+      max_usages: number;
+      expires_at: string | null;
+      license_key: string;
+    }>(licenseSql, scopePred.params);
+
+    // Active usages only — revoked seats free the slot.
+    const usageSql = `
+      SELECT u.license_id
+      FROM license_usages u
+      JOIN licenses l ON l.id = u.license_id
+      WHERE u.status = 'active'${scopePred.whereAnd('l.scope_id')}
+    `;
+    const usageRes = await this.#q.query<{ license_id: string }>(usageSql, scopePred.params);
+
+    // Last 30 days of audit relevant to the active-set delta.
+    const nowMs = this.#clock.nowMs();
+    const sinceIso = isoFromMs(nowMs - 30 * 24 * 60 * 60 * 1000);
+    const auditSql = `
+      SELECT event, scope_id
+      FROM audit_logs
+      WHERE event = ANY($${scopePred.params.length + 1}::text[])
+        AND occurred_at >= $${scopePred.params.length + 2}
+        ${scopePred.whereAnd('scope_id')}
+    `;
+    const auditEvents = [
+      'license.created',
+      'license.activated',
+      'license.revoked',
+      'license.expired',
+      'license.suspended',
+    ];
+    const auditRes = await this.#q.query<{ event: string; scope_id: string | null }>(auditSql, [
+      ...scopePred.params,
+      auditEvents,
+      sinceIso,
+    ]);
+
+    return computeLicenseStats({
+      licenses: licenseRes.rows,
+      activeUsageLicenseIds: usageRes.rows.map((r) => r.license_id),
+      auditEvents: auditRes.rows.map((r) => r.event),
+      nowMs,
+    });
+  }
+
+  /**
+   * Build a scope-filter predicate suitable for both standalone WHERE
+   * clauses (`scope_id IS NULL` / `scope_id = $N`) and AND-tail
+   * extensions on existing WHEREs. Centralised so the three queries
+   * above stay aligned.
+   */
+  #scopePredicate(scopeFilter: UUIDv7 | null | undefined): {
+    where: string;
+    whereAnd: (col: string) => string;
+    params: unknown[];
+  } {
+    if (scopeFilter === undefined) {
+      return { where: '', whereAnd: () => '', params: [] };
+    }
+    if (scopeFilter === null) {
+      return {
+        where: ' WHERE scope_id IS NULL',
+        whereAnd: (col) => ` AND ${col} IS NULL`,
+        params: [],
+      };
+    }
+    return {
+      where: ' WHERE scope_id = $1',
+      whereAnd: (col) => ` AND ${col} = $1`,
+      params: [scopeFilter],
+    };
   }
 
   // ---------- Transactions & schema ----------
