@@ -118,6 +118,54 @@ export const cursorPage = <T>(items: T[]) => ({
   data: { items, next_cursor: null as string | null },
 });
 
+// Aggregate-stats fixture used by the dashboard widgets that hit
+// /admin/stats/licenses. Numbers are picked to exercise every widget
+// branch: the donut has every status segment > 0, the seat utilisation
+// top-N has rows in each colour band (ok / warn / alert), and the
+// 30-day delta is positive.
+export const sampleLicenseStats = {
+  data: {
+    counts: {
+      pending: 4,
+      active: 18,
+      grace: 2,
+      expired: 7,
+      suspended: 1,
+      revoked: 3,
+    },
+    expiring_within_30d: 5,
+    active_delta_30d: { added: 12, removed: 4 },
+    seat_utilization: {
+      active_usages_total: 62,
+      max_usages_total: 90,
+      top_n: [
+        // alert band — ratio >= 0.95
+        {
+          license_id: '018df9f1-0000-7000-8000-0000000000a1',
+          license_key: 'LIC-AAAA-AAAA-AAAA',
+          max_usages: 10,
+          active_usages: 10,
+        },
+        // warn band — 0.80 <= ratio < 0.95
+        {
+          license_id: '018df9f1-0000-7000-8000-0000000000a2',
+          license_key: 'LIC-BBBB-BBBB-BBBB',
+          max_usages: 10,
+          active_usages: 9,
+        },
+        // ok band
+        {
+          license_id: '018df9f1-0000-7000-8000-0000000000a3',
+          license_key: 'LIC-CCCC-CCCC-CCCC',
+          max_usages: 20,
+          active_usages: 12,
+        },
+      ],
+    },
+    top_templates: [{ template_id: TEMPLATE_ID, license_count: 8 }],
+  },
+};
+
 export const IDS = {
   LICENSE_ID,
   SCOPE_ID,
