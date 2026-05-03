@@ -12,6 +12,6 @@
     "@anorebel/licensing": "workspace:*"
   },
   "devDependencies": {
-    "@types/bun": "1.3.12"
+    "@types/bun": "1.3.13"
   }
 }
