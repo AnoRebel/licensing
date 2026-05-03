@@ -671,6 +671,47 @@ paths:
               schema: { $ref: '#/components/schemas/AuditListEnvelope' }
         '401': { $ref: '#/components/responses/Unauthenticated' }
 
+  /admin/stats/licenses:
+    get:
+      operationId: getLicenseStats
+      tags: [Admin Stats]
+      summary: Aggregate dashboard stats for licenses
+      description: |
+        Single-shot aggregate read used by the admin dashboard. Computed
+        server-side in one transaction so the dashboard doesn't have to
+        walk paginated lists to derive counts.
+
+        - `counts` is keyed by `LicenseStatus` and includes every status
+          even when the count is zero, so consumers can render a stable
+          set of tiles without status-existence checks.
+        - `expiring_within_30d` is the count of `active` licenses whose
+          `expires_at` falls in `[now, now + 30d]`.
+        - `active_delta_30d.added` and `.removed` are absolute event
+          counts from the audit log over the trailing 30 days; the
+          signed delta is `added - removed`.
+        - `seat_utilization.top_n` is the top 10 active licenses by
+          `active_usages / max_usages` ratio (descending; ties broken
+          by `active_usages` descending, then `id` ascending).
+        - `top_templates` is the top 10 templates by license count
+          across all statuses (descending; ties broken by id ascending).
+
+        The optional `scope_id` filter narrows every aggregate to the
+        given scope. Pass `null` (literal string) to restrict to
+        global-scope licenses; omit to include all scopes.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: scope_id
+          in: query
+          description: Scope filter — UUID, the literal `null` for global-scope only, or omitted for all scopes.
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LicenseStatsEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1026,6 +1067,84 @@ components:
         occurred_at: { type: string, format: date-time }
       additionalProperties: false
 
+    # Aggregate dashboard stats — see /admin/stats/licenses for semantics.
+    LicenseStatusCounts:
+      type: object
+      description: Count of licenses keyed by status. Every status is present even when zero.
+      required: [pending, active, grace, expired, suspended, revoked]
+      properties:
+        pending: { type: integer, minimum: 0 }
+        active: { type: integer, minimum: 0 }
+        grace: { type: integer, minimum: 0 }
+        expired: { type: integer, minimum: 0 }
+        suspended: { type: integer, minimum: 0 }
+        revoked: { type: integer, minimum: 0 }
+      additionalProperties: false
+
+    LicenseDelta30d:
+      type: object
+      required: [added, removed]
+      properties:
+        added:
+          type: integer
+          minimum: 0
+          description: Count of `license.created` + `license.activated` audit events over the trailing 30 days.
+        removed:
+          type: integer
+          minimum: 0
+          description: Count of `license.revoked` + `license.expired` + `license.suspended` audit events over the trailing 30 days.
+      additionalProperties: false
+
+    LicenseSeatTopEntry:
+      type: object
+      required: [license_id, license_key, max_usages, active_usages]
+      properties:
+        license_id: { type: string, format: uuid }
+        license_key: { type: string }
+        max_usages: { type: integer, minimum: 1 }
+        active_usages: { type: integer, minimum: 0 }
+      additionalProperties: false
+
+    LicenseSeatUtilization:
+      type: object
+      required: [active_usages_total, max_usages_total, top_n]
+      properties:
+        active_usages_total:
+          type: integer
+          minimum: 0
+          description: Sum of `active_usages` across all active licenses in the scope filter.
+        max_usages_total:
+          type: integer
+          minimum: 0
+          description: Sum of `max_usages` across the same set. Use `active_usages_total / max_usages_total` for the aggregate utilisation ratio.
+        top_n:
+          type: array
+          maxItems: 10
+          items: { $ref: '#/components/schemas/LicenseSeatTopEntry' }
+      additionalProperties: false
+
+    LicenseTemplateCount:
+      type: object
+      required: [template_id, license_count]
+      properties:
+        template_id: { type: string, format: uuid }
+        license_count: { type: integer, minimum: 1 }
+      additionalProperties: false
+
+    LicenseStats:
+      type: object
+      required: [counts, expiring_within_30d, active_delta_30d, seat_utilization, top_templates]
+      properties:
+        counts: { $ref: '#/components/schemas/LicenseStatusCounts' }
+        expiring_within_30d: { type: integer, minimum: 0 }
+        active_delta_30d: { $ref: '#/components/schemas/LicenseDelta30d' }
+        seat_utilization: { $ref: '#/components/schemas/LicenseSeatUtilization' }
+        top_templates:
+          type: array
+          maxItems: 10
+          items: { $ref: '#/components/schemas/LicenseTemplateCount' }
+      additionalProperties: false
+
     # Request bodies for admin CRUD
     CreateLicenseRequest:
       type: object
@@ -1262,6 +1381,14 @@ components:
       properties:
         success: { type: boolean, enum: [true] }
         data: { $ref: '#/components/schemas/Usage' }
+      additionalProperties: false
+
+    LicenseStatsEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, enum: [true] }
+        data: { $ref: '#/components/schemas/LicenseStats' }
       additionalProperties: false
 
     KeyEnvelope:
