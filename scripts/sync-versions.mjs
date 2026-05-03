@@ -65,6 +65,21 @@ for (const file of manifestFiles) {
   });
 }
 
+// release-please's manifest carries the "last released version" per
+// package path. Without keeping this in sync with VERSION,
+// release-please computes the next bump from the wrong baseline and
+// the next release PR overwrites our manual bump. The shape is
+// `{ ".": "<version>" }` (the `.` is the root-package key declared in
+// release-please-config.json).
+const releasePleaseManifest = join(repoRoot, '.release-please-manifest.json');
+await rewriteJson(releasePleaseManifest, (obj) => {
+  // Update every entry — works for monorepo configs that grow more
+  // package keys later. Today we only have one (`.`).
+  for (const key of Object.keys(obj)) {
+    if (typeof obj[key] === 'string') obj[key] = version;
+  }
+});
+
 // Go: single-constant file, generated so pkg.go.dev surfaces the version.
 const goVersionFile = join(repoRoot, 'licensing/version.go');
 // The `x-release-please-version` annotation lets release-please rewrite the
