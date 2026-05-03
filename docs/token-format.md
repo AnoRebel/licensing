@@ -433,3 +433,67 @@ Determinism guarantees by algorithm:
 The `licensing/interop/` and `tools/interop/` packages drive the
 cross-port harness: TS signs → Go verifies, Go signs → TS verifies, plus
 canonical-JSON byte-equality on every fixture. CI fails on any drift.
+
+## 9. LIC2 (planned)
+
+LIC1 is the only token format that ships in v0.1.0. Future major
+versions MAY introduce LIC2 as a sibling format; the prefix-based
+dispatch in §1.2 is the extension point.
+
+The leading candidate for LIC2 is a [PASETO](https://paseto.io/)-
+compatible layer (`v4.public` for Ed25519, `v4.local` for symmetric
+deployments). PASETO offers two properties LIC1 doesn't:
+
+1. **Versioned algorithm bundles** — a single PASETO `v4` token
+   commits to Ed25519, BLAKE2b, and a fixed encoding. Algorithm-
+   confusion attacks reduce to "is this the right version", which
+   tooling can enforce structurally.
+2. **External ecosystem** — multiple language SDKs already exist
+   ([`o1egl/paseto`](https://github.com/o1egl/paseto) for Go,
+   [`auth70/paseto-ts`](https://github.com/auth70/paseto-ts) for
+   TypeScript), so consumers wanting a third-party verifier could
+   bring their own.
+
+LIC2 is **not on the v0.1.0 roadmap**. Adding it requires:
+
+- A `v4.` prefix entry in the dispatch allowlist (§1.2).
+- Cross-port fixtures under `fixtures/tokens/lic2-<alg>-<status>/`.
+- A migration story for callers who hard-code `LIC1.` parsing —
+  realistically, a major-version bump on both ports.
+- A decision on whether LIC1 remains the default issuance format
+  (most likely yes) or whether `Issuer.format` becomes a config
+  knob.
+
+Until that work lands, the safe assumption is **LIC1 only**. The
+prefix-allowlist in §1.2 already rejects `v4.public.` /
+`v4.local.` payloads with `UnsupportedTokenFormat`, which is the
+correct behaviour pre-LIC2.
+
+### 9.1 Decision matrix — LIC1 today, LIC2 someday
+
+| Concern                                  | LIC1 (today)                                                                 | LIC2 (planned)                                                                                  |
+| ---------------------------------------- | ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| **Cross-port byte determinism**          | ✅ Required & enforced by fixtures + interop tests.                          | Same requirement. PASETO is structurally deterministic for `v4.public`; salt-bearing modes (XChaCha20) need protocol-level salt fixing the same way RSA-PSS does today. |
+| **Algorithm-confusion resistance**       | ✅ `kid → alg` pre-registration table in `AlgorithmRegistry`.                | ✅ Built into PASETO's versioned suite.                                                         |
+| **Custom payload claims**                | ✅ Free-form JSON object after the canonical-JSON contract in §4.            | ⚠️ PASETO has its own canonical claim set; trial / scope / fingerprint claims would need a footer convention or a wrapped sub-payload. |
+| **Third-party verifier ecosystem**       | ❌ One verifier per port, both first-party.                                  | ✅ Multiple PASETO libraries; consumers can roll their own.                                     |
+| **Ed25519 default**                      | ✅ `header.alg == "ed25519"`.                                                | ✅ `v4.public` is Ed25519 by definition.                                                        |
+| **HMAC support**                         | ✅ `hs256` for symmetric / kiosk deployments.                                | ✅ `v4.local` (XChaCha20-SIV).                                                                  |
+| **RSA-PSS support**                      | ✅ `rs256-pss` for legacy interop.                                           | ❌ PASETO `v4` drops RSA. A LIC1-RSA fallback would have to coexist for legacy verifiers.       |
+| **Adoption cost**                        | None — already shipping.                                                     | A major bump on both ports + new fixture set + dispatch entry + consumer migration.             |
+| **Right call when…**                     | Operating any v0.x.y release; running a small number of first-party SDKs.    | Onboarding third-party verifier ecosystems; standardising on a published format.                |
+
+**Pick LIC1 if**: you're shipping in 2026, you already control the
+verifier code, and you don't have a hard requirement to interoperate
+with PASETO tooling. That's the common case and the only thing that
+ships today.
+
+**Pick LIC2 (when available) if**: you need third-party PASETO
+verifiers, you're starting a new project that doesn't already
+depend on `header.kid` / `header.alg` claim semantics, and you can
+take the major-version bump cost.
+
+There is no migration path from LIC1 to LIC2 without re-issuing
+tokens. Existing licenses survive — the storage rows and lifecycle
+state machines are format-agnostic — but the offline tokens cached
+on every device need fresh re-issuance against the new format.

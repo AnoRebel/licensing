@@ -59,120 +59,83 @@ licensing/
   source of truth; both the TS and Go handlers run a contract-conformance
   suite against it in CI.
 
-## Quickstart — TypeScript
+## Quickstart
+
+The high-level API (`@anorebel/licensing` → `Issuer` / `Client`,
+`licensing/easy` → `easy.Issuer` / `easy.Client`) wraps the primitives
+and auto-generates a signing key on first use. Five lines per side is
+enough to issue your first license. See the full example scripts at
+[`examples/ts/`](examples/ts) and [`examples/go/`](examples/go).
+
+### TypeScript
 
 ```bash
-bun install
-cd typescript
-bun run build
-bun test
+bun add @anorebel/licensing
 ```
-
-Minimal issuer flow (see `examples/ts/issue-and-verify.ts` for the full script):
 
 ```ts
-import {
-  createAdvancingClock,
-  createLicense,
-  ed25519Backend,
-  generateRootKey,
-  issueInitialSigningKey,
-  issueToken,
-  registerUsage,
-  type KeyAlg,
-  type SignatureBackend,
-} from '@anorebel/licensing';
+import { Issuer } from '@anorebel/licensing';
 import { MemoryStorage } from '@anorebel/licensing/storage/memory';
 
-const clock = createAdvancingClock('2026-04-19T10:00:00.000000Z');
-const storage = new MemoryStorage({ clock });
-const backends = new Map<KeyAlg, SignatureBackend>([['ed25519', ed25519Backend]]);
-
-const root = await generateRootKey(storage, clock, backends, {
-  scope_id: null,
-  alg: 'ed25519',
-  passphrase: 'root-pw',
+const issuer = new Issuer({
+  db: new MemoryStorage(),
+  signing: { passphrase: process.env.LICENSING_SIGNING_PW! },
 });
 
-const signing = await issueInitialSigningKey(storage, clock, backends, {
-  scope_id: null,
-  alg: 'ed25519',
-  rootKid: root.kid,
-  rootPassphrase: 'root-pw',
-  signingPassphrase: 'sign-pw',
-});
-
-const license = await createLicense(storage, clock, {
-  scope_id: null,
-  template_id: null,
-  licensable_type: 'User',
-  licensable_id: 'user-42',
-  max_usages: 3,
-});
-
-const { usage, license: active } = await registerUsage(storage, clock, {
-  license_id: license.id,
-  fingerprint: 'a'.repeat(64),
-});
-
-const { token } = await issueToken(storage, clock, backends, {
-  license: active,
-  usage,
-  ttlSeconds: 3600,
-  alg: 'ed25519',
-  signingPassphrase: 'sign-pw',
+const license = await issuer.issue({
+  licensableType: 'User',
+  licensableId: 'user-42',
+  maxUsages: 3,
 });
 ```
 
-## Quickstart — Go
+### Go
 
 ```bash
-go test ./...
+go get github.com/AnoRebel/licensing
 ```
 
 ```go
 import (
-    lic "github.com/AnoRebel/licensing/licensing"
-    "github.com/AnoRebel/licensing/licensing/crypto/ed25519"
+    "context"
+    "github.com/AnoRebel/licensing/licensing/easy"
     "github.com/AnoRebel/licensing/licensing/storage/memory"
 )
 
-clk := lic.SystemClock{}
-store := memory.New(memory.Options{})
-registry := lic.NewAlgorithmRegistry()
-_ = registry.Register(ed25519.New())
-
-root, _ := lic.GenerateRootKey(store, clk, registry, lic.GenerateRootKeyInput{
-    Alg: lic.AlgEd25519, Passphrase: "root-pw",
-}, lic.KeyIssueOptions{})
-
-signing, _ := lic.IssueInitialSigningKey(store, clk, registry, lic.IssueInitialSigningKeyInput{
-    Alg:               lic.AlgEd25519,
-    RootKid:           root.Kid,
-    RootPassphrase:    "root-pw",
-    SigningPassphrase: "sign-pw",
-}, lic.KeyIssueOptions{})
-
-license, _ := lic.CreateLicense(store, clk, lic.CreateLicenseInput{
-    LicensableType: "User", LicensableID: "user-42",
-    Status: lic.LicenseStatusActive, MaxUsages: 3,
-}, lic.CreateLicenseOptions{})
-
-usage, _ := lic.RegisterUsage(store, clk, lic.RegisterUsageInput{
-    LicenseID:   license.ID,
-    Fingerprint: strings.Repeat("a", 64),
-}, lic.RegisterUsageOptions{})
-
-tok, _ := lic.IssueToken(store, clk, registry, lic.IssueTokenInput{
-    License:           license,
-    Usage:             usage.Usage,
-    TTLSeconds:        3600,
-    Alg:               lic.AlgEd25519,
-    SigningPassphrase: "sign-pw",
+issuer, _ := easy.NewIssuer(easy.IssuerConfig{
+    DB:      memory.New(memory.Options{}),
+    Signing: &easy.SigningConfig{Passphrase: os.Getenv("LICENSING_SIGNING_PW")},
 })
-_ = signing
-_ = tok
+
+license, _ := issuer.Issue(context.Background(), easy.IssueInput{
+    LicensableType: "User",
+    LicensableID:   "user-42",
+    MaxUsages:      5,
+})
 ```
+
+The `Issuer` writes a `license.created` audit row, picks an active
+signing key (auto-generating one if storage is empty), and returns a
+ready-to-distribute license. The corresponding `Client` (TS) /
+`easy.Client` (Go) handles activation, refresh, and offline validation
+on the device side; the framework adapters under
+[`docs/framework-integrations.md`](docs/framework-integrations.md)
+plug it into your HTTP layer with a single middleware call.
+
+### Quickstart (primitives)
+
+If you need fine-grained control — a custom signing-key flow, manual
+audit-log calls, or a non-default storage — every step the `Issuer`
+wraps is exposed as a top-level function. The full primitive flow
+(scope → root key → signing key → license → usage → token → verify)
+lives in:
+
+- [`examples/ts/issue-and-verify.ts`](examples/ts/issue-and-verify.ts)
+- [`examples/go/issue_and_verify.go`](examples/go/issue_and_verify.go)
+
+…and the surface area is documented as a whole in
+[`docs/security.md`](docs/security.md) and
+[`docs/token-format.md`](docs/token-format.md).
 
 ## Admin UI
 
@@ -210,6 +173,51 @@ See `docs/security.md` (landing in task 14.3) for full details.
 ## License
 
 Apache-2.0. See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE).
+
+---
+
+## Comparison with Laravel licensing
+
+This toolkit is a clean-room reimplementation of
+[`masterix21/laravel-licensing`](https://github.com/masterix21/laravel-licensing)
++ its companion client + Filament manager, retargeting TypeScript and
+Go. The mental model carries over — but a few things were renamed,
+and a few were added that don't have a Laravel-side counterpart.
+
+| Laravel licensing             | This toolkit                          | Notes                                                                                                |
+| ----------------------------- | ------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `License`                     | `License`                             | Same: a row that owns lifecycle state and references one licensable.                                 |
+| `LicenseScope`                | `LicenseScope` (just `Scope` in URLs) | Same: multi-tenant boundary keyed by `slug`.                                                         |
+| `LicenseTemplate`             | `LicenseTemplate`                     | Same shape, plus `parent_id` for inheritance and `trial_cooldown_sec` for trials. See [`docs/templates.md`](docs/templates.md). |
+| Polymorphic `licensable`      | `(licensable_type, licensable_id)`    | Same convention; the licensing service stays agnostic of who the consumer's `User` is.               |
+| `LicenseUsage` / `Activation` | `LicenseUsage`                        | Same: per-fingerprint seat row with `active` / `revoked` status.                                     |
+| `Heartbeat`                   | `Heartbeat`                           | Same: periodic check-in. Our token carries `force_online_after_sec` so the validator can refuse offline use past a hard stop. |
+| Token signing config          | `KeyHierarchy` (root + signing)       | Two-tier hierarchy with rotation. Laravel signs with one key; we add an explicit root → signing key separation so signing keys can rotate without re-issuing the root. |
+| `EnsureSubscriptionIsActive`  | `Client.guard()` + framework adapters | Same idea. Six adapters (Express / Hono / Fastify / chi / gin / echo) instead of one Laravel middleware. See [`docs/framework-integrations.md`](docs/framework-integrations.md). |
+| Trial flag on the License     | `trial_issuances` row + `is_trial` claim | The flag persists; we additionally record a peppered `(template_id, fingerprint_hash)` row so the same device can't claim the same trial twice. See [`docs/trials.md`](docs/trials.md). |
+| Filament panels               | Nuxt 4 + shadcn-vue admin             | The admin UI is structurally similar — Licenses / Scopes / Templates / Usages / Audit — but rebuilt as a typed Nuxt SPA against the OpenAPI contract. |
+| Eloquent observers / events   | Append-only `AuditLog`                | Every state-changing operation writes an audit row inside the same transaction. The HTTP `POST` / `PATCH` / `DELETE` paths and the Go / TS service layers all share the same writer. |
+| —                             | LIC1 token format                     | The on-wire token is ours, not a JWT. Spec lives in [`docs/token-format.md`](docs/token-format.md).  |
+| —                             | OpenAPI single source of truth        | Both the TS and Go HTTP layers run a contract-conformance suite against `openapi/licensing-admin.yaml`. The admin UI's typed client is regenerated from the same file. |
+| —                             | Cross-port byte parity                | A license issued by one runtime validates under the other; CI runs an interop matrix on every fixture. |
+
+**Differences worth flagging when migrating from Laravel licensing:**
+
+- The token format is **LIC1**, not JWT. JWT-shaped tokens are
+  rejected with `UnsupportedTokenFormat`. See
+  [`docs/token-format.md`](docs/token-format.md).
+- The HTTP API has **no implicit Eloquent / Filament conventions**;
+  every endpoint is documented in `openapi/licensing-admin.yaml`
+  and shares a `{ "data": ... }` / `{ "error": { "code", "message" }, "success": false }` envelope.
+- **`LicenseTemplate.parent_id`** is new — Laravel licensing has
+  flat templates only. Inheritance is opt-in; flat templates work
+  exactly like before.
+- **Trials** are a first-class concept with per-fingerprint dedupe
+  and a peppered hash. Laravel licensing tracks "is this a trial"
+  on the License but doesn't enforce uniqueness across re-activation.
+- **No Eloquent**, no Laravel container. The Issuer / Client are
+  pure constructors that take a `Storage` adapter — pick `MemoryStorage`,
+  `SqliteStorage`, or `PostgresStorage` per deployment.
 
 ---
 
