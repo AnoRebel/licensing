@@ -11,6 +11,7 @@
 //   sync-versions.mjs           → rewrites files to match VERSION
 //   sync-versions.mjs --check   → exits 1 if any file drifts (CI gate)
 
+import { spawn } from 'node:child_process';
 import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -102,4 +103,32 @@ if (wrote.length === 0) {
 } else {
   console.log(`Synced ${wrote.length} file(s) to version ${version}:`);
   for (const p of wrote) console.log(`  ${p}`);
+}
+
+// JSON.stringify(obj, null, 2) reflows arrays vertically. Biome's
+// formatter wants short arrays inlined to match the rest of the
+// monorepo, so we run `biome format --write` on the rewritten JSONs
+// before exiting. Skipping this would force every release PR to
+// commit a "fix biome lint" follow-up.
+//
+// We deliberately don't fail the sync on a missing biome — the
+// script must work in tooling-light environments (release-please
+// runs it without bun, for example). A non-zero biome exit is
+// logged and ignored.
+const jsonWrites = wrote.filter((p) => p.endsWith('.json'));
+if (jsonWrites.length > 0) {
+  await new Promise((resolve) => {
+    const proc = spawn('bunx', ['biome', 'format', '--write', ...jsonWrites], {
+      cwd: repoRoot,
+      stdio: 'inherit',
+    });
+    proc.on('exit', (code) => {
+      if (code !== 0) console.warn(`(biome format exited with code ${code}; ignoring)`);
+      resolve();
+    });
+    proc.on('error', (err) => {
+      console.warn(`(biome format unavailable: ${err.message}; ignoring)`);
+      resolve();
+    });
+  });
 }
