@@ -6,6 +6,9 @@ import { useForm } from '@tanstack/vue-form';
 import * as v from 'valibot';
 import LicenseStatusBadge from '~/components/LicenseStatusBadge.vue';
 import ConfirmDestructive from '~/components/ConfirmDestructive.vue';
+import LicenseAuditTimeline from '~/components/license/LicenseAuditTimeline.vue';
+import OwnerCard from '~/components/license/OwnerCard.vue';
+import TemplateCard from '~/components/license/TemplateCard.vue';
 import { formatAbsolute, formatRelative } from '~/lib/datetime';
 import { usageColumns, type UsageTableMeta } from './usage-columns';
 
@@ -390,6 +393,14 @@ const usageTableMeta = computed<UsageTableMeta>(() => ({
         </div>
       </header>
 
+      <!--
+        Two-column layout below the header: main pane on the left
+        (metadata, usages, audit), drill-down rail on the right
+        (owner, template). The rail collapses to a stacked block on
+        narrow viewports so nothing gets squeezed.
+      -->
+      <div class="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <div class="min-w-0 space-y-6">
       <!-- Metadata grid -->
       <section
         aria-label="License metadata"
@@ -490,6 +501,63 @@ const usageTableMeta = computed<UsageTableMeta>(() => ({
           empty-message="No usages recorded for this license."
         />
       </section>
+
+      <!-- Audit timeline scoped to this license -->
+      <Suspense>
+        <LicenseAuditTimeline :license-id="license.id" />
+        <template #fallback>
+          <div
+            class="rounded-md border border-border bg-card p-4"
+            aria-busy="true"
+            aria-label="Audit log loading"
+          >
+            <div class="space-y-2">
+              <div class="h-4 w-1/3 animate-pulse rounded bg-muted" />
+              <div class="h-4 w-full animate-pulse rounded bg-muted" />
+              <div class="h-4 w-full animate-pulse rounded bg-muted" />
+            </div>
+          </div>
+        </template>
+      </Suspense>
+        </div>
+
+        <!--
+          Drill-down rail: owner + template cards. Each card owns its
+          own fetch (under <Suspense> so a slow resolver doesn't gate
+          the rest of the page). The rail stacks above the main column
+          on narrow viewports because of the grid auto-flow.
+        -->
+        <aside class="space-y-4 lg:sticky lg:top-6 lg:self-start">
+          <Suspense>
+            <OwnerCard
+              :licensable-type="license.licensable_type"
+              :licensable-id="license.licensable_id"
+            />
+            <template #fallback>
+              <div
+                class="rounded-md border border-border bg-card p-4"
+                aria-busy="true"
+                aria-label="Owner loading"
+              >
+                <div class="h-4 w-1/2 animate-pulse rounded bg-muted" />
+              </div>
+            </template>
+          </Suspense>
+
+          <Suspense>
+            <TemplateCard :template-id="license.template_id" />
+            <template #fallback>
+              <div
+                class="rounded-md border border-border bg-card p-4"
+                aria-busy="true"
+                aria-label="Template loading"
+              >
+                <div class="h-4 w-1/2 animate-pulse rounded bg-muted" />
+              </div>
+            </template>
+          </Suspense>
+        </aside>
+      </div>
     </template>
 
     <!-- Shared destructive confirmation -->
