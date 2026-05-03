@@ -16,8 +16,9 @@ import {
   getSortedRowModel,
   useVueTable,
 } from '@tanstack/vue-table';
-import { computed, ref, watch } from 'vue';
+import { computed, h, ref, watch } from 'vue';
 import { valueUpdater } from '~/lib/utils';
+import { Checkbox } from '~/components/ui/checkbox';
 import DataTablePagination from './DataTablePagination.vue';
 import DataTableToolbar from './DataTableToolbar.vue';
 import type { FilterFacet } from './types';
@@ -63,6 +64,12 @@ interface Props {
    * `object | undefined` so any caller-defined interface flows through.
    */
   meta?: object;
+  /**
+   * Enable row selection — prepends a checkbox column and emits
+   * `selectionChange` with the array of selected row originals on every
+   * change. The parent owns presentation of bulk-action UI.
+   */
+  selectable?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -77,18 +84,61 @@ const props = withDefaults(defineProps<Props>(), {
   initialPageSize: 25,
   emptyMessage: 'No results.',
   meta: () => ({}),
+  selectable: false,
 });
 
 const emit = defineEmits<{
   rowClick: [row: TData];
   prev: [];
   next: [];
+  selectionChange: [rows: TData[]];
 }>();
 
 const sorting = ref<SortingState>([]);
 const columnFilters = ref<ColumnFiltersState>([]);
 const columnVisibility = ref<VisibilityState>({});
-const rowSelection = ref({});
+const rowSelection = ref<Record<string, boolean>>({});
+
+// Synthesised selection column — prepended to props.columns when
+// `selectable` is on. Header has a tri-state (unchecked / indeterminate
+// / checked) controlled by the table's getIsAllPageRowsSelected /
+// getIsSomePageRowsSelected helpers; row cells are plain checkboxes.
+// Width is fixed so a row of bools doesn't push other columns around.
+const selectColumn: ColumnDef<TData, TValue> = {
+  id: '__select__',
+  enableSorting: false,
+  enableHiding: false,
+  size: 32,
+  header: ({ table }) =>
+    h(Checkbox, {
+      'modelValue':
+        table.getIsAllPageRowsSelected() ||
+        (table.getIsSomePageRowsSelected() ? 'indeterminate' : false),
+      'aria-label': 'Select all rows on this page',
+      'onUpdate:modelValue': (value: boolean | 'indeterminate') => {
+        // reka-ui's Checkbox emits `'indeterminate'` only when the
+        // *parent* sets it that way; clicking always toggles to a
+        // boolean. Cast for the narrowing.
+        table.toggleAllPageRowsSelected(value === true);
+      },
+    }),
+  cell: ({ row }) =>
+    h(Checkbox, {
+      'modelValue': row.getIsSelected(),
+      'aria-label': 'Select row',
+      // Stop propagation so a row-level click handler doesn't fire when
+      // the operator just wants to (de)select. Same trick used in the
+      // shadcn-vue / TanStack examples.
+      'onClick': (e: MouseEvent) => e.stopPropagation(),
+      'onUpdate:modelValue': (value: boolean | 'indeterminate') => {
+        row.toggleSelected(value === true);
+      },
+    }),
+};
+
+const effectiveColumns = computed<ColumnDef<TData, TValue>[]>(() =>
+  props.selectable ? [selectColumn, ...props.columns] : props.columns,
+);
 
 // In cursor mode the parent owns pagination; we set a huge pageSize so
 // the TanStack page model is effectively a no-op (all current rows land
@@ -103,7 +153,7 @@ const table = useVueTable({
     return props.data ?? [];
   },
   get columns() {
-    return props.columns;
+    return effectiveColumns.value;
   },
   get meta() {
     return props.meta;
@@ -125,7 +175,11 @@ const table = useVueTable({
       return rowSelection.value;
     },
   },
-  enableRowSelection: false,
+  // Honor the prop — TanStack treats `false` as "no row is selectable",
+  // which is what we want when the parent didn't opt in.
+  get enableRowSelection() {
+    return props.selectable;
+  },
   onSortingChange: (u) => valueUpdater(u, sorting),
   onColumnFiltersChange: (u) => valueUpdater(u, columnFilters),
   onColumnVisibilityChange: (u) => valueUpdater(u, columnVisibility),
@@ -137,6 +191,31 @@ const table = useVueTable({
   getFacetedUniqueValues: getFacetedUniqueValues(),
   getPaginationRowModel: getPaginationRowModel(),
 });
+
+// Forward the resolved row originals to the parent. We watch the
+// internal selection state ref so the emit fires for every change
+// (TanStack's onRowSelectionChange runs before the new state lands).
+watch(
+  rowSelection,
+  () => {
+    if (!props.selectable) return;
+    const rows = table
+      .getSelectedRowModel()
+      .rows.map((r) => r.original as TData);
+    emit('selectionChange', rows);
+  },
+  { deep: true },
+);
+
+// Reset selection when data changes — pagination across server cursors
+// shouldn't preserve "selection on the previous page" because the row
+// indices in the rowSelection map mean nothing on a new dataset.
+watch(
+  () => props.data,
+  () => {
+    rowSelection.value = {};
+  },
+);
 
 // When the underlying dataset changes (e.g. refetch on filter change),
 // reset the page index to 0 so we don't land on an empty tail page.
@@ -193,7 +272,7 @@ defineExpose({ table });
           <template v-if="loading && table.getRowModel().rows.length === 0">
             <TableRow v-for="n in 6" :key="`sk-${n}`">
               <TableCell
-                v-for="col in columns"
+                v-for="col in effectiveColumns"
                 :key="`${n}-${col.id ?? 'c'}`"
               >
                 <Skeleton class="h-4 w-full" />
@@ -232,7 +311,7 @@ defineExpose({ table });
           </template>
 
           <TableRow v-else>
-            <TableCell :colspan="columns.length" class="h-24 text-center text-sm text-muted-foreground">
+            <TableCell :colspan="effectiveColumns.length" class="h-24 text-center text-sm text-muted-foreground">
               <!--
                 B21: empty state needs to be announced politely to SR
                 users — otherwise an applied filter that yields no rows
