@@ -23,8 +23,14 @@ export default defineConfig({
   retries: process.env.CI ? 1 : 0,
   workers: process.env.CI ? 2 : undefined,
   reporter: process.env.CI ? [['github'], ['list']] : 'list',
-  timeout: 30_000,
-  expect: { timeout: 5_000 },
+  timeout: 60_000,
+  // 15s on `expect` accommodates the cold-compile cost of pages that
+  // pull in heavy chart deps (@unovis) — `nuxt dev` builds routes
+  // on-demand and the first navigation to the dashboard or any page
+  // mounting the chart wrappers can take several seconds before the
+  // SSR render lands. Per-page expectations stay quick once the route
+  // is warm; the timeout only kicks in on first contact.
+  expect: { timeout: 15_000 },
 
   use: {
     baseURL: 'http://127.0.0.1:3100',
@@ -50,6 +56,13 @@ export default defineConfig({
   webServer: {
     // `nuxt dev` with an unreachable upstream. Every test intercepts the
     // proxy routes it cares about; anything that slips through 500s.
+    //
+    // We considered switching to `bun run build && bun run preview` to
+    // dodge cold-compile flakiness, but `nuxt preview` runs with
+    // NODE_ENV=production which trips the seal-session test endpoint's
+    // production refusal. The dev path + bumped expect timeout (above)
+    // is the right tradeoff: route compilation still happens once per
+    // route, but the bigger 15s expect window absorbs the variance.
     command: 'bun run dev',
     url: 'http://127.0.0.1:3100',
     reuseExistingServer: !process.env.CI,
