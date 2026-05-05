@@ -34,12 +34,11 @@ the yaml are picked up automatically. No drift check needed.
 
 ## Accessibility
 
-Target is WCAG 2.2 AA. axe-core is wired into the Playwright suite
-(`tests/a11y/*.spec.ts`) and blocks CI on any violation of `wcag2a`,
-`wcag2aa`, `wcag21a`, `wcag21aa`, or `wcag22aa`. The UI is tested against
-both light and dark themes; `prefers-reduced-motion: reduce` collapses
-every transition and animation to a single frame (see
-`assets/css/tailwind.css`).
+Target is WCAG 2.2 AA. The UI is designed against both light and dark
+themes; `prefers-reduced-motion: reduce` collapses every transition and
+animation to a single frame (see `assets/css/tailwind.css`). Manual
+keyboard walkthroughs are recorded in `docs/a11y-walkthrough.md`; re-run
+those when refactoring a primary flow.
 
 ## Security posture
 
