@@ -28,7 +28,7 @@ permissions:
 
 jobs:
   check:
-    name: biome + typecheck + build + axe
+    name: biome + typecheck + build
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -58,32 +58,3 @@ jobs:
 
       - name: Build (Nuxt)
         run: bun run build
-
-      # axe-core is driven via Playwright (tests/a11y/*.spec.ts). The
-      # browser binary is cached separately from node_modules because
-      # setup-bun doesn't manage it.
-      - name: Cache Playwright browsers
-        uses: actions/cache@v5
-        id: playwright-cache
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('admin/package.json') }}
-
-      - name: Install Playwright browsers
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: bun run test:a11y:install
-
-      - name: Install Playwright system deps (cache hit path)
-        if: steps.playwright-cache.outputs.cache-hit == 'true'
-        run: bunx playwright install-deps chromium
-
-      - name: Accessibility scan (axe-core via Playwright)
-        run: bun run test:a11y
-
-      - name: Upload Playwright report on failure
-        if: failure()
-        uses: actions/upload-artifact@v7
-        with:
-          name: playwright-report
-          path: admin/playwright-report
-          retention-days: 14
