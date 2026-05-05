@@ -39,13 +39,24 @@ export default defineNuxtConfig({
     'shadcn-nuxt',
   ],
 
-  // @nuxt/fonts downloads + self-hosts. Cabinet Grotesk (sans, via
-  // Fontshare) + JetBrains Mono (numerics, via Google Fonts) — the blessed
-  // technical-UI pair from design-taste-frontend. Inter is explicitly
-  // banned by .impeccable.md.
+  // Cabinet Grotesk is self-hosted under `public/fonts/` so the build
+  // never needs to reach Fontshare — CI runners hit transient TLS / DNS
+  // flakes against `cdn.fontshare.com` that fail `nuxt build` with the
+  // unhelpful `[nuxt:fonts:font-family-injection] fetch failed`.
+  //
+  // The `local` provider scans Nitro's publicAssets directories and
+  // matches filenames of the form `<family-slug>-<weight>.<ext>`. The
+  // four files at `public/fonts/cabinet-grotesk-{400,500,700,800}.woff2`
+  // resolve to `font-family: 'Cabinet Grotesk'` at the corresponding
+  // numeric weights — no manifest needed.
+  //
+  // JetBrains Mono is still pulled from Google's CDN at build time
+  // (stable, cacheable, and behind the @nuxt/fonts download pipeline).
+  //
+  // Inter is explicitly banned by .impeccable.md.
   fonts: {
     families: [
-      { name: 'Cabinet Grotesk', provider: 'fontshare', weights: [400, 500, 700, 800] },
+      { name: 'Cabinet Grotesk', provider: 'local', weights: [400, 500, 700, 800] },
       { name: 'JetBrains Mono', provider: 'google', weights: [400, 500, 600] },
     ],
   },
