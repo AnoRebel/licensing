@@ -130,7 +130,7 @@ const form = useForm({
         </form.Subscribe>
       </form>
 
-      <p class="mt-8 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground/70">
+      <p class="mt-8 font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
         session · 8 hours · sealed cookie
       </p>
     </div>
