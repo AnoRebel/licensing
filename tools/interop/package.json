@@ -1,6 +1,6 @@
 {
   "name": "@licensing/interop",
-  "version": "0.2.0-rc.0",
+  "version": "0.3.0-rc.0",
   "description": "Cross-language interop harness helpers — tiny stdin/stdout CLIs invoked from Go tests to round-trip tokens, canonical JSON, and lifecycle decisions between the TS and Go implementations.",
   "private": true,
   "license": "Apache-2.0",

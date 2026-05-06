@@ -1,6 +1,6 @@
 {
   "name": "@licensing/examples-ts",
-  "version": "0.2.0-rc.0",
+  "version": "0.3.0-rc.0",
   "private": true,
   "description": "Runnable TypeScript examples for @anorebel/licensing and @anorebel/licensing/client.",
   "type": "module",
