@@ -172,6 +172,12 @@ jobs:
       # runs through trusted publishing: no NODE_AUTH_TOKEN, no
       # --provenance flag (attestations are auto-generated from the
       # OIDC id-token when the trusted publisher is configured).
+      # Prereleases (anything with a `-suffix`, e.g. `0.2.0-rc.0`) must be
+      # published under a non-`latest` dist-tag — `npm publish` errors out
+      # with "You must specify a tag using --tag when publishing a
+      # prerelease version." otherwise. We use `next` for any prerelease
+      # so consumers can opt in via `npm install @anorebel/licensing@next`
+      # without affecting `latest`.
       - name: npm publish (idempotent; trusted publishing via OIDC)
         working-directory: typescript
         run: |
@@ -180,7 +186,12 @@ jobs:
             echo "@anorebel/licensing@${PKG_VERSION} is already on the registry; skipping publish."
             exit 0
           fi
-          npm publish --access public
+          if [[ "${PKG_VERSION}" == *-* ]]; then
+            echo "Publishing prerelease ${PKG_VERSION} under dist-tag 'next'."
+            npm publish --access public --tag next
+          else
+            npm publish --access public
+          fi
 
   publish-jsr:
     name: Publish to jsr.io (@anorebel/licensing)
