@@ -59,13 +59,24 @@ export interface ExpressLicenseGuardOptions
 }
 
 /**
+ * Express RequestHandler shape returned by {@link licenseGuard}. Named
+ * so JSR's slow-type checker can pin the public API surface; consumers
+ * rarely reference it directly.
+ */
+export type ExpressLicenseGuardMiddleware = (
+  req: ExpressRequestLike,
+  res: ExpressResponseLike,
+  next: ExpressNextLike,
+) => Promise<void>;
+
+/**
  * Build an Express RequestHandler that runs `Client.guard` on every
  * request. On success, attaches the resolved {@link LicenseHandle} to
  * `req.license` and calls `next()`. On failure, sends a JSON error
  * response with the canonical status code (see core.ts STATUS_BY_CODE)
  * and does NOT call `next()`.
  */
-export function licenseGuard(opts: ExpressLicenseGuardOptions) {
+export function licenseGuard(opts: ExpressLicenseGuardOptions): ExpressLicenseGuardMiddleware {
   return async function licenseGuardMiddleware(
     req: ExpressRequestLike,
     res: ExpressResponseLike,

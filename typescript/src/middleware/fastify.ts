@@ -134,6 +134,16 @@ export class LicenseGuardError extends Error {
   }
 }
 
+/**
+ * Fastify preHandler shape returned by {@link licenseGuard}. Named so
+ * JSR's slow-type checker can pin the public API surface; consumers
+ * rarely reference it directly.
+ */
+export type FastifyLicenseGuardPreHandler = (
+  req: FastifyRequestLike,
+  reply: FastifyReplyLike,
+) => Promise<void>;
+
 /** Build a Fastify preHandler hook. Same contract as the Express
  *  middleware: success attaches `req.license`, failure throws
  *  `LicenseGuardError` which Fastify's error pipeline turns into the
@@ -147,7 +157,7 @@ export class LicenseGuardError extends Error {
  *  adapters. Use `installLicenseErrorHandler(app)` for that, or
  *  prefer the plugin form (`fastifyLicenseGuard`) which installs the
  *  handler automatically. */
-export function licenseGuard(opts: FastifyLicenseGuardOptions) {
+export function licenseGuard(opts: FastifyLicenseGuardOptions): FastifyLicenseGuardPreHandler {
   return async function licenseGuardPreHandler(
     req: FastifyRequestLike,
     _reply: FastifyReplyLike,

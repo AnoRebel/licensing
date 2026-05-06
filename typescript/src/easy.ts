@@ -784,7 +784,7 @@ export const Licensing = {
   /** Construct a client. Synchronous. */
   client: makeClient,
   /** Convenience: a memory-only token store for tests. */
-  memoryTokenStore: () => new MemoryTokenStore(),
+  memoryTokenStore: (): MemoryTokenStore => new MemoryTokenStore(),
 } as const;
 
 // ---------- Helpers ----------

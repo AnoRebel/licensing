@@ -71,7 +71,17 @@ export interface HonoLicenseGuardOptions
  * adapter uses). Consumers who need a different key can build their
  * own thin wrapper.
  */
-export function licenseGuard(opts: HonoLicenseGuardOptions) {
+/**
+ * Hono middleware shape returned by {@link licenseGuard}. Named so
+ * JSR's slow-type checker can pin the public API surface; consumers
+ * rarely reference it directly.
+ */
+export type HonoLicenseGuardMiddleware = (
+  c: HonoContextLike,
+  next: HonoNextLike,
+) => Promise<unknown | undefined>;
+
+export function licenseGuard(opts: HonoLicenseGuardOptions): HonoLicenseGuardMiddleware {
   return async function licenseGuardMiddleware(
     c: HonoContextLike,
     next: HonoNextLike,
