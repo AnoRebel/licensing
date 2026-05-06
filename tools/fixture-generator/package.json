@@ -1,6 +1,6 @@
 {
   "name": "@licensing/fixture-generator",
-  "version": "0.2.0-rc.0",
+  "version": "0.3.0-rc.0",
   "private": true,
   "description": "Generates canonical LIC1 token fixtures (valid + tamper variants) consumed by both ports' interop test suites. Not published; lives in the repo solely to keep fixtures/tokens/*/ byte-identical across languages.",
   "license": "Apache-2.0",

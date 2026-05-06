@@ -3,4 +3,4 @@ package licensing
 
 // Version is the licensing module release, kept in sync with the root VERSION
 // file so TypeScript packages and the Go module ship matching versions.
-const Version = "0.2.0-rc.0" // x-release-please-version
+const Version = "0.3.0-rc.0" // x-release-please-version
