@@ -23,13 +23,13 @@
     "commitlint": "commitlint --edit"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.4.11",
+    "@biomejs/biome": "2.4.15",
     "@commitlint/cli": "^20.5.0",
     "@commitlint/config-conventional": "^20.5.0",
-    "@types/node": "25.6.0",
-    "lefthook": "2.1.5",
-    "tsdown": "0.21.7",
-    "typescript": "6.0.2"
+    "@types/node": "25.6.2",
+    "lefthook": "2.1.6",
+    "tsdown": "0.22.0",
+    "typescript": "6.0.3"
   },
   "engines": {
     "bun": ">=1.3.12",
