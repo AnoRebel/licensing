@@ -244,7 +244,7 @@
     "node": ">=22"
   },
   "peerDependencies": {
-    "pg": "^8.13.1",
+    "pg": "^8.22.0",
     "hono": ">=4",
     "express": ">=5",
     "fastify": ">=5"
@@ -264,12 +264,12 @@
     }
   },
   "devDependencies": {
-    "@types/bun": "^1.3.12",
+    "@types/bun": "^1.3.14",
     "@types/express": "^5.0.6",
     "@types/pg": "^8.11.10",
     "express": "^5.1.0",
     "fastify": "^5.7.0",
-    "hono": "^4.10.4",
-    "pg": "^8.13.1"
+    "hono": "^4.12.26",
+    "pg": "^8.22.0"
   }
 }
