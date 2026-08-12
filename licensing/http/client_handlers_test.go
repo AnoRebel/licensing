@@ -19,6 +19,14 @@ type fixedClock struct{ now string }
 
 func (c fixedClock) NowISO() string { return c.now }
 
+// testClock is the single pinned clock shared by every harness in this
+// package. Storage adapters default to SystemClock when Options.Clock is
+// nil, so a harness that pins only the *service* clock ends up with two
+// clocks drifting apart — which silently ages audit fixtures out of
+// time-windowed queries (e.g. the stats 30d delta) once wall-clock moves
+// far enough past the pinned date. Always pass this to both layers.
+var testClock = fixedClock{now: "2026-06-01T00:00:00Z"}
+
 // testHarness wires up an in-memory storage + Ed25519 key hierarchy + a
 // ClientHandler, returning everything callers need to exercise endpoints.
 type testHarness struct {
@@ -33,8 +41,8 @@ type testHarness struct {
 
 func newHarness(t *testing.T) *testHarness {
 	t.Helper()
-	storage := memory.New(memory.Options{})
-	clk := fixedClock{now: "2026-06-01T00:00:00Z"}
+	clk := testClock
+	storage := memory.New(memory.Options{Clock: clk})
 
 	reg := lic.NewAlgorithmRegistry()
 	if err := reg.Register(ed.New()); err != nil {

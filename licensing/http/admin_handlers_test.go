@@ -27,8 +27,8 @@ type adminHarness struct {
 
 func newAdminHarness(t *testing.T) *adminHarness {
 	t.Helper()
-	storage := memory.New(memory.Options{})
-	clk := fixedClock{now: "2026-06-01T00:00:00Z"}
+	clk := testClock
+	storage := memory.New(memory.Options{Clock: clk})
 
 	reg := lic.NewAlgorithmRegistry()
 	if err := reg.Register(ed.New()); err != nil {

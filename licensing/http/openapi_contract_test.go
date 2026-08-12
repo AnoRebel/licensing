@@ -105,7 +105,7 @@ func allBackends(t *testing.T) []conformBackend {
 		{
 			name: "memory",
 			make: func(t *testing.T) (lic.Storage, func()) {
-				return memory.New(memory.Options{}), func() {}
+				return memory.New(memory.Options{Clock: testClock}), func() {}
 			},
 		},
 		{
@@ -118,7 +118,7 @@ func allBackends(t *testing.T) []conformBackend {
 				if _, err := sqlite.ApplyMigrations(db); err != nil {
 					t.Fatal(err)
 				}
-				s, err := sqlite.NewFromDB(db, sqlite.Options{})
+				s, err := sqlite.NewFromDB(db, sqlite.Options{Clock: testClock})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -161,7 +161,7 @@ func allBackends(t *testing.T) []conformBackend {
 					pool.Close()
 					t.Fatal(err)
 				}
-				s := postgres.New(pool, postgres.Options{})
+				s := postgres.New(pool, postgres.Options{Clock: testClock})
 				cleanup := func() {
 					pool.Close()
 					m, err := pgxpool.New(context.Background(), pgURL)
@@ -279,7 +279,8 @@ func runContractSuite(t *testing.T, doc *openAPIDoc, b conformBackend) {
 	t.Helper()
 
 	// Shared registry/clock so all subtests use identical crypto state.
-	clk := fixedClock{now: "2026-06-01T00:00:00Z"}
+	// Same clock the backend factories inject into storage.
+	clk := testClock
 	reg := lic.NewAlgorithmRegistry()
 	if err := reg.Register(ed.New()); err != nil {
 		t.Fatal(err)
