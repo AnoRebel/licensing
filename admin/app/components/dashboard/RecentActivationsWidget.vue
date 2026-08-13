@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { components } from '#open-fetch-schemas/licensing';
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted } from 'vue';
 import { CurveType } from '@unovis/ts';
 import { VisAxis, VisLine, VisXYContainer } from '@unovis/vue';
 import { usePreferredReducedMotion } from '@vueuse/core';
