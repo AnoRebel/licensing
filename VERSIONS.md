@@ -4,14 +4,14 @@ This file is the single source of truth for the versions this repo targets.
 Every pin below is **exact** — no ranges. Bumps are reviewed deliberately;
 edit this file alongside the dependency change in the same commit.
 
-Last reviewed: 2026-04-12.
+Last reviewed: 2026-08-13.
 
 ## Runtime & build toolchain
 
 | Tool                | Version     | Notes                                                              |
 | ------------------- | ----------- | ------------------------------------------------------------------ |
-| Bun                 | `1.3.12`    | Pinned via `packageManager` in root `package.json`.                |
-| Node (engine floor) | `>=20`      | Used only for tooling that still shells Node; Bun is the runtime.  |
+| Bun                 | `1.3.14`    | Pinned via `packageManager` in root `package.json`.                |
+| Node (engine floor) | `>=22`      | Used only for tooling that still shells Node; Bun is the runtime.  |
 | Go toolchain        | `1.26.1`    | Matches `go.mod` `go` directive; golangci-lint v2 floor is `1.26`. |
 | golangci-lint       | `2.11.4`    | v2 schema (see `.golangci.yml`).                                   |
 | gofmt / goimports   | bundled     | gofmt ships with Go; goimports via golangci-lint v2 formatters.    |
@@ -22,32 +22,50 @@ Exact pins, declared in the root `package.json` under `devDependencies`:
 
 | Package            | Version   | Role                                             |
 | ------------------ | --------- | ------------------------------------------------ |
-| `@biomejs/biome`   | `2.4.11`  | Formatter + linter for TS, JSON, Vue.            |
-| `@types/node`      | `25.6.0`  | Node typings for shared modules.                 |
-| `lefthook`         | `2.1.5`   | Git hook runner; installed via `lefthook install`. |
-| `tsdown`           | `0.21.7`  | Dual ESM/CJS bundler with `.d.ts` emission.      |
-| `typescript`       | `6.0.2`   | Type checker + language service.                 |
+| `@biomejs/biome`   | `2.5.8`   | Formatter + linter for TS, JSON, Vue.            |
+| `@types/node`      | `26.2.0`  | Node typings for shared modules.                 |
+| `lefthook`         | `2.1.10`  | Git hook runner; installed via `lefthook install`. |
+| `tsdown`           | `0.22.14` | Dual ESM/CJS bundler with `.d.ts` emission.      |
+| `typescript`       | `7.0.2`   | Type checker + language service. **See the holdback note below — `admin/` is deliberately behind.** |
 
-## Per-package TypeScript runtime deps (landing in phases 3–7)
+### Held-back pins
 
-| Package                       | Version   | Used by                                     |
-| ----------------------------- | --------- | ------------------------------------------- |
-| `pg`                          | `8.13.1`  | `@anorebel/licensing/storage/postgres`.              |
-| `@types/pg`                   | `8.11.10` | `@anorebel/licensing/storage/postgres` (dev).        |
-| `hono`                        | `5.0.4`   | optional adapter in `@anorebel/licensing/http`. |
-| `express`                     | `5.2.1`   | optional adapter in `@anorebel/licensing/http`. |
-| `fastify`                     | `5.5.0`   | optional adapter in `@anorebel/licensing/http`. |
+A dependency is only held below its latest stable release when upgrading
+would break a build or check we cannot ourselves fix. Each holdback records
+the blocker and the condition that lifts it, so it is not carried forward
+silently once the blocker clears.
 
-## Admin UI (landing in phase 13)
+| Package                   | Held at   | Latest | Blocker                                                            | Lift when                                        |
+| ------------------------- | --------- | ------ | ------------------------------------------------------------------ | ------------------------------------------------ |
+| `typescript` (in `admin/`) | `6.0.3`  | `7.0.2` | `vue-tsc` does not support TypeScript 7, so `admin/` cannot typecheck on it. Root and `typescript/` are already on 7.0.2. | `vue-tsc` ships TypeScript 7 support; then align `admin/` with the root pin and drop this row. |
+
+## Per-package TypeScript runtime deps
+
+Declared in `typescript/package.json` under `devDependencies`; consumers get
+them as optional peers.
+
+| Package                       | Version    | Used by                                     |
+| ----------------------------- | ---------- | ------------------------------------------- |
+| `pg`                          | `^8.23.0`  | `@anorebel/licensing/storage/postgres`.              |
+| `@types/pg`                   | `^8.21.0`  | `@anorebel/licensing/storage/postgres` (dev).        |
+| `hono`                        | `^4.13.1`  | optional adapter in `@anorebel/licensing/http`. |
+| `express`                     | `^5.2.1`   | optional adapter in `@anorebel/licensing/http`. |
+| `fastify`                     | `^5.11.3`  | optional adapter in `@anorebel/licensing/http`. |
+
+## Admin UI
 
 | Package                      | Version      | Notes                                          |
 | ---------------------------- | ------------ | ---------------------------------------------- |
-| Nuxt                         | `4.2.1`      | Nuxt 4 major line.                             |
-| `shadcn-nuxt`                | `2.3.1`      | shadcn-vue integration module for Nuxt 4.      |
-| `shadcn-vue` (CLI)           | `2.3.1`      | Component fetcher; kept in sync with `shadcn-nuxt`. |
-| `tailwindcss`                | `4.2.0`      | Tailwind v4; CSS-first config per shadcn-vue v2. |
-| `@nuxt/icon`                 | `2.2.2`      | Icon module required by shadcn-vue components. |
-| `axe-core`                   | `4.12.0`     | Accessibility CI check.                        |
+| Nuxt                         | `4.5.2`      | Nuxt 4 major line.                             |
+| `vue`                        | `3.5.41`     | Pinned exactly; `vue-router` tracks at `5.2.0`. |
+| `shadcn-nuxt`                | `2.8.2`      | shadcn-vue integration module for Nuxt 4.      |
+| `tailwindcss`                | `4.3.3`      | Tailwind v4; CSS-first config per shadcn-vue v2. |
+| `@tanstack/vue-table`        | `^9.1.2`     | Headless table behind every list view. v9 registers features explicitly — see `admin/app/lib/table.ts`. |
+| `@nuxt/fonts`                | `0.14.0`     | Both families are self-hosted via the `local` provider; the build makes no font network calls. |
+| `typescript`                 | `6.0.3`      | **Held back** — see the holdback table above.  |
+| `vue-tsc`                    | `^3.3.9`     | Typechecks `.vue` SFCs; gates the TypeScript pin. |
+| `@nuxt/eslint` + `eslint`    | `1.17.0` / `10.2.1` | `eslint` is a peer of `@nuxt/eslint` and must be declared directly, or bun links no binary and `bun run lint` fails. |
+| `bunwright`                  | `^0.3.2`     | Browser smoke checks. Pre-1.0; no fixtures/workers/trace viewer. |
 
 ## Go module dependencies (landing in phases 8–11)
 

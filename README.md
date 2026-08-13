@@ -146,8 +146,13 @@ bun run dev
 ```
 
 The admin UI is a fully typed Nuxt 4 app consuming `openapi/licensing-admin.yaml`
-via a generated client. Dark mode, keyboard-first flows, and axe-core
-accessibility checks are part of CI.
+via a generated client, with dark mode and keyboard-first flows. CI runs
+formatting/lint, type checking, and a production build. Accessibility is a
+WCAG 2.2 AA target verified by manual keyboard walkthroughs — there is no
+automated a11y suite.
+
+See [`admin/README.md`](admin/README.md) for how to add a list view and how
+the shared `DataTable` is wired.
 
 ## Security model
 

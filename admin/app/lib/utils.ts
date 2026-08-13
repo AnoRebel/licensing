@@ -12,7 +12,7 @@ export function cn(...inputs: ClassValue[]) {
 // TanStack Table's "Updater" pattern allows state updaters to be either a
 // raw value OR a `(prev) => next` function. This helper applies either
 // shape to a plain Vue ref so we don't have to branch on every state
-// setter when wiring `useVueTable`.
+// setter when wiring `useTable`.
 export function valueUpdater<T extends Updater<unknown>>(updaterOrValue: T, ref: Ref) {
   ref.value =
     typeof updaterOrValue === 'function'
