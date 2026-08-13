@@ -117,3 +117,14 @@ pnpm-debug.log*
 # any copy inside typescript/ is a local build artefact.
 /typescript/LICENSE
 /typescript/NOTICE
+
+# AI
+openspec
+.opencode
+.claude
+.mcp.json
+
+# Local-only working docs — design/taste notes and manual test records that
+# are personal working context, not contributor documentation.
+admin/.impeccable.md
+admin/docs/a11y-walkthrough.md
