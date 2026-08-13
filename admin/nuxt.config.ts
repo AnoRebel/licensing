@@ -50,14 +50,23 @@ export default defineNuxtConfig({
   // resolve to `font-family: 'Cabinet Grotesk'` at the corresponding
   // numeric weights — no manifest needed.
   //
-  // JetBrains Mono is still pulled from Google's CDN at build time
-  // (stable, cacheable, and behind the @nuxt/fonts download pipeline).
+  // JetBrains Mono is self-hosted for the same reason. Google rotated the
+  // v24 asset hashes and now serves the family as a single variable font,
+  // so the previously pinned per-weight URLs return 404 and fail the build
+  // outright.
+  //
+  // The checked-in files are the `latin` subset of that variable font
+  // (wght axis 400-800). The three files are byte-identical: the `local`
+  // provider derives weight from the *filename*, and only emits @font-face
+  // rules for weights it can match, so a single `-400` file would silently
+  // drop 500/600 to the Courier New fallback. One file per shipped weight
+  // is what makes all three resolve. 96KB total on disk.
   //
   // Inter is explicitly banned by .impeccable.md.
   fonts: {
     families: [
       { name: 'Cabinet Grotesk', provider: 'local', weights: [400, 500, 700, 800] },
-      { name: 'JetBrains Mono', provider: 'google', weights: [400, 500, 600] },
+      { name: 'JetBrains Mono', provider: 'local', weights: [400, 500, 600] },
     ],
   },
 
