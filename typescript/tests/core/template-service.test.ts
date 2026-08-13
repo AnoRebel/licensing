@@ -142,7 +142,9 @@ describe('template-service', () => {
           const created = audit.items.find((r) => r.event === 'template.created');
           expect(created).toBeDefined();
           expect(created?.actor).toBe('admin-1');
-          expect((created?.new_state as { template_id: string }).template_id).toBe(tpl.id);
+          expect((created?.new_state as { template_id: string } | undefined)?.template_id).toBe(
+            tpl.id,
+          );
         } finally {
           await cleanup();
         }
@@ -225,7 +227,9 @@ describe('template-service', () => {
           const audit = await s.listAudit({ license_id: lic.id }, { limit: 5 });
           const licAudit = audit.items.find((r) => r.event === 'license.created');
           expect(licAudit).toBeDefined();
-          expect((licAudit?.new_state as { template_id?: string }).template_id).toBe(tpl.id);
+          expect((licAudit?.new_state as { template_id?: string } | undefined)?.template_id).toBe(
+            tpl.id,
+          );
         } finally {
           await cleanup();
         }
@@ -330,7 +334,7 @@ describe('template-service', () => {
           // admin-side flow edits the template row (not exercised here, but
           // the `meta` column on `licenses` is independent storage).
           const refreshed = await s.getLicense(lic.id);
-          expect((refreshed?.meta as Record<string, unknown>).entitlements).toEqual({
+          expect((refreshed?.meta as Record<string, unknown> | undefined)?.entitlements).toEqual({
             seats: 1,
             tier: 'basic',
           });

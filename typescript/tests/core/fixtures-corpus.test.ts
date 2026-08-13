@@ -147,21 +147,22 @@ describe.each(vectors)('vector %s — envelope', (id) => {
 
 // Ed25519 + HMAC are deterministic — the expected token should byte-match
 // a freshly signed one. RSA-PSS uses random salts, so we only check verify().
-describe.each(
-  vectors.filter((id) => !id.includes('rs256-pss')),
-)('vector %s — deterministic signature byte-match', (id) => {
-  const v = loadVector(id);
-  it('produces the exact expected_token bytes', async () => {
-    const backend = backendFor(v.inputs.alg);
-    const priv = await backend.importPrivate(loadKey(v.inputs.key_ref, v.inputs.alg));
-    const headerB64 = Buffer.from(canonicalize(v.inputs.header)).toString('base64url');
-    const payloadB64 = Buffer.from(canonicalize(v.inputs.payload)).toString('base64url');
-    const signingInput = new TextEncoder().encode(`${headerB64}.${payloadB64}`);
-    const sig = await backend.sign(priv, signingInput);
-    const token = `LIC1.${headerB64}.${payloadB64}.${Buffer.from(sig).toString('base64url')}`;
-    expect(token).toBe(v.expectedToken);
-  });
-});
+describe.each(vectors.filter((id) => !id.includes('rs256-pss')))(
+  'vector %s — deterministic signature byte-match',
+  (id) => {
+    const v = loadVector(id);
+    it('produces the exact expected_token bytes', async () => {
+      const backend = backendFor(v.inputs.alg);
+      const priv = await backend.importPrivate(loadKey(v.inputs.key_ref, v.inputs.alg));
+      const headerB64 = Buffer.from(canonicalize(v.inputs.header)).toString('base64url');
+      const payloadB64 = Buffer.from(canonicalize(v.inputs.payload)).toString('base64url');
+      const signingInput = new TextEncoder().encode(`${headerB64}.${payloadB64}`);
+      const sig = await backend.sign(priv, signingInput);
+      const token = `LIC1.${headerB64}.${payloadB64}.${Buffer.from(sig).toString('base64url')}`;
+      expect(token).toBe(v.expectedToken);
+    });
+  },
+);
 
 // Tamper vectors: every invalid sibling MUST fail to verify. We don't assert
 // a specific error class here (the core's per-alg tests cover that) — only
