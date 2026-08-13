@@ -1,5 +1,6 @@
-<script setup lang="ts">
-import type { Column } from '@tanstack/vue-table';
+<script setup lang="ts" generic="TData extends RowData">
+import type { RowData } from '@tanstack/vue-table';
+import type { AppColumn } from '~/lib/table';
 import { ArrowDownIcon, ArrowUpIcon, ChevronsUpDownIcon, EyeOffIcon } from 'lucide-vue-next';
 import { cn } from '~/lib/utils';
 
@@ -9,18 +10,19 @@ import { cn } from '~/lib/utils';
  * operator "asc / desc / hide" as explicit options rather than guessing
  * which click does what.
  *
- * Column type is erased to `any, unknown` so that column defs typed with
- * a specific TData (e.g. `ColumnDef<License>`) flow through `h()` without
- * generic-variance errors. The header body doesn't use TData at all.
+ * Generic over the row type. The header body never reads it, but v9's
+ * `Column` is invariant in `TData` — no erased stand-in (`any`, `unknown`,
+ * `RowData`, `Record<string, any>`) is assignable from a concrete column,
+ * because `Column.parent` refers back to itself. Staying generic is the
+ * only form that accepts `AppColumnDef<License>` and friends.
  */
 
-interface Props {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  column: Column<any, unknown>;
+interface Props<T extends RowData> {
+  column: AppColumn<T, unknown>;
   title: string;
 }
 
-defineProps<Props>();
+defineProps<Props<TData>>();
 </script>
 
 <template>

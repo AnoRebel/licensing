@@ -1,10 +1,10 @@
-import type { ColumnDef } from '@tanstack/vue-table';
 import { h } from 'vue';
 import type { components } from '#open-fetch-schemas/licensing';
 import DataTableColumnHeader from '~/components/DataTable/DataTableColumnHeader.vue';
 import UsageRowActions from '~/components/UsageRowActions.vue';
 import UsageStatusBadge from '~/components/UsageStatusBadge.vue';
 import { formatAbsolute, formatRelative } from '~/lib/datetime';
+import type { AppColumnDef } from '~/lib/table';
 
 type Usage = components['schemas']['Usage'];
 
@@ -15,11 +15,11 @@ type Usage = components['schemas']['Usage'];
  * table instance so the columns stay declarative and decoupled from the
  * page's API-call plumbing.
  */
-export const usageColumns: ColumnDef<Usage>[] = [
+export const usageColumns: AppColumnDef<Usage>[] = [
   {
     accessorKey: 'fingerprint',
     id: 'fingerprint',
-    header: ({ column }) => h(DataTableColumnHeader, { column, title: 'fingerprint' }),
+    header: ({ column }) => h(DataTableColumnHeader<Usage>, { column, title: 'fingerprint' }),
     cell: ({ row }) =>
       h(
         'span',
@@ -31,7 +31,7 @@ export const usageColumns: ColumnDef<Usage>[] = [
   {
     accessorKey: 'status',
     id: 'status',
-    header: ({ column }) => h(DataTableColumnHeader, { column, title: 'status' }),
+    header: ({ column }) => h(DataTableColumnHeader<Usage>, { column, title: 'status' }),
     cell: ({ row }) => h(UsageStatusBadge, { status: row.original.status }),
     filterFn: (row, columnId, filterValue: unknown) => {
       if (!Array.isArray(filterValue) || filterValue.length === 0) return true;
@@ -41,7 +41,7 @@ export const usageColumns: ColumnDef<Usage>[] = [
   {
     accessorKey: 'registered_at',
     id: 'registered_at',
-    header: ({ column }) => h(DataTableColumnHeader, { column, title: 'registered' }),
+    header: ({ column }) => h(DataTableColumnHeader<Usage>, { column, title: 'registered' }),
     cell: ({ row }) =>
       h(
         'time',
@@ -61,7 +61,7 @@ export const usageColumns: ColumnDef<Usage>[] = [
   {
     accessorKey: 'updated_at',
     id: 'last_seen',
-    header: ({ column }) => h(DataTableColumnHeader, { column, title: 'last seen' }),
+    header: ({ column }) => h(DataTableColumnHeader<Usage>, { column, title: 'last seen' }),
     cell: ({ row }) =>
       h(
         'time',
@@ -77,7 +77,7 @@ export const usageColumns: ColumnDef<Usage>[] = [
   // they're present, otherwise render "—" so the columns stay aligned.
   {
     id: 'ip',
-    header: ({ column }) => h(DataTableColumnHeader, { column, title: 'ip' }),
+    header: ({ column }) => h(DataTableColumnHeader<Usage>, { column, title: 'ip' }),
     accessorFn: (row) => {
       const m = row.client_meta as { ip?: string; ip_address?: string } | undefined;
       return m?.ip ?? m?.ip_address ?? null;
@@ -91,7 +91,7 @@ export const usageColumns: ColumnDef<Usage>[] = [
   },
   {
     id: 'user_agent',
-    header: ({ column }) => h(DataTableColumnHeader, { column, title: 'agent' }),
+    header: ({ column }) => h(DataTableColumnHeader<Usage>, { column, title: 'agent' }),
     accessorFn: (row) => {
       const m = row.client_meta as { user_agent?: string; userAgent?: string } | undefined;
       return m?.user_agent ?? m?.userAgent ?? null;
@@ -109,7 +109,7 @@ export const usageColumns: ColumnDef<Usage>[] = [
   {
     accessorKey: 'revoked_at',
     id: 'revoked_at',
-    header: ({ column }) => h(DataTableColumnHeader, { column, title: 'revoked' }),
+    header: ({ column }) => h(DataTableColumnHeader<Usage>, { column, title: 'revoked' }),
     cell: ({ row }) => {
       const v = row.original.revoked_at;
       if (!v) return h('span', { class: 'font-mono text-xs text-muted-foreground' }, '—');

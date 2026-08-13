@@ -1,22 +1,18 @@
-<script setup lang="ts" generic="TData, TValue">
+<script setup lang="ts" generic="TData extends RowData, TValue">
 import type {
-  ColumnDef,
   ColumnFiltersState,
+  RowData,
+  RowSelectionState,
   SortingState,
-  Table as TableInstance,
-  VisibilityState,
 } from '@tanstack/vue-table';
-import {
-  FlexRender,
-  getCoreRowModel,
-  getFacetedRowModel,
-  getFacetedUniqueValues,
-  getFilteredRowModel,
-  getPaginationRowModel,
-  getSortedRowModel,
-  useVueTable,
-} from '@tanstack/vue-table';
+import { FlexRender, useTable } from '@tanstack/vue-table';
 import { computed, h, ref, watch } from 'vue';
+import {
+  type AppColumnDef,
+  type AppColumnVisibilityState,
+  type AppTable,
+  tableFeatureSet,
+} from '~/lib/table';
 import { valueUpdater } from '~/lib/utils';
 import { Checkbox } from '~/components/ui/checkbox';
 import DataTablePagination from './DataTablePagination.vue';
@@ -41,7 +37,7 @@ import type { FilterFacet } from './types';
  */
 
 interface Props {
-  columns: ColumnDef<TData, TValue>[];
+  columns: AppColumnDef<TData, TValue>[];
   data: TData[];
   /** Client-side free-text filter column id (e.g. `'license_key'`). */
   searchColumn?: string;
@@ -96,15 +92,15 @@ const emit = defineEmits<{
 
 const sorting = ref<SortingState>([]);
 const columnFilters = ref<ColumnFiltersState>([]);
-const columnVisibility = ref<VisibilityState>({});
-const rowSelection = ref<Record<string, boolean>>({});
+const columnVisibility = ref<AppColumnVisibilityState>({});
+const rowSelection = ref<RowSelectionState>({});
 
 // Synthesised selection column — prepended to props.columns when
 // `selectable` is on. Header has a tri-state (unchecked / indeterminate
 // / checked) controlled by the table's getIsAllPageRowsSelected /
 // getIsSomePageRowsSelected helpers; row cells are plain checkboxes.
 // Width is fixed so a row of bools doesn't push other columns around.
-const selectColumn: ColumnDef<TData, TValue> = {
+const selectColumn: AppColumnDef<TData, TValue> = {
   id: '__select__',
   enableSorting: false,
   enableHiding: false,
@@ -136,7 +132,7 @@ const selectColumn: ColumnDef<TData, TValue> = {
     }),
 };
 
-const effectiveColumns = computed<ColumnDef<TData, TValue>[]>(() =>
+const effectiveColumns = computed<AppColumnDef<TData, TValue>[]>(() =>
   props.selectable ? [selectColumn, ...props.columns] : props.columns,
 );
 
@@ -148,18 +144,27 @@ const effectivePageSize = computed(() =>
   props.paginationMode === 'cursor' ? Number.MAX_SAFE_INTEGER : props.initialPageSize,
 );
 
-const table = useVueTable({
+const table = useTable({
+  // v9 requires features to be registered explicitly. We pass the single
+  // app-wide set (see ~/lib/table) rather than a per-table subset so every
+  // list view keeps identical behaviour and `ColumnDef` stays one type
+  // across the app.
+  features: tableFeatureSet,
   get data() {
     return props.data ?? [];
   },
   get columns() {
-    return effectiveColumns.value;
+    // v9 types `columns` with `TValue = unknown` invariantly, while this
+    // component stays generic over `TValue` so pages keep their per-column
+    // value types. The column defs are structurally identical either way,
+    // so erase `TValue` at this boundary only.
+    return effectiveColumns.value as AppColumnDef<TData>[];
   },
   get meta() {
     return props.meta;
   },
   initialState: {
-    pagination: { pageSize: effectivePageSize.value },
+    pagination: { pageIndex: 0, pageSize: effectivePageSize.value },
   },
   state: {
     get sorting() {
@@ -184,12 +189,8 @@ const table = useVueTable({
   onColumnFiltersChange: (u) => valueUpdater(u, columnFilters),
   onColumnVisibilityChange: (u) => valueUpdater(u, columnVisibility),
   onRowSelectionChange: (u) => valueUpdater(u, rowSelection),
-  getCoreRowModel: getCoreRowModel(),
-  getFilteredRowModel: getFilteredRowModel(),
-  getSortedRowModel: getSortedRowModel(),
-  getFacetedRowModel: getFacetedRowModel(),
-  getFacetedUniqueValues: getFacetedUniqueValues(),
-  getPaginationRowModel: getPaginationRowModel(),
+  // No getXxxRowModel options in v9 — the row models are registered once
+  // in `tableFeatureSet` alongside the features that require them.
 });
 
 // Forward the resolved row originals to the parent. We watch the
@@ -233,7 +234,7 @@ defineExpose({ table });
   <div class="space-y-4">
     <DataTableToolbar
       v-if="toolbar"
-      :table="(table as unknown as TableInstance<unknown>)"
+      :table="(table as unknown as AppTable<RowData>)"
       :search-column="searchColumn"
       :search-placeholder="searchPlaceholder"
       :filter-facets="filterFacets"
@@ -325,7 +326,7 @@ defineExpose({ table });
     </div>
 
     <DataTablePagination
-      :table="(table as unknown as TableInstance<unknown>)"
+      :table="(table as unknown as AppTable<RowData>)"
       :mode="paginationMode"
       :next-cursor="nextCursor"
       :can-go-prev="canGoPrev"

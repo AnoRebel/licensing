@@ -1,8 +1,8 @@
-import type { ColumnDef } from '@tanstack/vue-table';
 import { h } from 'vue';
 import type { components } from '#open-fetch-schemas/licensing';
 import DataTableColumnHeader from '~/components/DataTable/DataTableColumnHeader.vue';
 import { formatAbsolute, formatRelative } from '~/lib/datetime';
+import type { AppColumnDef } from '~/lib/table';
 
 type Scope = components['schemas']['Scope'];
 
@@ -12,11 +12,11 @@ type Scope = components['schemas']['Scope'];
  * let it flex. Row click navigates to the scope detail where operators
  * can edit metadata or rotate its signing key.
  */
-export const scopeColumns: ColumnDef<Scope>[] = [
+export const scopeColumns: AppColumnDef<Scope>[] = [
   {
     accessorKey: 'slug',
     id: 'slug',
-    header: ({ column }) => h(DataTableColumnHeader, { column, title: 'slug' }),
+    header: ({ column }) => h(DataTableColumnHeader<Scope>, { column, title: 'slug' }),
     cell: ({ row }) =>
       h(
         'span',
@@ -29,14 +29,14 @@ export const scopeColumns: ColumnDef<Scope>[] = [
   {
     accessorKey: 'name',
     id: 'name',
-    header: ({ column }) => h(DataTableColumnHeader, { column, title: 'name' }),
+    header: ({ column }) => h(DataTableColumnHeader<Scope>, { column, title: 'name' }),
     cell: ({ row }) => h('span', { class: 'text-sm' }, row.original.name),
     filterFn: 'includesString',
   },
   {
     accessorKey: 'created_at',
     id: 'created_at',
-    header: ({ column }) => h(DataTableColumnHeader, { column, title: 'created' }),
+    header: ({ column }) => h(DataTableColumnHeader<Scope>, { column, title: 'created' }),
     cell: ({ row }) =>
       h(
         'time',
@@ -51,7 +51,7 @@ export const scopeColumns: ColumnDef<Scope>[] = [
   {
     accessorKey: 'updated_at',
     id: 'updated_at',
-    header: ({ column }) => h(DataTableColumnHeader, { column, title: 'updated' }),
+    header: ({ column }) => h(DataTableColumnHeader<Scope>, { column, title: 'updated' }),
     cell: ({ row }) =>
       h(
         'time',

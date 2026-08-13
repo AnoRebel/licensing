@@ -1,5 +1,6 @@
-<script setup lang="ts">
-import type { Column } from '@tanstack/vue-table';
+<script setup lang="ts" generic="TData extends RowData">
+import type { RowData } from '@tanstack/vue-table';
+import type { AppColumn } from '~/lib/table';
 import { computed } from 'vue';
 import { CheckIcon, PlusCircleIcon } from 'lucide-vue-next';
 import { cn } from '~/lib/utils';
@@ -9,8 +10,9 @@ import { cn } from '~/lib/utils';
  * as an array of selected option values; the column's filterFn must
  * treat that array as OR-membership.
  *
- * TData/TValue erased to `any, unknown` so callers can pass a
- * `Column<License>` (etc.) without generic-variance errors.
+ * Generic over the row type for the same reason as DataTableColumnHeader:
+ * v9's `Column` is invariant in `TData`, so no erased stand-in is
+ * assignable from a concrete column.
  */
 
 interface FacetOption {
@@ -18,14 +20,13 @@ interface FacetOption {
   value: string;
 }
 
-interface Props {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  column?: Column<any, unknown>;
+interface Props<T extends RowData> {
+  column?: AppColumn<T, unknown>;
   title?: string;
   options: FacetOption[];
 }
 
-const props = defineProps<Props>();
+const props = defineProps<Props<TData>>();
 
 const facets = computed(() => props.column?.getFacetedUniqueValues());
 const selectedValues = computed(

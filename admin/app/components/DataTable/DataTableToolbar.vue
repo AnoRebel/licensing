@@ -1,5 +1,6 @@
-<script setup lang="ts" generic="TData">
-import type { Table } from '@tanstack/vue-table';
+<script setup lang="ts" generic="TData extends RowData">
+import type { RowData } from '@tanstack/vue-table';
+import type { AppTable } from '~/lib/table';
 import { computed } from 'vue';
 import { ChevronDown, RotateCcw } from 'lucide-vue-next';
 import type { FilterFacet } from './types';
@@ -15,7 +16,7 @@ import type { FilterFacet } from './types';
  */
 
 interface Props {
-  table: Table<TData>;
+  table: AppTable<TData>;
   /** Column id to bind the free-text filter to; omit to hide the search input. */
   searchColumn?: string;
   searchPlaceholder?: string;
@@ -28,7 +29,8 @@ const props = withDefaults(defineProps<Props>(), {
   filterFacets: () => [],
 });
 
-const isFiltered = computed(() => props.table.getState().columnFilters.length > 0);
+// v9 replaced `table.getState()` with per-slice atoms.
+const isFiltered = computed(() => (props.table.atoms.columnFilters?.get() ?? []).length > 0);
 
 const searchValue = computed(() => {
   if (!props.searchColumn) return '';

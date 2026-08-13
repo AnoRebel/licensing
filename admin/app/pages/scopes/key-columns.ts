@@ -1,10 +1,10 @@
-import type { ColumnDef } from '@tanstack/vue-table';
 import { h } from 'vue';
 import type { components } from '#open-fetch-schemas/licensing';
 import DataTableColumnHeader from '~/components/DataTable/DataTableColumnHeader.vue';
 import KeyRowActions from '~/components/KeyRowActions.vue';
 import KeyStateBadge from '~/components/KeyStateBadge.vue';
 import { formatAbsolute, formatRelative } from '~/lib/datetime';
+import type { AppColumnDef } from '~/lib/table';
 
 type Key = components['schemas']['Key'];
 
@@ -16,11 +16,11 @@ type Key = components['schemas']['Key'];
  * `kid` (key id string, not UUID) is the identifier operators see in
  * token headers — it's the first column so it scans vertically.
  */
-export const keyColumns: ColumnDef<Key>[] = [
+export const keyColumns: AppColumnDef<Key>[] = [
   {
     accessorKey: 'kid',
     id: 'kid',
-    header: ({ column }) => h(DataTableColumnHeader, { column, title: 'kid' }),
+    header: ({ column }) => h(DataTableColumnHeader<Key>, { column, title: 'kid' }),
     cell: ({ row }) =>
       h('span', { class: 'font-mono text-xs', title: row.original.kid }, row.original.kid),
     enableHiding: false,
@@ -28,25 +28,25 @@ export const keyColumns: ColumnDef<Key>[] = [
   {
     accessorKey: 'alg',
     id: 'alg',
-    header: ({ column }) => h(DataTableColumnHeader, { column, title: 'alg' }),
+    header: ({ column }) => h(DataTableColumnHeader<Key>, { column, title: 'alg' }),
     cell: ({ row }) => h('span', { class: 'font-mono text-xs uppercase' }, row.original.alg),
   },
   {
     accessorKey: 'role',
     id: 'role',
-    header: ({ column }) => h(DataTableColumnHeader, { column, title: 'role' }),
+    header: ({ column }) => h(DataTableColumnHeader<Key>, { column, title: 'role' }),
     cell: ({ row }) => h('span', { class: 'font-mono text-xs' }, row.original.role),
   },
   {
     accessorKey: 'state',
     id: 'state',
-    header: ({ column }) => h(DataTableColumnHeader, { column, title: 'state' }),
+    header: ({ column }) => h(DataTableColumnHeader<Key>, { column, title: 'state' }),
     cell: ({ row }) => h(KeyStateBadge, { state: row.original.state }),
   },
   {
     accessorKey: 'not_before',
     id: 'not_before',
-    header: ({ column }) => h(DataTableColumnHeader, { column, title: 'not before' }),
+    header: ({ column }) => h(DataTableColumnHeader<Key>, { column, title: 'not before' }),
     cell: ({ row }) =>
       h(
         'time',
@@ -61,7 +61,7 @@ export const keyColumns: ColumnDef<Key>[] = [
   {
     accessorKey: 'not_after',
     id: 'not_after',
-    header: ({ column }) => h(DataTableColumnHeader, { column, title: 'not after' }),
+    header: ({ column }) => h(DataTableColumnHeader<Key>, { column, title: 'not after' }),
     cell: ({ row }) => {
       const v = row.original.not_after;
       if (!v) return h('span', { class: 'font-mono text-xs text-muted-foreground' }, '—');

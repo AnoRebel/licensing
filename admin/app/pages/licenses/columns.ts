@@ -1,9 +1,9 @@
-import type { ColumnDef } from '@tanstack/vue-table';
 import { h } from 'vue';
 import type { components } from '#open-fetch-schemas/licensing';
 import DataTableColumnHeader from '~/components/DataTable/DataTableColumnHeader.vue';
 import LicenseStatusBadge from '~/components/LicenseStatusBadge.vue';
 import { formatAbsolute, formatRelative } from '~/lib/datetime';
+import type { AppColumnDef } from '~/lib/table';
 
 type License = components['schemas']['License'];
 
@@ -19,11 +19,11 @@ type License = components['schemas']['License'];
  *   - `header` either gets a sortable DataTableColumnHeader render or a
  *     plain string for non-sortable columns
  */
-export const licenseColumns: ColumnDef<License>[] = [
+export const licenseColumns: AppColumnDef<License>[] = [
   {
     accessorKey: 'license_key',
     id: 'license_key',
-    header: ({ column }) => h(DataTableColumnHeader, { column, title: 'key' }),
+    header: ({ column }) => h(DataTableColumnHeader<License>, { column, title: 'key' }),
     cell: ({ row }) =>
       h(
         'span',
@@ -47,7 +47,7 @@ export const licenseColumns: ColumnDef<License>[] = [
   {
     accessorKey: 'status',
     id: 'status',
-    header: ({ column }) => h(DataTableColumnHeader, { column, title: 'status' }),
+    header: ({ column }) => h(DataTableColumnHeader<License>, { column, title: 'status' }),
     cell: ({ row }) => h(LicenseStatusBadge, { status: row.original.status }),
     // Faceted filter stores selected values as an array; we want OR-membership.
     filterFn: (row, columnId, filterValue: unknown) => {
@@ -59,7 +59,7 @@ export const licenseColumns: ColumnDef<License>[] = [
     id: 'seats',
     accessorFn: (row) => (row.active_usages ?? 0) / Math.max(1, row.max_usages),
     header: ({ column }) =>
-      h(DataTableColumnHeader, { column, title: 'seats', class: 'justify-end' }),
+      h(DataTableColumnHeader<License>, { column, title: 'seats', class: 'justify-end' }),
     cell: ({ row }) =>
       h(
         'span',
@@ -70,7 +70,7 @@ export const licenseColumns: ColumnDef<License>[] = [
   {
     accessorKey: 'expires_at',
     id: 'expires_at',
-    header: ({ column }) => h(DataTableColumnHeader, { column, title: 'expires' }),
+    header: ({ column }) => h(DataTableColumnHeader<License>, { column, title: 'expires' }),
     cell: ({ row }) => {
       const v = row.original.expires_at;
       if (!v) return h('span', { class: 'font-mono text-xs text-muted-foreground' }, '—');
@@ -88,7 +88,7 @@ export const licenseColumns: ColumnDef<License>[] = [
   {
     accessorKey: 'updated_at',
     id: 'updated_at',
-    header: ({ column }) => h(DataTableColumnHeader, { column, title: 'updated' }),
+    header: ({ column }) => h(DataTableColumnHeader<License>, { column, title: 'updated' }),
     cell: ({ row }) =>
       h(
         'time',
