@@ -390,12 +390,12 @@ export class KeyHierarchy {
    */
   async verifyAttestation(signingKid: string): Promise<boolean> {
     const signing = await this.#store.findByKid(signingKid);
-    if (!signing || signing.role !== 'signing') return false;
+    if (signing?.role !== 'signing') return false;
     const att = (signing.meta as { root_attestation?: { root_kid?: string; signature?: string } })
       .root_attestation;
     if (!att?.root_kid || !att?.signature) return false;
     const root = await this.#store.findByKid(att.root_kid);
-    if (!root || root.role !== 'root' || root.alg !== signing.alg) return false;
+    if (root?.role !== 'root' || root.alg !== signing.alg) return false;
 
     const backend = this.#backend(signing.alg);
     const pub = await backend.importPublic({ privatePem: null, publicPem: root.public_pem });
