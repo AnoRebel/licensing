@@ -127,6 +127,47 @@ Two consequences worth knowing before you fight the compiler:
   expected. That is why the header/facet components stay generic and why
   call sites write `h(DataTableColumnHeader<Row>, …)`.
 
+## Browser smoke checks
+
+A small [bunwright](https://github.com/jonaspm/bunwright) suite drives the
+list views in a real browser, because a green typecheck cannot tell you that
+sorting still sorts.
+
+```bash
+bun run build                                        # the suite drives .output/
+BUN_CHROME_PATH=/usr/bin/helium-browser bun run test:smoke
+```
+
+`BUN_CHROME_PATH` is optional — without it the harness looks for
+`helium-browser`, `brave`, `chromium`, then `google-chrome` in `/usr/bin`.
+No browser is ever downloaded; if none is found the run fails immediately
+with a message naming the variable to set.
+
+What it covers: every list view renders rows with no uncaught page errors,
+sorting reorders rows, the free-text filter narrows them, and hiding a
+column removes it. Assertions read rendered DOM — row text and counts —
+never component internals.
+
+The upstream API is stubbed, and the payloads are **generated from
+`openapi/licensing-admin.yaml`** (`tests/smoke/openapi-fixtures.ts`) rather
+than hand-written, so a newly-required property cannot silently go missing
+from the fixtures. Only the upstream is swapped: the run still exercises the
+real Nuxt app, the real `/api/proxy/*` layer and session cookie, and the
+real generated client. Contract drift against a real backend is covered by
+the `openapi-contract` and `interop` CI jobs.
+
+Two things worth knowing before extending the suite:
+
+- bunwright resolves each selector as a **single** expression — comma
+  separated fallbacks are invalid CSS and will throw.
+- `text:Foo` requires an **exact** `textContent.trim()` match, so it misses
+  menu items that also contain an icon. Prefer `css:` with `:first-child` /
+  `:last-child` (not `:nth-of-type`, which counts by tag — every menu child
+  here is a `div`, including separators).
+
+In CI the job is **non-blocking** while bunwright is pre-1.0; the promotion
+criteria are recorded in `.github/workflows/admin-ui.yml`.
+
 ## Linting
 
 Two tools, **no overlap** — they cover disjoint file sets:
