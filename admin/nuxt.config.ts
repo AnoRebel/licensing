@@ -101,6 +101,13 @@ export default defineNuxtConfig({
     clients: {
       licensing: {
         schema: OPENAPI_SPEC,
+        // `baseURL` MUST live here, not in `runtimeConfig.public.openFetch`:
+        // the module overwrites that key wholesale from `clients` at build
+        // time, so anything set there is silently dropped. Without it the
+        // client has no base, and during SSR `/admin/scopes` is resolved as
+        // a Vue Router path ("No match found for location") instead of an
+        // HTTP call — every list view then server-renders its error state.
+        baseURL: '/api/proxy',
       },
     },
   },
@@ -133,15 +140,10 @@ export default defineNuxtConfig({
         path: '/',
       },
     },
-    public: {
-      openFetch: {
-        licensing: {
-          // Points the generated `useLicensing()` composable at our
-          // server-side proxy. The upstream URL stays private.
-          baseURL: '/api/proxy',
-        },
-      },
-    },
+    // NOTE: `public.openFetch` is deliberately absent. nuxt-open-fetch
+    // rebuilds that key from `openFetch.clients` during module setup, so
+    // declaring it here has no effect — the client `baseURL` lives in the
+    // `openFetch.clients.licensing` block above.
   },
 
   typescript: {
