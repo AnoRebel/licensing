@@ -188,7 +188,7 @@ spec) so a leaked table cannot be reversed back to raw fingerprints.
 | ------------------ | -------------------- | --------- | --------------- | --------------------------------------------------------------------- |
 | `id`               | uuid v7              | no        | yes (PK)        |                                                                       |
 | `template_id`      | uuid v7              | yes       | composite below | FK → `license_templates(id)` ON DELETE RESTRICT. NULL = trial issued without a template (deduped against the global "no template" bucket via the partial unique index `WHERE template_id IS NULL`). |
-| `fingerprint_hash` | string (64 chars)    | no        | composite below | SHA-256 hex of `(pepper \|\| canonical_fingerprint_input)`, lowercase. |
+| `fingerprint_hash` | string (64 chars)    | no        | composite below | HMAC-SHA256 hex of the canonical fingerprint input, keyed by the operator pepper, lowercase. |
 | `issued_at`        | timestamptz          | no        | —               | Defaults to now.                                                      |
 
 Uniqueness:

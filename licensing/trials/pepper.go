@@ -10,6 +10,7 @@
 package trials
 
 import (
+	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -17,21 +18,25 @@ import (
 )
 
 // MinPepperLength is the minimum pepper length we accept. 32 chars is the
-// floor for the SHA-256 output to be unrecoverable in a leaked table.
+// floor for the digest to be unrecoverable in a leaked table.
 const MinPepperLength = 32
 
-// HashFingerprint produces the SHA-256 hex digest of (pepper || input),
-// lowercase, 64 chars — the exact shape persisted in
-// trial_issuances.fingerprint_hash.
+// HashFingerprint produces the HMAC-SHA256 hex digest of the fingerprint
+// input keyed by the pepper, lowercase, 64 chars — the exact shape
+// persisted in trial_issuances.fingerprint_hash.
+//
+// HMAC rather than the simpler SHA-256(pepper || input): that prefix-MAC
+// construction is length-extension-susceptible, so its safety depends on the
+// digest never being treated as an authenticator. HMAC makes the primitive
+// itself safe, independent of the call site.
 func HashFingerprint(pepper, fingerprintInput string) (string, error) {
 	if len(pepper) < MinPepperLength {
 		return "", fmt.Errorf("pepper must be at least %d characters (got %d)",
 			MinPepperLength, len(pepper))
 	}
-	h := sha256.New()
-	_, _ = h.Write([]byte(pepper))
-	_, _ = h.Write([]byte(fingerprintInput))
-	return hex.EncodeToString(h.Sum(nil)), nil
+	m := hmac.New(sha256.New, []byte(pepper))
+	_, _ = m.Write([]byte(fingerprintInput))
+	return hex.EncodeToString(m.Sum(nil)), nil
 }
 
 // PepperFromEnv reads the pepper from the LICENSING_TRIAL_PEPPER env var
