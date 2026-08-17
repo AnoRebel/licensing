@@ -220,6 +220,41 @@ describe('InMemoryKeyStore', () => {
 
 // -------- KeyHierarchy orchestration --------
 
+describe('KeyHierarchy symmetric-algorithm guard', () => {
+  // Go's ensureAsymmetricAlg rejects hs256 from both entry points. TS had
+  // no equivalent, so an hs256 "root" was accepted and only failed much
+  // later — and less clearly — inside extractPublicRawFromRecord at
+  // attestation-verify time. The hierarchy exists so a root can certify a
+  // public key; a symmetric key has no separable public half to attest.
+  it('refuses hs256 for a root key, matching the Go port', async () => {
+    const h = new KeyHierarchy({
+      store: new InMemoryKeyStore(),
+      backends: mkBackends(),
+      clock: mkClock(),
+    });
+    await expect(
+      h.generateRoot({ scope_id: null, alg: 'hs256', passphrase: 'p'.repeat(32) }),
+    ).rejects.toMatchObject({ code: 'UnsupportedAlgorithm' });
+  });
+
+  it('refuses hs256 for a signing key, matching the Go port', async () => {
+    const h = new KeyHierarchy({
+      store: new InMemoryKeyStore(),
+      backends: mkBackends(),
+      clock: mkClock(),
+    });
+    await expect(
+      h.issueSigning({
+        scope_id: null,
+        alg: 'hs256',
+        rootKid: 'root-whatever',
+        rootPassphrase: 'r'.repeat(32),
+        signingPassphrase: 's'.repeat(32),
+      }),
+    ).rejects.toMatchObject({ code: 'UnsupportedAlgorithm' });
+  });
+});
+
 describe('KeyHierarchy.generateRoot', () => {
   it('refuses empty passphrase', async () => {
     const h = new KeyHierarchy({

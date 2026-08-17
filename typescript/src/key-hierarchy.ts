@@ -205,11 +205,34 @@ export class KeyHierarchy {
   }
 
   /**
+   * Rejects symmetric algorithms from the hierarchy.
+   *
+   * The hierarchy exists so a root key can certify a public key a verifier
+   * independently trusts. A symmetric key has no separable public half, so
+   * there is nothing to attest — an HMAC "root" could not certify anything.
+   * HMAC secrets belong outside this layer (import them via the backend
+   * directly).
+   *
+   * Mirrors Go's `ensureAsymmetricAlg`, which guards the same two entry
+   * points. Without it the failure surfaced much later and less clearly,
+   * from `extractPublicRawFromRecord` at attestation-verify time.
+   */
+  #ensureAsymmetricAlg(alg: KeyAlg): void {
+    if (alg === 'hs256') {
+      throw errors.unsupportedAlgorithm(
+        `symmetric algorithms (${alg}) are not supported by the key hierarchy; ` +
+          'manage HMAC secrets outside this layer',
+      );
+    }
+  }
+
+  /**
    * Generate a fresh root key. The root signs attestations over signing
    * keys but never LIC1 tokens themselves. Refuses an empty passphrase.
    */
   async generateRoot(opts: GenerateRootOptions): Promise<LicenseKey> {
     if (opts.passphrase.length === 0) throw errors.missingKeyPassphrase();
+    this.#ensureAsymmetricAlg(opts.alg);
     const backend = this.#backend(opts.alg);
     const { pem, raw } = await backend.generate(opts.passphrase);
 
@@ -249,6 +272,7 @@ export class KeyHierarchy {
   async issueSigning(opts: IssueSigningOptions): Promise<LicenseKey> {
     if (opts.signingPassphrase.length === 0) throw errors.missingKeyPassphrase();
     if (opts.rootPassphrase.length === 0) throw errors.missingKeyPassphrase();
+    this.#ensureAsymmetricAlg(opts.alg);
 
     const existing = await this.#store.list({
       scope_id: opts.scope_id,
