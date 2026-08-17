@@ -132,7 +132,11 @@ func RegisterUsage(storage Storage, clock Clock, input RegisterUsageInput, opts 
 
 // RevokeUsageOptions carries optional settings for RevokeUsage.
 type RevokeUsageOptions struct {
-	Actor string
+	// ActorID/ActorKind carry the acting principal through to the audit
+	// row. Optional - see CreateLicenseOptions.
+	ActorID   *string
+	Actor     string
+	ActorKind ActorKind
 }
 
 // RevokeUsage revokes an active usage row. No-op if already revoked.
@@ -175,6 +179,8 @@ func RevokeUsage(storage Storage, clock Clock, usageID string, opts RevokeUsageO
 			LicenseID: &usage.LicenseID,
 			ScopeID:   scopeID,
 			Actor:     actor,
+			ActorKind: opts.ActorKind,
+			ActorID:   opts.ActorID,
 			Event:     "usage.revoked",
 			PriorState: map[string]any{
 				"status":      "active",

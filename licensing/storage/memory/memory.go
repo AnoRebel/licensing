@@ -1209,10 +1209,14 @@ func updateKey(s *state, clk lic.Clock, id string, patch lic.LicenseKeyPatch) (*
 
 func appendAudit(s *state, in lic.AuditLogInput) (*lic.AuditLogEntry, error) {
 	row := lic.AuditLogEntry{
-		ID:         lic.NewUUIDv7(),
-		LicenseID:  in.LicenseID,
-		ScopeID:    in.ScopeID,
-		Actor:      in.Actor,
+		ID:        lic.NewUUIDv7(),
+		LicenseID: in.LicenseID,
+		ScopeID:   in.ScopeID,
+		Actor:     in.Actor,
+		// Same resolver the SQL adapters use, so an un-updated call site
+		// classifies identically across all three backends.
+		ActorKind:  lic.ResolveActorKind(in),
+		ActorID:    in.ActorID,
 		Event:      in.Event,
 		PriorState: in.PriorState,
 		NewState:   in.NewState,

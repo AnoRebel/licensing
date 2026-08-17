@@ -1,5 +1,7 @@
 package licensing
 
+import "strings"
+
 // Entity types for the licensing domain. Mirror
 // typescript/packages/core/src/types.ts byte-for-byte in JSON
 // representation — storage adapters (memory / postgres / sqlite) rely on
@@ -34,6 +36,26 @@ type UsageStatus string
 const (
 	UsageStatusActive  UsageStatus = "active"
 	UsageStatusRevoked UsageStatus = "revoked"
+)
+
+// ActorKind discriminates the kind of principal behind an audit entry.
+// Splitting kind from identity lets a reader ask "was this automatic?"
+// without string-matching a free-form label, and "which operator?" at all.
+type ActorKind string
+
+// ActorKind values. Must stay in lockstep with the TS emitter and the
+// `audit_logs_actor_kind_enum` CHECK constraint.
+const (
+	// ActorSystem is an automatic transition with no human behind it.
+	ActorSystem ActorKind = "system"
+	// ActorAdmin is an operator acting through the admin API.
+	ActorAdmin ActorKind = "admin"
+	// ActorClient is an end-user device acting through the client API.
+	ActorClient ActorKind = "client"
+	// ActorUnknown is for rows written before the kind was recorded, and
+	// for callers that supply a label we cannot classify. Never chosen
+	// deliberately on a new write.
+	ActorUnknown ActorKind = "unknown"
 )
 
 // KeyRole tags a key's position in the hierarchy. Root keys certify signing
@@ -154,10 +176,19 @@ type LicenseKey struct {
 // AuditLogEntry is append-only. Adapters enforce immutability adapter-side
 // (not in a wrapper) and reject UPDATE/DELETE with ImmutableAuditLog.
 type AuditLogEntry struct {
-	ID         string         `json:"id"`
-	LicenseID  *string        `json:"license_id"`
-	ScopeID    *string        `json:"scope_id"`
-	Actor      string         `json:"actor"`
+	ID        string  `json:"id"`
+	LicenseID *string `json:"license_id"`
+	ScopeID   *string `json:"scope_id"`
+	// Actor is the human-readable label, retained unchanged so existing
+	// queries and UI keep working. ActorKind/ActorID are additive detail.
+	Actor string `json:"actor"`
+	// ActorKind discriminates automatic from operator-driven actions
+	// without string-matching the label.
+	ActorKind ActorKind `json:"actor_kind"`
+	// ActorID identifies WHICH principal of that kind — the operator's
+	// auth subject for admin actions. Nil when the kind has no identity
+	// (system) or the verifier supplied none.
+	ActorID    *string        `json:"actor_id"`
 	Event      string         `json:"event"`
 	PriorState map[string]any `json:"prior_state"`
 	NewState   map[string]any `json:"new_state"`
@@ -258,13 +289,48 @@ type LicenseKeyInput struct {
 // AuditLogInput is the tx-level append input for an audit row. The log is
 // append-only — adapters reject updates/deletes at the storage layer.
 type AuditLogInput struct {
-	LicenseID  *string
-	ScopeID    *string
-	Actor      string
+	LicenseID *string
+	ScopeID   *string
+	Actor     string
+	// ActorKind may be left empty; adapters then derive it from Actor via
+	// DeriveActorKind. That keeps every existing call site correct without
+	// edits, while callers that know the principal can be explicit.
+	ActorKind  ActorKind
+	ActorID    *string
 	Event      string
 	PriorState map[string]any
 	NewState   map[string]any
 	OccurredAt string
+}
+
+// ResolveActorKind returns the kind an adapter should persist: the
+// caller's explicit choice when given, otherwise one derived from the
+// label. Every adapter calls this so an un-updated call site classifies
+// identically across memory, postgres, and sqlite.
+func ResolveActorKind(in AuditLogInput) ActorKind {
+	if in.ActorKind != "" {
+		return in.ActorKind
+	}
+	return DeriveActorKind(in.Actor)
+}
+
+// DeriveActorKind classifies a legacy free-form actor label.
+//
+// Used both by the 0005 backfill and by writes that supply no explicit
+// kind, so a historical row and a new row from an un-updated call site
+// classify identically — the alternative, defaulting everything to
+// "system", would have mislabelled every admin action.
+func DeriveActorKind(actor string) ActorKind {
+	switch {
+	case actor == string(ActorSystem) || strings.HasPrefix(actor, "system:"):
+		return ActorSystem
+	case actor == string(ActorAdmin) || strings.HasPrefix(actor, "admin:"):
+		return ActorAdmin
+	case actor == string(ActorClient) || strings.HasPrefix(actor, "client:"):
+		return ActorClient
+	default:
+		return ActorUnknown
+	}
 }
 
 // ---------- Patch shapes (partial updates) ----------

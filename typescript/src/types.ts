@@ -125,11 +125,35 @@ export interface LicenseKey {
   readonly updated_at: Instant;
 }
 
+/**
+ * What kind of principal is behind an audit entry.
+ *
+ * Splitting kind from identity lets a reader ask "was this automatic?"
+ * without string-matching a free-form label, and "which operator?" at all.
+ * `unknown` covers rows written before the split, and labels we cannot
+ * classify — it is never chosen deliberately on a new write.
+ *
+ * Must stay in lockstep with Go's `ActorKind` and the
+ * `audit_logs_actor_kind_enum` CHECK constraint.
+ */
+export type ActorKind = 'system' | 'admin' | 'client' | 'unknown';
+
 export interface AuditLogEntry {
   readonly id: UUIDv7;
   readonly license_id: UUIDv7 | null;
   readonly scope_id: UUIDv7 | null;
+  /**
+   * Human-readable attribution label, retained unchanged so existing
+   * queries and UI keep working. `actor_kind`/`actor_id` are additive.
+   */
   readonly actor: string;
+  readonly actor_kind: ActorKind;
+  /**
+   * Which principal of that kind — the operator's auth subject for admin
+   * actions. Null when the kind has no identity (system) or the verifier
+   * supplied none.
+   */
+  readonly actor_id: string | null;
   readonly event: string;
   readonly prior_state: Readonly<Record<string, JSONValue>> | null;
   readonly new_state: Readonly<Record<string, JSONValue>> | null;

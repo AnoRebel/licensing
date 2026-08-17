@@ -34,7 +34,7 @@ import { errors } from './errors.ts';
 import type { Clock } from './id.ts';
 import { activate } from './lifecycle.ts';
 import type { Storage, StorageTx } from './storage/types.ts';
-import type { Fingerprint, JSONValue, License, LicenseUsage, UUIDv7 } from './types.ts';
+import type { ActorKind, Fingerprint, JSONValue, License, LicenseUsage, UUIDv7 } from './types.ts';
 
 export interface RegisterUsageInput {
   readonly license_id: UUIDv7;
@@ -124,6 +124,13 @@ export async function registerUsage(
 
 export interface RevokeUsageOptions {
   readonly actor?: string;
+  /**
+   * Optional acting principal, carried through to the audit row. When
+   * `actorKind` is omitted the adapter derives it from `actor`, so
+   * existing callers keep their previous behaviour.
+   */
+  readonly actorKind?: ActorKind;
+  readonly actorId?: string | null;
 }
 
 /** Revoke an active usage row. No-op if already revoked. */
@@ -151,6 +158,8 @@ export async function revokeUsage(
       license_id: usage.license_id,
       scope_id: license?.scope_id ?? null,
       actor: opts.actor ?? 'system',
+      ...(opts.actorKind !== undefined ? { actor_kind: opts.actorKind } : {}),
+      ...(opts.actorId !== undefined ? { actor_id: opts.actorId } : {}),
       event: 'usage.revoked',
       prior_state: { status: 'active', fingerprint: usage.fingerprint },
       new_state: { status: 'revoked', fingerprint: usage.fingerprint },

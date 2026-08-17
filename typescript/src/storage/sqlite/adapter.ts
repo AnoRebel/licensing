@@ -40,6 +40,7 @@
 
 import type { Database, SQLQueryBindings } from 'bun:sqlite';
 import type {
+  ActorKind,
   AuditLogEntry,
   AuditLogFilter,
   AuditLogInput,
@@ -77,7 +78,15 @@ import type {
   TrialIssuanceLookup,
   UUIDv7,
 } from '../../index.ts';
-import { errors, isoFromMs, newUuidV7, type SchemaDescription, systemClock } from '../../index.ts';
+import {
+  deriveActorKind,
+  errors,
+  isoFromMs,
+  newUuidV7,
+  resolveActorKind,
+  type SchemaDescription,
+  systemClock,
+} from '../../index.ts';
 
 import { computeLicenseStats } from '../stats.ts';
 import { decodeCursor, encodeCursor } from './cursor.ts';
@@ -242,6 +251,11 @@ function mapAudit(r: Record<string, unknown>): AuditLogEntry {
     license_id: (r.license_id as UUIDv7 | null) ?? null,
     scope_id: (r.scope_id as UUIDv7 | null) ?? null,
     actor: r.actor as string,
+    // Coalesced rather than asserted: SQLite cannot promote a column to
+    // NOT NULL, so a pre-backfill row reads as null and is classified from
+    // the legacy label — identical to what the migration would have set.
+    actor_kind: (r.actor_kind as ActorKind | null) ?? deriveActorKind(r.actor as string),
+    actor_id: (r.actor_id as string | null) ?? null,
     event: r.event as string,
     prior_state: parseJsonNullable(r.prior_state),
     new_state: parseJsonNullable(r.new_state),
@@ -812,8 +826,9 @@ export class SqliteStorage implements Storage {
       this.#db
         .query(
           `INSERT INTO audit_logs (
-             id, license_id, scope_id, actor, event, prior_state, new_state, occurred_at
-           ) VALUES (?,?,?,?,?,?,?,?)`,
+             id, license_id, scope_id, actor, event, prior_state, new_state, occurred_at,
+             actor_kind, actor_id
+           ) VALUES (?,?,?,?,?,?,?,?,?,?)`,
         )
         .run(
           id,
@@ -824,6 +839,8 @@ export class SqliteStorage implements Storage {
           toJsonNullable(input.prior_state ?? null),
           toJsonNullable(input.new_state ?? null),
           input.occurred_at,
+          resolveActorKind(input),
+          input.actor_id ?? null,
         );
       const row = this.#db.query('SELECT * FROM audit_logs WHERE id = ?').get(id) as Record<
         string,

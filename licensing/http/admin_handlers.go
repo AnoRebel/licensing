@@ -247,6 +247,7 @@ type createLicenseBody struct {
 }
 
 func (h *AdminHandler) handleCreateLicense(w http.ResponseWriter, r *http.Request) {
+	cActor, cKind, cID := adminActor(r, "")
 	var b createLicenseBody
 	if !decodeBody(w, r, &b) {
 		return
@@ -299,7 +300,7 @@ func (h *AdminHandler) handleCreateLicense(w http.ResponseWriter, r *http.Reques
 		if b.LicenseKey != nil {
 			fromT.LicenseKey = *b.LicenseKey
 		}
-		l, err := lic.CreateLicenseFromTemplate(h.ctx.Storage, h.ctx.Clock, fromT, lic.CreateLicenseOptions{Actor: "admin"})
+		l, err := lic.CreateLicenseFromTemplate(h.ctx.Storage, h.ctx.Clock, fromT, lic.CreateLicenseOptions{Actor: cActor, ActorKind: cKind, ActorID: cID})
 		if err != nil {
 			writeErrorFromLicensing(w, err)
 			return
@@ -307,7 +308,7 @@ func (h *AdminHandler) handleCreateLicense(w http.ResponseWriter, r *http.Reques
 		writeOKStatus(w, http.StatusCreated, l)
 		return
 	}
-	l, err := lic.CreateLicense(h.ctx.Storage, h.ctx.Clock, input, lic.CreateLicenseOptions{Actor: "admin"})
+	l, err := lic.CreateLicense(h.ctx.Storage, h.ctx.Clock, input, lic.CreateLicenseOptions{Actor: cActor, ActorKind: cKind, ActorID: cID})
 	if err != nil {
 		writeErrorFromLicensing(w, err)
 		return
@@ -369,10 +370,11 @@ func (h *AdminHandler) handleDeleteLicense(w http.ResponseWriter, _ *http.Reques
 // handleLifecycle is shared by /suspend /resume /revoke — each delegates to
 // the named lifecycle function inside a single transaction.
 func (h *AdminHandler) handleLifecycle(
-	w http.ResponseWriter, _ *http.Request, id string,
+	w http.ResponseWriter, r *http.Request, id string,
 	fn func(lic.StorageTx, *lic.License, lic.Clock, lic.TransitionOptions) (*lic.License, error),
 	action string,
 ) {
+	tActor, tKind, tID := adminActor(r, action)
 	var updated *lic.License
 	txErr := h.ctx.Storage.WithTransaction(func(tx lic.StorageTx) error {
 		l, err := tx.GetLicense(id)
@@ -382,7 +384,7 @@ func (h *AdminHandler) handleLifecycle(
 		if l == nil {
 			return lic.NewError(lic.CodeLicenseNotFound, "license not found: "+id, map[string]any{"id": id})
 		}
-		updated, err = fn(tx, l, h.ctx.Clock, lic.TransitionOptions{Actor: "admin:" + action})
+		updated, err = fn(tx, l, h.ctx.Clock, lic.TransitionOptions{Actor: tActor, ActorKind: tKind, ActorID: tID})
 		return err
 	})
 	if txErr != nil {
@@ -398,6 +400,7 @@ type renewLicenseBody struct {
 }
 
 func (h *AdminHandler) handleRenewLicense(w http.ResponseWriter, r *http.Request, id string) {
+	rActor, rKind, rID := adminActor(r, "renew")
 	var b renewLicenseBody
 	if !decodeBody(w, r, &b) {
 		return
@@ -407,7 +410,7 @@ func (h *AdminHandler) handleRenewLicense(w http.ResponseWriter, r *http.Request
 		return
 	}
 	opts := lic.RenewOptions{
-		TransitionOptions: lic.TransitionOptions{Actor: "admin:renew"},
+		TransitionOptions: lic.TransitionOptions{Actor: rActor, ActorKind: rKind, ActorID: rID},
 		ExpiresAt:         b.ExpiresAt,
 	}
 	if opt, ok := decodeOptString(b.GraceUntil); ok {
@@ -791,7 +794,8 @@ func (h *AdminHandler) handleGetUsage(w http.ResponseWriter, _ *http.Request, id
 	writeOK(w, u)
 }
 
-func (h *AdminHandler) handleRevokeUsage(w http.ResponseWriter, _ *http.Request, id string) {
+func (h *AdminHandler) handleRevokeUsage(w http.ResponseWriter, r *http.Request, id string) {
+	uActor, uKind, uID := adminActor(r, "revoke")
 	// RevokeUsage is a no-op on an already-revoked usage.
 	u, err := h.ctx.Storage.GetUsage(id)
 	if err != nil {
@@ -802,7 +806,7 @@ func (h *AdminHandler) handleRevokeUsage(w http.ResponseWriter, _ *http.Request,
 		writeError(w, 404, "NotFound", "usage not found: "+id)
 		return
 	}
-	revoked, err := lic.RevokeUsage(h.ctx.Storage, h.ctx.Clock, id, lic.RevokeUsageOptions{Actor: "admin:revoke"})
+	revoked, err := lic.RevokeUsage(h.ctx.Storage, h.ctx.Clock, id, lic.RevokeUsageOptions{Actor: uActor, ActorKind: uKind, ActorID: uID})
 	if err != nil {
 		writeErrorFromLicensing(w, err)
 		return
@@ -1112,4 +1116,27 @@ func decodeOptInt(raw json.RawMessage) (lic.OptInt, bool) {
 		return lic.OptInt{}, false
 	}
 	return lic.OptInt{Set: true, Value: &n}, true
+}
+
+// adminActor builds audit attribution from the authenticated principal.
+//
+// Before this, admin handlers hardcoded Actor: "admin", so a multi-operator
+// deployment could not answer "who revoked this licence?" — the identity
+// was already on the request (BearerAuth attaches a Principal) and was
+// simply discarded. Actor keeps its previous shape ("admin", "admin:renew")
+// so existing rows and queries are unaffected; the kind and id are additive.
+//
+// A missing principal yields no id rather than a fabricated one: an
+// unauthenticated write should be visibly unattributed, not silently
+// labelled with a placeholder operator.
+func adminActor(r *http.Request, action string) (actor string, kind lic.ActorKind, id *string) {
+	actor = "admin"
+	if action != "" {
+		actor = "admin:" + action
+	}
+	if p, ok := PrincipalFromContext(r.Context()); ok && p.Subject != "" {
+		subject := p.Subject
+		return actor, lic.ActorAdmin, &subject
+	}
+	return actor, lic.ActorAdmin, nil
 }

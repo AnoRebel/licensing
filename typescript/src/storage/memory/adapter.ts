@@ -68,6 +68,7 @@ import {
   newUuidV7,
   type Page,
   type PageRequest,
+  resolveActorKind,
   type SchemaDescription,
   type Storage,
   type StorageTx,
@@ -596,6 +597,10 @@ export class MemoryStorage implements Storage {
         license_id: input.license_id,
         scope_id: input.scope_id,
         actor: input.actor,
+        // Same resolver the SQL adapters use, so an un-updated call site
+        // classifies identically across all three backends.
+        actor_kind: resolveActorKind(input),
+        actor_id: input.actor_id ?? null,
         event: input.event,
         prior_state: input.prior_state,
         new_state: input.new_state,

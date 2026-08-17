@@ -19,8 +19,12 @@ package licensing
 
 // TransitionOptions carries optional actor attribution for audit log entries.
 type TransitionOptions struct {
+	// ActorID/ActorKind carry the acting principal through to the audit
+	// row. Optional - see CreateLicenseOptions.
+	ActorID *string
 	// Actor defaults to "system" when empty.
-	Actor string
+	Actor     string
+	ActorKind ActorKind
 }
 
 // RenewOptions extends TransitionOptions with new end timestamps.
@@ -75,7 +79,7 @@ func Activate(tx StorageTx, license *License, clock Clock, opts TransitionOption
 	if err != nil {
 		return nil, err
 	}
-	if err := writeLifecycleAudit(tx, license, updated, "license.activated", now, opts.Actor); err != nil {
+	if err := writeLifecycleAudit(tx, license, updated, "license.activated", now, opts); err != nil {
 		return nil, err
 	}
 	return updated, nil
@@ -97,7 +101,7 @@ func Suspend(tx StorageTx, license *License, clock Clock, opts TransitionOptions
 	if err != nil {
 		return nil, err
 	}
-	if err := writeLifecycleAudit(tx, license, updated, "license.suspended", now, opts.Actor); err != nil {
+	if err := writeLifecycleAudit(tx, license, updated, "license.suspended", now, opts); err != nil {
 		return nil, err
 	}
 	return updated, nil
@@ -118,7 +122,7 @@ func Resume(tx StorageTx, license *License, clock Clock, opts TransitionOptions)
 	if err != nil {
 		return nil, err
 	}
-	if err := writeLifecycleAudit(tx, license, updated, "license.resumed", now, opts.Actor); err != nil {
+	if err := writeLifecycleAudit(tx, license, updated, "license.resumed", now, opts); err != nil {
 		return nil, err
 	}
 	return updated, nil
@@ -137,7 +141,7 @@ func Revoke(tx StorageTx, license *License, clock Clock, opts TransitionOptions)
 	if err != nil {
 		return nil, err
 	}
-	if err := writeLifecycleAudit(tx, license, updated, "license.revoked", now, opts.Actor); err != nil {
+	if err := writeLifecycleAudit(tx, license, updated, "license.revoked", now, opts); err != nil {
 		return nil, err
 	}
 	return updated, nil
@@ -162,7 +166,7 @@ func Expire(tx StorageTx, license *License, clock Clock, opts TransitionOptions)
 	if err != nil {
 		return nil, err
 	}
-	if err := writeLifecycleAudit(tx, license, updated, "license.expired", now, opts.Actor); err != nil {
+	if err := writeLifecycleAudit(tx, license, updated, "license.expired", now, opts); err != nil {
 		return nil, err
 	}
 	return updated, nil
@@ -189,7 +193,7 @@ func Renew(tx StorageTx, license *License, clock Clock, opts RenewOptions) (*Lic
 	if err != nil {
 		return nil, err
 	}
-	if err := writeLifecycleAudit(tx, license, updated, "license.renewed", now, opts.Actor); err != nil {
+	if err := writeLifecycleAudit(tx, license, updated, "license.renewed", now, opts.TransitionOptions); err != nil {
 		return nil, err
 	}
 	return updated, nil
@@ -214,7 +218,7 @@ func Tick(tx StorageTx, license *License, clock Clock, opts TransitionOptions) (
 		if err != nil {
 			return nil, err
 		}
-		if err := writeLifecycleAudit(tx, license, updated, "license.grace_entered", now, opts.Actor); err != nil {
+		if err := writeLifecycleAudit(tx, license, updated, "license.grace_entered", now, opts); err != nil {
 			return nil, err
 		}
 		return updated, nil
@@ -226,7 +230,7 @@ func Tick(tx StorageTx, license *License, clock Clock, opts TransitionOptions) (
 		if err != nil {
 			return nil, err
 		}
-		if err := writeLifecycleAudit(tx, license, updated, "license.expired", now, opts.Actor); err != nil {
+		if err := writeLifecycleAudit(tx, license, updated, "license.expired", now, opts); err != nil {
 			return nil, err
 		}
 		return updated, nil
@@ -249,7 +253,8 @@ func illegalTransition(from, to LicenseStatus) error {
 		map[string]any{"from": string(from), "to": string(to)})
 }
 
-func writeLifecycleAudit(tx StorageTx, prior, next *License, event, occurredAt, actor string) error {
+func writeLifecycleAudit(tx StorageTx, prior, next *License, event, occurredAt string, opts TransitionOptions) error {
+	actor := opts.Actor
 	if actor == "" {
 		actor = "system"
 	}
@@ -257,6 +262,8 @@ func writeLifecycleAudit(tx StorageTx, prior, next *License, event, occurredAt, 
 		LicenseID:  &prior.ID,
 		ScopeID:    prior.ScopeID,
 		Actor:      actor,
+		ActorKind:  opts.ActorKind,
+		ActorID:    opts.ActorID,
 		Event:      event,
 		PriorState: lifecycleSnapshot(prior),
 		NewState:   lifecycleSnapshot(next),

@@ -27,6 +27,7 @@
  */
 
 import type {
+  ActorKind,
   AuditLogEntry,
   JSONValue,
   KeyAlg,
@@ -108,6 +109,13 @@ export interface AuditLogInput {
   readonly license_id: UUIDv7 | null;
   readonly scope_id: UUIDv7 | null;
   readonly actor: string;
+  /**
+   * Optional. When omitted the adapter derives it from `actor` via
+   * `deriveActorKind`, so existing call sites keep their behaviour and a
+   * row written by un-updated code still classifies usefully.
+   */
+  readonly actor_kind?: ActorKind;
+  readonly actor_id?: string | null;
   readonly event: string;
   readonly prior_state: Readonly<Record<string, JSONValue>> | null;
   readonly new_state: Readonly<Record<string, JSONValue>> | null;
@@ -435,4 +443,33 @@ export interface Storage {
   /** Optional shutdown hook (close pools, flush writes). Adapters that
    *  hold no resources MAY no-op. */
   close?(): Promise<void>;
+}
+
+/**
+ * Classifies a legacy free-form actor label.
+ *
+ * Used both by the 0005 backfill and by writes that supply no explicit
+ * kind, so a historical row and a new row from an un-updated call site
+ * classify identically. Defaulting everything to `system` instead would
+ * have mislabelled every admin action.
+ *
+ * Mirrors Go's `DeriveActorKind`.
+ */
+export function deriveActorKind(actor: string): ActorKind {
+  if (actor === 'system' || actor.startsWith('system:')) return 'system';
+  if (actor === 'admin' || actor.startsWith('admin:')) return 'admin';
+  if (actor === 'client' || actor.startsWith('client:')) return 'client';
+  return 'unknown';
+}
+
+/**
+ * The kind an adapter should persist: the caller's explicit choice when
+ * given, otherwise one derived from the label. Every adapter calls this so
+ * an un-updated call site classifies identically across memory, postgres,
+ * and sqlite.
+ *
+ * Mirrors Go's `ResolveActorKind`.
+ */
+export function resolveActorKind(input: AuditLogInput): ActorKind {
+  return input.actor_kind ?? deriveActorKind(input.actor);
 }

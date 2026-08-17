@@ -1042,11 +1042,13 @@ func appendAudit(q queryable, _ lic.Clock, in lic.AuditLogInput) (*lic.AuditLogE
 	id := lic.NewUUIDv7()
 	_, err := q.Exec(
 		`INSERT INTO audit_logs (
-			id, license_id, scope_id, actor, event, prior_state, new_state, occurred_at
-		) VALUES (?,?,?,?,?,?,?,?)`,
+			id, license_id, scope_id, actor, event, prior_state, new_state, occurred_at,
+			actor_kind, actor_id
+		) VALUES (?,?,?,?,?,?,?,?,?,?)`,
 		id, in.LicenseID, in.ScopeID, in.Actor, in.Event,
 		jsonTextNullable(in.PriorState), jsonTextNullable(in.NewState),
 		in.OccurredAt,
+		string(lic.ResolveActorKind(in)), in.ActorID,
 	)
 	if err != nil {
 		return nil, mapSqliteError(err)
@@ -1592,12 +1594,17 @@ func scanOneAudit(row *sql.Row) (*lic.AuditLogEntry, error) {
 	var (
 		r                       lic.AuditLogEntry
 		priorJSON, newstateJSON *string
+		// 0005 added actor_kind nullable (SQLite cannot promote a column to
+		// NOT NULL), so a pre-backfill row scans as NULL and is derived
+		// from the legacy label below.
+		actorKind *string
 	)
 	err := row.Scan(
 		&r.ID, &r.LicenseID, &r.ScopeID,
 		&r.Actor, &r.Event,
 		&priorJSON, &newstateJSON,
 		&r.OccurredAt,
+		&actorKind, &r.ActorID,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -1607,6 +1614,11 @@ func scanOneAudit(row *sql.Row) (*lic.AuditLogEntry, error) {
 	}
 	r.PriorState = jsonFromTextNullable(priorJSON)
 	r.NewState = jsonFromTextNullable(newstateJSON)
+	if actorKind != nil && *actorKind != "" {
+		r.ActorKind = lic.ActorKind(*actorKind)
+	} else {
+		r.ActorKind = lic.DeriveActorKind(r.Actor)
+	}
 	return &r, nil
 }
 
@@ -1614,18 +1626,28 @@ func scanRowAudit(rows *sql.Rows) (*lic.AuditLogEntry, error) {
 	var (
 		r                       lic.AuditLogEntry
 		priorJSON, newstateJSON *string
+		// 0005 added actor_kind nullable (SQLite cannot promote a column to
+		// NOT NULL), so a pre-backfill row scans as NULL and is derived
+		// from the legacy label below.
+		actorKind *string
 	)
 	err := rows.Scan(
 		&r.ID, &r.LicenseID, &r.ScopeID,
 		&r.Actor, &r.Event,
 		&priorJSON, &newstateJSON,
 		&r.OccurredAt,
+		&actorKind, &r.ActorID,
 	)
 	if err != nil {
 		return nil, err
 	}
 	r.PriorState = jsonFromTextNullable(priorJSON)
 	r.NewState = jsonFromTextNullable(newstateJSON)
+	if actorKind != nil && *actorKind != "" {
+		r.ActorKind = lic.ActorKind(*actorKind)
+	} else {
+		r.ActorKind = lic.DeriveActorKind(r.Actor)
+	}
 	return &r, nil
 }
 

@@ -1063,12 +1063,32 @@ components:
 
     AuditEntry:
       type: object
-      required: [id, actor, event, occurred_at]
+      required: [id, actor, actor_kind, event, occurred_at]
       properties:
         id: { type: string, format: uuid }
         license_id: { type: string, format: uuid, nullable: true }
         scope_id: { type: string, format: uuid, nullable: true }
-        actor: { type: string }
+        actor:
+          type: string
+          description: >-
+            Human-readable attribution label, e.g. `system`, `admin`,
+            `admin:renew`. Retained unchanged; `actor_kind`/`actor_id` are
+            additive detail rather than a replacement.
+        actor_kind:
+          type: string
+          enum: [system, admin, client, unknown]
+          description: >-
+            What kind of principal acted. Lets a reader distinguish
+            automatic from operator-driven changes without string-matching
+            `actor`. `unknown` covers rows written before the split.
+        actor_id:
+          type: string
+          nullable: true
+          maxLength: 256
+          description: >-
+            Which principal of that kind — the operator's auth subject for
+            admin actions. Null when the kind has no identity (system) or
+            the verifier supplied none.
         event: { type: string }
         prior_state: { type: object, nullable: true, additionalProperties: true }
         new_state: { type: object, nullable: true, additionalProperties: true }

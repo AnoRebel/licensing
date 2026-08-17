@@ -30,7 +30,12 @@ type CreateLicenseInput struct {
 // CreateLicenseOptions carries optional settings for CreateLicense.
 type CreateLicenseOptions struct {
 	// Actor attribution for the license.created audit row. Default "system".
-	Actor string
+	// ActorID/ActorKind carry the acting principal through to the audit
+	// row. Optional: when ActorKind is empty the adapter derives it from
+	// Actor, so existing callers keep their previous behaviour.
+	ActorID   *string
+	Actor     string
+	ActorKind ActorKind
 }
 
 // CreateLicense creates a license with audit trail, inside a single storage
@@ -72,7 +77,7 @@ func CreateLicense(storage Storage, clock Clock, input CreateLicenseInput, opts 
 		if err != nil {
 			return err
 		}
-		return writeCreatedAudit(tx, created, clock.NowISO(), opts.Actor)
+		return writeCreatedAudit(tx, created, clock.NowISO(), opts)
 	})
 	if err != nil {
 		return nil, err
@@ -90,7 +95,8 @@ func FindLicenseByKey(storage Storage, licenseKey string) (*License, error) {
 	return storage.GetLicenseByKey(normalized)
 }
 
-func writeCreatedAudit(tx StorageTx, license *License, occurredAt, actor string) error {
+func writeCreatedAudit(tx StorageTx, license *License, occurredAt string, opts CreateLicenseOptions) error {
+	actor := opts.Actor
 	if actor == "" {
 		actor = "system"
 	}
@@ -98,6 +104,8 @@ func writeCreatedAudit(tx StorageTx, license *License, occurredAt, actor string)
 		LicenseID: &license.ID,
 		ScopeID:   license.ScopeID,
 		Actor:     actor,
+		ActorKind: opts.ActorKind,
+		ActorID:   opts.ActorID,
 		Event:     "license.created",
 		NewState: map[string]any{
 			"status":      string(license.Status),

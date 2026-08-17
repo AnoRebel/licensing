@@ -41,11 +41,18 @@
 import { errors } from './errors.ts';
 import type { Clock } from './id.ts';
 import type { StorageTx } from './storage/types.ts';
-import type { JSONValue, License, LicenseStatus, UUIDv7 } from './types.ts';
+import type { ActorKind, JSONValue, License, LicenseStatus, UUIDv7 } from './types.ts';
 
 /** Actor attribution for audit log. Defaults to `'system'` when omitted. */
 export interface TransitionOptions {
   readonly actor?: string;
+  /**
+   * Optional acting principal, carried through to the audit row. When
+   * `actorKind` is omitted the adapter derives it from `actor`, so
+   * existing callers keep their previous behaviour.
+   */
+  readonly actorKind?: ActorKind;
+  readonly actorId?: string | null;
 }
 
 /** Options for `renew`. Caller supplies the new end timestamps explicitly —
@@ -98,7 +105,7 @@ export async function activate(
     status: 'active',
     activated_at: now,
   });
-  await writeAudit(tx, license, updated, 'license.activated', now, opts.actor);
+  await writeAudit(tx, license, updated, 'license.activated', now, opts);
   return updated;
 }
 
@@ -114,7 +121,7 @@ export async function suspend(
   if (license.status === 'suspended') return license;
   const now = clock.nowIso();
   const updated = await tx.updateLicense(license.id, { status: 'suspended' });
-  await writeAudit(tx, license, updated, 'license.suspended', now, opts.actor);
+  await writeAudit(tx, license, updated, 'license.suspended', now, opts);
   return updated;
 }
 
@@ -131,7 +138,7 @@ export async function resume(
   }
   const now = clock.nowIso();
   const updated = await tx.updateLicense(license.id, { status: 'active' });
-  await writeAudit(tx, license, updated, 'license.resumed', now, opts.actor);
+  await writeAudit(tx, license, updated, 'license.resumed', now, opts);
   return updated;
 }
 
@@ -145,7 +152,7 @@ export async function revoke(
   if (license.status === 'revoked') return license;
   const now = clock.nowIso();
   const updated = await tx.updateLicense(license.id, { status: 'revoked' });
-  await writeAudit(tx, license, updated, 'license.revoked', now, opts.actor);
+  await writeAudit(tx, license, updated, 'license.revoked', now, opts);
   return updated;
 }
 
@@ -163,7 +170,7 @@ export async function expire(
   }
   const now = clock.nowIso();
   const updated = await tx.updateLicense(license.id, { status: 'expired' });
-  await writeAudit(tx, license, updated, 'license.expired', now, opts.actor);
+  await writeAudit(tx, license, updated, 'license.expired', now, opts);
   return updated;
 }
 
@@ -190,7 +197,7 @@ export async function renew(
     license.id,
     opts.grace_until !== undefined ? { ...patch, grace_until: opts.grace_until } : patch,
   );
-  await writeAudit(tx, license, updated, 'license.renewed', now, opts.actor);
+  await writeAudit(tx, license, updated, 'license.renewed', now, opts);
   return updated;
 }
 
@@ -214,12 +221,12 @@ export async function tick(
   if (target === license.status) return license;
   if (target === 'grace') {
     const updated = await tx.updateLicense(license.id, { status: 'grace' });
-    await writeAudit(tx, license, updated, 'license.grace_entered', now, opts.actor);
+    await writeAudit(tx, license, updated, 'license.grace_entered', now, opts);
     return updated;
   }
   if (target === 'expired') {
     const updated = await tx.updateLicense(license.id, { status: 'expired' });
-    await writeAudit(tx, license, updated, 'license.expired', now, opts.actor);
+    await writeAudit(tx, license, updated, 'license.expired', now, opts);
     return updated;
   }
   return license;
@@ -241,12 +248,14 @@ async function writeAudit(
   next: License,
   event: string,
   occurredAt: string,
-  actor: string | undefined,
+  opts: TransitionOptions,
 ): Promise<void> {
   await tx.appendAudit({
     license_id: prior.id,
     scope_id: prior.scope_id,
-    actor: actor ?? 'system',
+    actor: opts.actor ?? 'system',
+    ...(opts.actorKind !== undefined ? { actor_kind: opts.actorKind } : {}),
+    ...(opts.actorId !== undefined ? { actor_id: opts.actorId } : {}),
     event,
     prior_state: stateSnapshot(prior),
     new_state: stateSnapshot(next),

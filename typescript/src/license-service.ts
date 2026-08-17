@@ -14,7 +14,7 @@
 import type { Clock } from './id.ts';
 import { assertLicenseKey, generateLicenseKey, normalizeLicenseKey } from './license-key.ts';
 import type { Storage, StorageTx } from './storage/types.ts';
-import type { JSONValue, License, LicenseStatus, UUIDv7 } from './types.ts';
+import type { ActorKind, JSONValue, License, LicenseStatus, UUIDv7 } from './types.ts';
 
 export interface CreateLicenseInput {
   readonly scope_id: UUIDv7 | null;
@@ -35,6 +35,13 @@ export interface CreateLicenseInput {
 export interface CreateLicenseOptions {
   /** Actor attribution for the `license.created` audit row. Default `'system'`. */
   readonly actor?: string;
+  /**
+   * Optional acting principal, carried through to the audit row. When
+   * `actorKind` is omitted the adapter derives it from `actor`, so
+   * existing callers keep their previous behaviour.
+   */
+  readonly actorKind?: ActorKind;
+  readonly actorId?: string | null;
 }
 
 /**
@@ -68,7 +75,7 @@ export async function createLicense(
       grace_until: input.grace_until ?? null,
       meta: input.meta ?? {},
     });
-    await writeCreatedAudit(tx, created, clock.nowIso(), opts.actor);
+    await writeCreatedAudit(tx, created, clock.nowIso(), opts);
     return created;
   });
 }
@@ -99,12 +106,14 @@ async function writeCreatedAudit(
   tx: StorageTx,
   license: License,
   occurred_at: string,
-  actor: string | undefined,
+  opts: CreateLicenseOptions,
 ): Promise<void> {
   await tx.appendAudit({
     license_id: license.id,
     scope_id: license.scope_id,
-    actor: actor ?? 'system',
+    actor: opts.actor ?? 'system',
+    ...(opts.actorKind !== undefined ? { actor_kind: opts.actorKind } : {}),
+    ...(opts.actorId !== undefined ? { actor_id: opts.actorId } : {}),
     event: 'license.created',
     prior_state: null,
     new_state: {

@@ -40,6 +40,15 @@ export interface HandlerRequest {
   /** Opaque client address the rate limiter keys off of. Adapters choose
    *  the source: direct peer address, `x-forwarded-for` leftmost, etc. */
   readonly remoteAddr: string;
+  /**
+   * Authenticated principal's subject, when the adapter ran bearer auth
+   * and it succeeded. Admin handlers record it as `actor_id` so a
+   * multi-operator deployment can answer "which operator did this?".
+   *
+   * Optional so existing adapters compile unchanged; a missing subject
+   * yields an unattributed audit row rather than a fabricated operator.
+   */
+  readonly subject?: string;
 }
 
 /** Outgoing response. Adapters serialize `body` as JSON unless `status`

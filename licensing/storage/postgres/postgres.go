@@ -1029,11 +1029,13 @@ func appendAudit(ctx context.Context, q queryable, clk lic.Clock, in lic.AuditLo
 	id := lic.NewUUIDv7()
 	row, err := queryOne[lic.AuditLogEntry](ctx, q, scanAudit,
 		`INSERT INTO audit_logs (
-			id, license_id, scope_id, actor, event, prior_state, new_state, occurred_at
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+			id, license_id, scope_id, actor, event, prior_state, new_state, occurred_at,
+			actor_kind, actor_id
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
 		id, in.LicenseID, in.ScopeID, in.Actor, in.Event,
 		jsonArgNullable(in.PriorState), jsonArgNullable(in.NewState),
 		tsVal(in.OccurredAt),
+		string(lic.ResolveActorKind(in)), in.ActorID,
 	)
 	if err != nil {
 		return nil, mapPgError(err)
@@ -1507,18 +1509,29 @@ func scanAudit(rows pgx.Rows) (*lic.AuditLogEntry, error) {
 		r                  lic.AuditLogEntry
 		priorJSON, newJSON []byte
 		occurredAt         time.Time
+		// Nullable in the scan even though 0005 sets NOT NULL: a row read
+		// through an older pool mid-migration would otherwise fail hard.
+		actorKind *string
 	)
+	// Column order follows the table; 0005 appends actor_kind then
+	// actor_id after occurred_at, so these trail deliberately.
 	err := rows.Scan(
 		&r.ID, &r.LicenseID, &r.ScopeID,
 		&r.Actor, &r.Event,
 		&priorJSON, &newJSON,
 		&occurredAt,
+		&actorKind, &r.ActorID,
 	)
 	if err != nil {
 		return nil, err
 	}
 	r.PriorState = jsonFromBytesNullable(priorJSON)
 	r.NewState = jsonFromBytesNullable(newJSON)
+	if actorKind != nil && *actorKind != "" {
+		r.ActorKind = lic.ActorKind(*actorKind)
+	} else {
+		r.ActorKind = lic.DeriveActorKind(r.Actor)
+	}
 	r.OccurredAt = isoFromTime(occurredAt)
 	return &r, nil
 }

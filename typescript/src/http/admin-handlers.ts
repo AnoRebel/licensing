@@ -27,6 +27,7 @@
  */
 
 import type {
+  ActorKind,
   AuditLogEntry,
   JSONValue,
   KeyAlg,
@@ -55,6 +56,32 @@ import {
   suspend as suspendLicense,
 } from '../index.ts';
 import type { AdminHandlerContext } from './context.ts';
+
+/**
+ * Audit attribution for an admin action.
+ *
+ * Before this, handlers hardcoded `actor: 'admin'`, so a multi-operator
+ * deployment could not answer "who revoked this licence?" — the identity
+ * was already on the request and was simply discarded. `actor` keeps its
+ * previous shape so existing rows and queries are unaffected; the kind and
+ * id are additive.
+ *
+ * A missing subject yields no id rather than a fabricated one: an
+ * unattributed write should be visibly unattributed.
+ *
+ * Mirrors Go's `adminActor`.
+ */
+function adminActor(
+  req: HandlerRequest,
+  action?: string,
+): { actor: string; actorKind: ActorKind; actorId: string | null } {
+  return {
+    actor: action === undefined ? 'admin' : `admin:${action}`,
+    actorKind: 'admin',
+    actorId: req.subject ?? null,
+  };
+}
+
 import { created, err, errFromLicensing, noContent, ok } from './envelope.ts';
 import type { Route } from './router.ts';
 import type { HandlerRequest, HandlerResponse, JsonValue } from './types.ts';
@@ -288,7 +315,7 @@ async function handleUpdateLicense(
 
 async function handleDeleteLicense(
   ctx: AdminHandlerContext,
-  _req: HandlerRequest,
+  req: HandlerRequest,
   params: Readonly<Record<string, string>>,
 ): Promise<HandlerResponse> {
   const license = await ctx.storage.getLicense(params.id ?? '');
@@ -309,7 +336,7 @@ async function handleDeleteLicense(
   // the contract.
   return guard(async () => {
     await ctx.storage.withTransaction(async (tx) => {
-      await revokeLicense(tx, license, ctx.clock, { actor: 'admin' });
+      await revokeLicense(tx, license, ctx.clock, adminActor(req));
     });
     return noContent();
   }).then((r) => (isResponse(r) ? r : r));
@@ -317,6 +344,7 @@ async function handleDeleteLicense(
 
 async function lifecycleTransition(
   ctx: AdminHandlerContext,
+  req: HandlerRequest,
   params: Readonly<Record<string, string>>,
   transition: 'suspend' | 'resume' | 'revoke',
 ): Promise<HandlerResponse> {
@@ -324,10 +352,9 @@ async function lifecycleTransition(
   if (license === null) return err(404, 'LicenseNotFound', `license not found: ${params.id}`);
   return guard(async () => {
     const updated = await ctx.storage.withTransaction(async (tx) => {
-      if (transition === 'suspend')
-        return suspendLicense(tx, license, ctx.clock, { actor: 'admin' });
-      if (transition === 'resume') return resumeLicense(tx, license, ctx.clock, { actor: 'admin' });
-      return revokeLicense(tx, license, ctx.clock, { actor: 'admin' });
+      if (transition === 'suspend') return suspendLicense(tx, license, ctx.clock, adminActor(req));
+      if (transition === 'resume') return resumeLicense(tx, license, ctx.clock, adminActor(req));
+      return revokeLicense(tx, license, ctx.clock, adminActor(req));
     });
     return ok(asJson(updated));
   }).then((r) => (isResponse(r) ? r : r));
@@ -353,7 +380,7 @@ async function handleRenewLicense(
       renewLicense(tx, license, ctx.clock, {
         expires_at: expiresAt.value,
         ...(graceUntil.value !== null ? { grace_until: graceUntil.value } : {}),
-        actor: 'admin',
+        ...adminActor(req),
       }),
     );
     return ok(asJson(updated));
@@ -397,7 +424,7 @@ async function handleCreateScope(
         name: name.value,
         meta: (meta.value ?? {}) as Readonly<Record<string, JSONValue>>,
       },
-      { actor: 'admin' },
+      adminActor(req),
     );
     return created(asJson(scope));
   }).then((r) => (isResponse(r) ? r : r));
@@ -554,7 +581,7 @@ async function handleCreateTemplate(
         entitlements: (entitlements.value ?? {}) as Readonly<Record<string, JSONValue>>,
         meta: (meta.value ?? {}) as Readonly<Record<string, JSONValue>>,
       },
-      { actor: 'admin' },
+      adminActor(req),
     );
     return created(asJson(tpl));
   }).then((r) => (isResponse(r) ? r : r));
@@ -697,14 +724,14 @@ async function handleGetUsage(
 
 async function handleRevokeUsage(
   ctx: AdminHandlerContext,
-  _req: HandlerRequest,
+  req: HandlerRequest,
   params: Readonly<Record<string, string>>,
 ): Promise<HandlerResponse> {
   const usage = await ctx.storage.getUsage(params.id ?? '');
   if (usage === null) return err(404, 'NotFound', `usage not found: ${params.id}`);
   return guard(async () => {
     if (usage.status !== 'revoked') {
-      await revokeUsageService(ctx.storage, ctx.clock, usage.id, { actor: 'admin' });
+      await revokeUsageService(ctx.storage, ctx.clock, usage.id, adminActor(req));
     }
     const fresh = await ctx.storage.getUsage(usage.id);
     return ok(asJson(fresh ?? usage));
@@ -780,7 +807,7 @@ async function handleCreateKey(
           not_after: notAfter.value,
           kid: kid.value,
         },
-        { actor: 'admin' },
+        adminActor(req),
       );
       return created(keyToWire(key) as unknown as JsonValue);
     }
@@ -810,7 +837,7 @@ async function handleCreateKey(
         not_after: notAfter.value,
         kid: kid.value,
       },
-      { actor: 'admin' },
+      adminActor(req),
     );
     return created(keyToWire(key) as unknown as JsonValue);
   }).then((r) => (isResponse(r) ? r : r));
@@ -818,7 +845,7 @@ async function handleCreateKey(
 
 async function handleRotateKey(
   ctx: AdminHandlerContext,
-  _req: HandlerRequest,
+  req: HandlerRequest,
   params: Readonly<Record<string, string>>,
 ): Promise<HandlerResponse> {
   const key = await ctx.storage.getKey(params.id ?? '');
@@ -851,7 +878,7 @@ async function handleRotateKey(
         rootPassphrase: ctx.rootPassphrase as string,
         signingPassphrase: ctx.signingPassphrase as string,
       },
-      { actor: 'admin' },
+      adminActor(req),
     );
     return ok({
       retiring: keyToWire(result.outgoing) as unknown as JsonValue,
@@ -938,14 +965,14 @@ export function adminRoutes(ctx: AdminHandlerContext, prefix = ''): readonly Rou
     getP(p('/admin/licenses/:id'), (req, params) => handleGetLicense(ctx, req, params)),
     patchP(p('/admin/licenses/:id'), (req, params) => handleUpdateLicense(ctx, req, params)),
     delP(p('/admin/licenses/:id'), (req, params) => handleDeleteLicense(ctx, req, params)),
-    postP(p('/admin/licenses/:id/suspend'), (_req, params) =>
-      lifecycleTransition(ctx, params, 'suspend'),
+    postP(p('/admin/licenses/:id/suspend'), (req, params) =>
+      lifecycleTransition(ctx, req, params, 'suspend'),
     ),
-    postP(p('/admin/licenses/:id/resume'), (_req, params) =>
-      lifecycleTransition(ctx, params, 'resume'),
+    postP(p('/admin/licenses/:id/resume'), (req, params) =>
+      lifecycleTransition(ctx, req, params, 'resume'),
     ),
-    postP(p('/admin/licenses/:id/revoke'), (_req, params) =>
-      lifecycleTransition(ctx, params, 'revoke'),
+    postP(p('/admin/licenses/:id/revoke'), (req, params) =>
+      lifecycleTransition(ctx, req, params, 'revoke'),
     ),
     postP(p('/admin/licenses/:id/renew'), (req, params) => handleRenewLicense(ctx, req, params)),
 
