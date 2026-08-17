@@ -2,9 +2,18 @@
  * Per-installation pepper for trial-issuance fingerprint hashing.
  *
  * The hash stored in `trial_issuances.fingerprint_hash` is
- * `SHA-256(pepper || canonical_fingerprint_input)`. Hashing protects raw
- * fingerprints if the table leaks; the pepper makes a stolen table useless
- * outside the deployment that wrote it.
+ * `HMAC-SHA256(key = pepper, message = canonical_fingerprint_input)`.
+ * Hashing protects raw fingerprints if the table leaks; the pepper makes a
+ * stolen table useless outside the deployment that wrote it.
+ *
+ * HMAC rather than the simpler `SHA-256(pepper || input)`: that prefix-MAC
+ * construction is length-extension-susceptible, meaning anyone holding one
+ * digest can derive `H(pepper || input || pad || extra)` without knowing the
+ * pepper. That is not exploitable while the digest is only ever a dedupe
+ * lookup key — a forged value simply matches no row — but it makes the
+ * construction's safety a property of the call site rather than of the
+ * primitive. HMAC removes that dependency, so a future caller cannot turn
+ * this into a real forgery by treating the digest as an authenticator.
  *
  * The pepper is **operator-managed** — same model as `NUXT_SESSION_PASSWORD`
  * in the admin UI. We deliberately do NOT persist it inside the licensing
@@ -23,7 +32,7 @@
  * which port issues the trial. The interop suite asserts this.
  */
 
-import { createHash } from 'node:crypto';
+import { createHmac } from 'node:crypto';
 
 /** Minimum pepper length (in chars) we accept. 16 bytes of randomness is
  *  the floor for the hash to be unrecoverable in a leaked table. */
@@ -59,7 +68,7 @@ export function hashFingerprint(pepper: string, fingerprintInput: string): strin
       `pepper must be at least ${MIN_PEPPER_LENGTH} characters (got ${pepper.length})`,
     );
   }
-  return createHash('sha256').update(pepper).update(fingerprintInput).digest('hex').toLowerCase();
+  return createHmac('sha256', pepper).update(fingerprintInput).digest('hex').toLowerCase();
 }
 
 /**

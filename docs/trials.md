@@ -103,8 +103,9 @@ each `(template_id, fingerprint_hash)` pair is independent.
 
 ## The pepper
 
-`trial_issuances.fingerprint_hash` is a SHA-256 of
-`pepper + ':' + fingerprint`. The pepper:
+`trial_issuances.fingerprint_hash` is
+`HMAC-SHA256(key = pepper, message = fingerprint)`, hex-encoded lowercase.
+The pepper:
 
 - Lives in `IssuerConfig.trialPepper` and is sourced from
   `LICENSING_TRIAL_PEPPER` (or your secret manager).

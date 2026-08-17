@@ -31,6 +31,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -242,20 +243,23 @@ func NewKeyHierarchy(opts KeyHierarchyOptions) (*KeyHierarchy, error) {
 	return kh, nil
 }
 
-// defaultMakeKid packs role + first 12 hex chars of the id so collisions
-// within the same millisecond remain unlikely.
+// defaultMakeKid packs role + the id's timestamp prefix + random suffix,
+// matching the TypeScript port's `makeKid` byte for byte.
+//
+// The leading 12 hex of a UUIDv7 ARE the 48-bit millisecond timestamp
+// (RFC 9562 §5.7), so a kid built from that prefix alone carries no
+// randomness at all and every key minted in the same millisecond collides.
+// Group 4 (`rand_b`) is appended to make the kid unique in practice; the
+// 12-bit `rand_a` in group 3 is too small to rely on under a birthday
+// attack, which is the same reasoning the TS port documents.
 func defaultMakeKid(role KeyRole, id string) string {
-	// id is a UUID-like string; strip dashes and take the leading 12 hex.
-	clean := make([]byte, 0, 32)
-	for i := 0; i < len(id); i++ {
-		if id[i] != '-' {
-			clean = append(clean, id[i])
-		}
+	parts := strings.Split(id, "-")
+	if len(parts) < 4 {
+		// Not a UUID-shaped id (custom id generator): fall back to the
+		// whole thing rather than silently truncating away its entropy.
+		return fmt.Sprintf("%s-%s", role, id)
 	}
-	if len(clean) > 12 {
-		clean = clean[:12]
-	}
-	return fmt.Sprintf("%s-%s", role, string(clean))
+	return fmt.Sprintf("%s-%s%s-%s", role, parts[0], parts[1], parts[3])
 }
 
 func (kh *KeyHierarchy) backend(alg KeyAlg) (SignatureBackend, error) {

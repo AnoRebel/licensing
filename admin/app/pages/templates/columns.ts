@@ -1,8 +1,8 @@
-import type { ColumnDef } from '@tanstack/vue-table';
 import { h } from 'vue';
 import type { components } from '#open-fetch-schemas/licensing';
 import DataTableColumnHeader from '~/components/DataTable/DataTableColumnHeader.vue';
 import { formatAbsolute, formatRelative } from '~/lib/datetime';
+import type { AppColumnDef } from '~/lib/table';
 
 type Template = components['schemas']['Template'];
 
@@ -13,11 +13,11 @@ type Template = components['schemas']['Template'];
  * iteration can add a humanize helper, but exact seconds are what the
  * API stores and what's used in ops tickets.
  */
-export const templateColumns: ColumnDef<Template>[] = [
+export const templateColumns: AppColumnDef<Template>[] = [
   {
     accessorKey: 'name',
     id: 'name',
-    header: ({ column }) => h(DataTableColumnHeader, { column, title: 'name' }),
+    header: ({ column }) => h(DataTableColumnHeader<Template>, { column, title: 'name' }),
     cell: ({ row }) => h('span', { class: 'text-sm' }, row.original.name),
     enableHiding: false,
     filterFn: 'includesString',
@@ -26,7 +26,7 @@ export const templateColumns: ColumnDef<Template>[] = [
     accessorKey: 'max_usages',
     id: 'max_usages',
     header: ({ column }) =>
-      h(DataTableColumnHeader, { column, title: 'seats', class: 'justify-end' }),
+      h(DataTableColumnHeader<Template>, { column, title: 'seats', class: 'justify-end' }),
     cell: ({ row }) =>
       h('span', { class: 'block text-right font-mono text-xs' }, String(row.original.max_usages)),
   },
@@ -34,7 +34,7 @@ export const templateColumns: ColumnDef<Template>[] = [
     accessorKey: 'trial_duration_sec',
     id: 'trial_duration_sec',
     header: ({ column }) =>
-      h(DataTableColumnHeader, { column, title: 'trial (s)', class: 'justify-end' }),
+      h(DataTableColumnHeader<Template>, { column, title: 'trial (s)', class: 'justify-end' }),
     cell: ({ row }) =>
       h(
         'span',
@@ -46,7 +46,7 @@ export const templateColumns: ColumnDef<Template>[] = [
     accessorKey: 'grace_duration_sec',
     id: 'grace_duration_sec',
     header: ({ column }) =>
-      h(DataTableColumnHeader, { column, title: 'grace (s)', class: 'justify-end' }),
+      h(DataTableColumnHeader<Template>, { column, title: 'grace (s)', class: 'justify-end' }),
     cell: ({ row }) =>
       h(
         'span',
@@ -58,7 +58,11 @@ export const templateColumns: ColumnDef<Template>[] = [
     accessorKey: 'force_online_after_sec',
     id: 'force_online_after_sec',
     header: ({ column }) =>
-      h(DataTableColumnHeader, { column, title: 'force-online (s)', class: 'justify-end' }),
+      h(DataTableColumnHeader<Template>, {
+        column,
+        title: 'force-online (s)',
+        class: 'justify-end',
+      }),
     cell: ({ row }) => {
       const v = row.original.force_online_after_sec;
       return h(
@@ -71,7 +75,7 @@ export const templateColumns: ColumnDef<Template>[] = [
   {
     accessorKey: 'updated_at',
     id: 'updated_at',
-    header: ({ column }) => h(DataTableColumnHeader, { column, title: 'updated' }),
+    header: ({ column }) => h(DataTableColumnHeader<Template>, { column, title: 'updated' }),
     cell: ({ row }) =>
       h(
         'time',

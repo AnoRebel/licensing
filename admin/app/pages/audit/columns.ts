@@ -1,9 +1,9 @@
-import type { ColumnDef } from '@tanstack/vue-table';
 import { h } from 'vue';
 import type { components } from '#open-fetch-schemas/licensing';
 import AuditRowActions from '~/components/AuditRowActions.vue';
 import DataTableColumnHeader from '~/components/DataTable/DataTableColumnHeader.vue';
 import { formatAbsolute, formatRelative, shortId } from '~/lib/datetime';
+import type { AppColumnDef } from '~/lib/table';
 
 type AuditEntry = components['schemas']['AuditEntry'];
 
@@ -20,11 +20,11 @@ type AuditEntry = components['schemas']['AuditEntry'];
  * row action opens a dialog that pretty-prints both so the operator can
  * diff them side-by-side.
  */
-export const auditColumns: ColumnDef<AuditEntry>[] = [
+export const auditColumns: AppColumnDef<AuditEntry>[] = [
   {
     accessorKey: 'occurred_at',
     id: 'occurred_at',
-    header: ({ column }) => h(DataTableColumnHeader, { column, title: 'when' }),
+    header: ({ column }) => h(DataTableColumnHeader<AuditEntry>, { column, title: 'when' }),
     cell: ({ row }) =>
       h(
         'time',
@@ -40,14 +40,14 @@ export const auditColumns: ColumnDef<AuditEntry>[] = [
   {
     accessorKey: 'event',
     id: 'event',
-    header: ({ column }) => h(DataTableColumnHeader, { column, title: 'event' }),
+    header: ({ column }) => h(DataTableColumnHeader<AuditEntry>, { column, title: 'event' }),
     cell: ({ row }) => h('span', { class: 'font-mono text-xs' }, row.original.event),
     filterFn: 'includesString',
   },
   {
     accessorKey: 'actor',
     id: 'actor',
-    header: ({ column }) => h(DataTableColumnHeader, { column, title: 'actor' }),
+    header: ({ column }) => h(DataTableColumnHeader<AuditEntry>, { column, title: 'actor' }),
     cell: ({ row }) =>
       h(
         'span',
@@ -58,7 +58,7 @@ export const auditColumns: ColumnDef<AuditEntry>[] = [
   {
     accessorKey: 'license_id',
     id: 'license_id',
-    header: ({ column }) => h(DataTableColumnHeader, { column, title: 'license' }),
+    header: ({ column }) => h(DataTableColumnHeader<AuditEntry>, { column, title: 'license' }),
     cell: ({ row }) => {
       const id = row.original.license_id;
       if (!id) return h('span', { class: 'font-mono text-xs text-muted-foreground' }, '—');
@@ -72,7 +72,7 @@ export const auditColumns: ColumnDef<AuditEntry>[] = [
   {
     accessorKey: 'scope_id',
     id: 'scope_id',
-    header: ({ column }) => h(DataTableColumnHeader, { column, title: 'scope' }),
+    header: ({ column }) => h(DataTableColumnHeader<AuditEntry>, { column, title: 'scope' }),
     cell: ({ row, table }) => {
       const id = row.original.scope_id;
       if (!id) return h('span', { class: 'font-mono text-xs text-muted-foreground' }, '—');

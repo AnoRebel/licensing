@@ -1003,6 +1003,7 @@ components:
           fingerprint,
           status,
           registered_at,
+          last_seen_at,
           client_meta,
           created_at,
           updated_at,
@@ -1016,6 +1017,13 @@ components:
         status: { $ref: '#/components/schemas/UsageStatus' }
         registered_at: { type: string, format: date-time }
         revoked_at: { type: string, format: date-time, nullable: true }
+        last_seen_at:
+          type: string
+          format: date-time
+          description: >-
+            Most recent heartbeat for this seat. Defaults to `registered_at`
+            for a usage that has never reported, so inactivity is always
+            measurable without a "never seen" special case.
         client_meta: { type: object, additionalProperties: true }
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }

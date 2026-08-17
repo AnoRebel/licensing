@@ -103,7 +103,7 @@ const fallback = computed(
         :src="owner.avatar_url"
         :alt="`${owner.name ?? fallback} avatar`"
         class="h-10 w-10 rounded-full border border-border bg-muted object-cover"
-      />
+      >
       <div
         v-else
         aria-hidden="true"

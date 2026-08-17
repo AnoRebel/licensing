@@ -1,5 +1,7 @@
-<script setup lang="ts" generic="TData">
-import type { Table } from '@tanstack/vue-table';
+<script setup lang="ts" generic="TData extends RowData">
+import type { RowData } from '@tanstack/vue-table';
+import { computed } from 'vue';
+import type { AppTable } from '~/lib/table';
 import {
   ChevronLeftIcon,
   ChevronRightIcon,
@@ -18,7 +20,7 @@ import {
  */
 
 interface Props {
-  table: Table<TData>;
+  table: AppTable<TData>;
   mode: 'client' | 'cursor';
   nextCursor?: string | null;
   canGoPrev?: boolean;
@@ -26,12 +28,17 @@ interface Props {
   rowCount: number;
 }
 
-defineProps<Props>();
+const props = defineProps<Props>();
 
 const emit = defineEmits<{
   prev: [];
   next: [];
 }>();
+
+// v9 replaced `table.getState()` with per-slice atoms.
+const pagination = computed(
+  () => props.table.atoms.pagination?.get() ?? { pageIndex: 0, pageSize: 0 },
+);
 </script>
 
 <template>
@@ -45,11 +52,11 @@ const emit = defineEmits<{
       <div class="flex items-center gap-2">
         <p class="text-sm font-medium">Rows per page</p>
         <Select
-          :model-value="`${table.getState().pagination.pageSize}`"
+          :model-value="`${pagination.pageSize}`"
           @update:model-value="(v) => table.setPageSize(Number(v))"
         >
           <SelectTrigger class="h-8 w-[72px]">
-            <SelectValue :placeholder="`${table.getState().pagination.pageSize}`" />
+            <SelectValue :placeholder="`${pagination.pageSize}`" />
           </SelectTrigger>
           <SelectContent side="top">
             <SelectItem
@@ -64,7 +71,7 @@ const emit = defineEmits<{
       </div>
 
       <div class="flex w-[120px] items-center justify-center font-mono text-xs">
-        Page {{ table.getState().pagination.pageIndex + 1 }} of {{ Math.max(1, table.getPageCount()) }}
+        Page {{ pagination.pageIndex + 1 }} of {{ Math.max(1, table.getPageCount()) }}
       </div>
 
       <div class="flex items-center gap-1">

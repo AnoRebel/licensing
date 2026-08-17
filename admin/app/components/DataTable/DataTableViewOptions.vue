@@ -1,5 +1,6 @@
-<script setup lang="ts" generic="TData">
-import type { Table } from '@tanstack/vue-table';
+<script setup lang="ts" generic="TData extends RowData">
+import type { RowData } from '@tanstack/vue-table';
+import type { AppTable } from '~/lib/table';
 import { ChevronDown } from 'lucide-vue-next';
 
 /**
@@ -8,7 +9,7 @@ import { ChevronDown } from 'lucide-vue-next';
  * building their own toolbar layout.
  */
 
-defineProps<{ table: Table<TData> }>();
+defineProps<{ table: AppTable<TData> }>();
 </script>
 
 <template>

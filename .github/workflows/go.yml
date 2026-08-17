@@ -2,7 +2,7 @@ name: go
 
 on:
   push:
-    branches: [main]
+    branches: [ main ]
   pull_request:
 
 concurrency:
@@ -17,10 +17,10 @@ jobs:
     name: gofmt + golangci-lint + test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Setup Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version: 1.26.2
           cache: true
@@ -50,7 +50,8 @@ jobs:
         # can approach the 10-minute default even without Postgres enabled.
         # No LICENSING_PG_URL here so the postgres storage tests are skipped;
         # the postgres-matrix job below covers that path.
-        run: go test -race -covermode=atomic -coverprofile=coverage.out -timeout 1800s ./...
+        run: go test -race -covermode=atomic -coverprofile=coverage.out -timeout 1800s
+          ./...
 
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v7
@@ -72,17 +73,15 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd="pg_isready -U postgres"
-          --health-interval=5s
-          --health-timeout=5s
-          --health-retries=10
+          --health-cmd="pg_isready -U postgres" --health-interval=5s
+          --health-timeout=5s --health-retries=10
     env:
       LICENSING_PG_URL: postgres://postgres:test@localhost:5432/licensing_test?sslmode=disable
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Setup Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version: 1.26.2
           cache: true
@@ -91,4 +90,5 @@ jobs:
       # Narrow target: only the two packages whose Postgres branches are
       # gated on LICENSING_PG_URL. Keeps wallclock sane under -race.
       - name: go test -race (postgres-gated packages)
-        run: go test -race -timeout 1800s ./licensing/storage/postgres/... ./licensing/http/...
+        run: go test -race -timeout 1800s ./licensing/storage/postgres/...
+          ./licensing/http/...

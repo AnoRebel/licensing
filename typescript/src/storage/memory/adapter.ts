@@ -431,6 +431,9 @@ export class MemoryStorage implements Storage {
         status: input.status,
         registered_at: input.registered_at,
         revoked_at: input.revoked_at,
+        // A brand-new seat has never heartbeat; its liveness clock starts
+        // at registration so a sweep needs no "never reported" case.
+        last_seen_at: input.registered_at,
         client_meta: input.client_meta,
         created_at: now,
         updated_at: now,

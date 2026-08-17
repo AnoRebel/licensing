@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { components } from '#open-fetch-schemas/licensing';
 import { computed, h, ref } from 'vue';
-import type { ColumnDef } from '@tanstack/vue-table';
+import type { AppColumnDef } from '~/lib/table';
 import DataTableColumnHeader from '~/components/DataTable/DataTableColumnHeader.vue';
 import { formatAbsolute, formatRelative, shortId } from '~/lib/datetime';
 
@@ -110,11 +110,11 @@ const errorMessage = computed(() =>
 // `assignee` is a synthetic accessor — DataTable's toolbar search
 // targets it via the `searchColumn` prop, so the operator can type
 // "user:42" / "license.suspended" / actor name and narrow the page.
-const columns: ColumnDef<AuditEntry>[] = [
+const columns: AppColumnDef<AuditEntry>[] = [
   {
     id: 'license_id',
     accessorKey: 'license_id',
-    header: ({ column }) => h(DataTableColumnHeader, { column, title: 'license' }),
+    header: ({ column }) => h(DataTableColumnHeader<AuditEntry>, { column, title: 'license' }),
     cell: ({ row }) => {
       const id = row.original.license_id;
       if (!id) return h('span', { class: 'font-mono text-xs text-muted-foreground' }, '—');
@@ -135,20 +135,20 @@ const columns: ColumnDef<AuditEntry>[] = [
   {
     id: 'event',
     accessorKey: 'event',
-    header: ({ column }) => h(DataTableColumnHeader, { column, title: 'event' }),
+    header: ({ column }) => h(DataTableColumnHeader<AuditEntry>, { column, title: 'event' }),
     cell: ({ row }) =>
       h('span', { class: 'font-mono text-xs text-foreground' }, row.original.event),
   },
   {
     id: 'actor',
     accessorKey: 'actor',
-    header: ({ column }) => h(DataTableColumnHeader, { column, title: 'actor' }),
+    header: ({ column }) => h(DataTableColumnHeader<AuditEntry>, { column, title: 'actor' }),
     cell: ({ row }) =>
       h('span', { class: 'font-mono text-xs text-muted-foreground' }, row.original.actor),
   },
   {
     id: 'assignee',
-    header: ({ column }) => h(DataTableColumnHeader, { column, title: 'owner' }),
+    header: ({ column }) => h(DataTableColumnHeader<AuditEntry>, { column, title: 'owner' }),
     accessorFn: (row) => {
       // Pull licensable_type/_id out of new_state when present; fall
       // back to actor + event so toolbar search still has something
@@ -175,7 +175,7 @@ const columns: ColumnDef<AuditEntry>[] = [
   {
     id: 'occurred_at',
     accessorKey: 'occurred_at',
-    header: ({ column }) => h(DataTableColumnHeader, { column, title: 'when' }),
+    header: ({ column }) => h(DataTableColumnHeader<AuditEntry>, { column, title: 'when' }),
     cell: ({ row }) =>
       h(
         'time',

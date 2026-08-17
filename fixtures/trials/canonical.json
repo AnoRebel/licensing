@@ -1,6 +1,6 @@
 {
-  "_doc": "Canonical trial-fingerprint hash vector. The hash is sha256_hex(pepper || fingerprint_input), lowercase. Both ports MUST produce this exact hash for these inputs — interop tests assert byte-equality so a TS-issued trial can be deduped against a Go-issued trial sharing the same template + raw fingerprint.",
+  "_doc": "Canonical trial-fingerprint hash vector. The hash is hmac_sha256_hex(key = pepper, message = fingerprint_input), lowercase. Both ports MUST produce this exact hash for these inputs — interop tests assert byte-equality so a TS-issued trial can be deduped against a Go-issued trial sharing the same template + raw fingerprint.",
   "pepper": "pepper-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "fingerprint_input": "fingerprint:User:u1",
-  "fingerprint_hash": "3608824937be760ec1791b32e668565882d6515c937d14b66360c0336b2e463f"
+  "fingerprint_hash": "1d1e07609d4505a7bcf75975c54536b20c4c2bef51c8947e4092da9d417914b6"
 }

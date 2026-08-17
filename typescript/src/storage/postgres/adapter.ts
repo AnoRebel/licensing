@@ -194,6 +194,11 @@ function mapUsage(r: Record<string, unknown>): LicenseUsage {
     status: r.status as LicenseUsage['status'],
     registered_at: toIso(r.registered_at as Date) as string,
     revoked_at: toIso(r.revoked_at as Date | null),
+    // Coalesced rather than asserted non-null: a row read through an older
+    // pool mid-migration has no value yet, and its liveness clock rightly
+    // starts at registration.
+    last_seen_at:
+      toIso(r.last_seen_at as Date | null) ?? (toIso(r.registered_at as Date) as string),
     client_meta: toJsonRecord(r.client_meta),
     created_at: toIso(r.created_at as Date) as string,
     updated_at: toIso(r.updated_at as Date) as string,
@@ -557,8 +562,9 @@ export class PostgresStorage implements Storage {
     try {
       const res = await this.#q.query<Record<string, unknown>>(
         `INSERT INTO license_usages (
-           id, license_id, fingerprint, status, registered_at, revoked_at, client_meta
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+           id, license_id, fingerprint, status, registered_at, revoked_at,
+           last_seen_at, client_meta
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
         [
           id,
           input.license_id,
@@ -566,6 +572,9 @@ export class PostgresStorage implements Storage {
           input.status,
           input.registered_at,
           input.revoked_at,
+          // A brand-new seat has never heartbeat; its liveness clock starts
+          // at registration so a sweep needs no "never reported" case.
+          input.registered_at,
           input.client_meta,
         ],
       );

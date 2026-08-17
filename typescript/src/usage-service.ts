@@ -215,3 +215,103 @@ async function countActiveUsages(tx: StorageTx, license_id: UUIDv7): Promise<num
     cursor = page.cursor;
   }
 }
+
+// ---------- inactivity sweep ----------
+
+/** Configures {@link sweepInactiveUsages}. */
+export interface SweepInactiveUsagesOptions {
+  /**
+   * How long a seat may go without a heartbeat before it is considered
+   * abandoned, in seconds. Required; must be positive.
+   */
+  readonly inactiveForSec: number;
+  /** Limit the sweep to a single license. Omit to sweep all. */
+  readonly licenseId?: UUIDv7;
+  /** Report what would be revoked without writing anything. */
+  readonly dryRun?: boolean;
+  /** Attributes the audit rows. Defaults to `"system"`. */
+  readonly actor?: string;
+}
+
+/** Reports what a sweep did (or would do). */
+export interface SweepInactiveUsagesResult {
+  /** Number of active usages examined. */
+  readonly scanned: number;
+  /** Usage ids past the threshold. Populated in both dry-run and live mode. */
+  readonly stale: UUIDv7[];
+  /** Usage ids actually revoked. Empty on a dry run. */
+  readonly revoked: UUIDv7[];
+}
+
+/**
+ * Revokes active seats whose last heartbeat is older than
+ * `inactiveForSec`, freeing them on a `max_usages`-constrained license.
+ *
+ * Seat reclamation is deliberately explicit rather than implied by a stale
+ * heartbeat at verification time: silently dropping a seat mid-session
+ * would surprise a user whose machine merely slept. A sweep is an operator
+ * action, auditable and dry-runnable.
+ *
+ * Each revocation goes through {@link revokeUsage}, so it emits the same
+ * `usage.revoked` audit row as an admin-initiated revoke — a sweep leaves
+ * no differently-shaped history.
+ *
+ * Mirrors Go's `SweepInactiveUsages`.
+ */
+export async function sweepInactiveUsages(
+  storage: Storage,
+  clock: Clock,
+  opts: SweepInactiveUsagesOptions,
+): Promise<SweepInactiveUsagesResult> {
+  // Programmer misuse rather than a domain condition, so a plain Error
+  // instead of a coded licensing error the caller might try to handle.
+  if (!(opts.inactiveForSec > 0)) {
+    throw new Error(
+      `licensing: sweepInactiveUsages requires a positive inactiveForSec, got ${opts.inactiveForSec}`,
+    );
+  }
+  const nowMs = Date.parse(clock.nowIso());
+  if (Number.isNaN(nowMs)) {
+    throw new Error(`licensing: clock returned an unparseable instant "${clock.nowIso()}"`);
+  }
+  const cutoffMs = nowMs - opts.inactiveForSec * 1000;
+
+  const stale: UUIDv7[] = [];
+  let scanned = 0;
+
+  // Collect first, mutate after: revoking while paging the same list would
+  // shift the cursor under us.
+  await storage.withTransaction(async (tx) => {
+    let cursor: string | null | undefined;
+    while (true) {
+      const page = await tx.listUsages(
+        {
+          ...(opts.licenseId !== undefined ? { license_id: opts.licenseId } : {}),
+          status: ['active'],
+        },
+        cursor === null || cursor === undefined ? { limit: 500 } : { limit: 500, cursor },
+      );
+      for (const row of page.items) {
+        scanned++;
+        const seenMs = Date.parse(row.last_seen_at);
+        // An unparseable timestamp is a data defect, not a reason to revoke
+        // a seat — skip rather than guess.
+        if (Number.isNaN(seenMs)) continue;
+        if (seenMs < cutoffMs) stale.push(row.id);
+      }
+      if (page.cursor === null) return;
+      cursor = page.cursor;
+    }
+  });
+
+  if (opts.dryRun === true) {
+    return { scanned, stale, revoked: [] };
+  }
+
+  const revoked: UUIDv7[] = [];
+  for (const id of stale) {
+    await revokeUsage(storage, clock, id, opts.actor === undefined ? {} : { actor: opts.actor });
+    revoked.push(id);
+  }
+  return { scanned, stale, revoked };
+}

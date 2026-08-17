@@ -19,6 +19,14 @@ type fixedClock struct{ now string }
 
 func (c fixedClock) NowISO() string { return c.now }
 
+// testClock is the single pinned clock shared by every harness in this
+// package. Storage adapters default to SystemClock when Options.Clock is
+// nil, so a harness that pins only the *service* clock ends up with two
+// clocks drifting apart — which silently ages audit fixtures out of
+// time-windowed queries (e.g. the stats 30d delta) once wall-clock moves
+// far enough past the pinned date. Always pass this to both layers.
+var testClock = fixedClock{now: "2026-06-01T00:00:00Z"}
+
 // testHarness wires up an in-memory storage + Ed25519 key hierarchy + a
 // ClientHandler, returning everything callers need to exercise endpoints.
 type testHarness struct {
@@ -33,8 +41,8 @@ type testHarness struct {
 
 func newHarness(t *testing.T) *testHarness {
 	t.Helper()
-	storage := memory.New(memory.Options{})
-	clk := fixedClock{now: "2026-06-01T00:00:00Z"}
+	clk := testClock
+	storage := memory.New(memory.Options{Clock: clk})
 
 	reg := lic.NewAlgorithmRegistry()
 	if err := reg.Register(ed.New()); err != nil {
@@ -346,6 +354,60 @@ func TestClientHandler_Heartbeat_HappyPath(t *testing.T) {
 	}
 	if _, ok := data["server_time"].(string); !ok {
 		t.Fatal("missing server_time")
+	}
+}
+
+// A heartbeat must RECORD liveness, not merely validate it. Before
+// last_seen_at existed the endpoint returned {ok:true} and forgot, leaving
+// a seat held by a decommissioned device indistinguishable from one in
+// daily use — and nothing for an inactivity sweep to measure.
+func TestClientHandler_Heartbeat_StampsLastSeen(t *testing.T) {
+	h := newHarness(t)
+	l := h.createLicense("LK-H2")
+
+	_, env := h.post("/api/licensing/v1/activate", map[string]any{
+		"license_key": l.LicenseKey, "fingerprint": "fp-seen",
+	})
+	token := env.Data.(map[string]any)["token"].(string)
+
+	page, err := h.storage.ListUsages(
+		lic.LicenseUsageFilter{LicenseID: &l.ID},
+		lic.PageRequest{Limit: 10},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Items) != 1 {
+		t.Fatalf("expected 1 usage, got %d", len(page.Items))
+	}
+	before := page.Items[0].LastSeenAt
+	if before == "" {
+		t.Fatal("a freshly registered usage must carry a last_seen_at")
+	}
+
+	// Advance the clock the HANDLER reads. fixedClock is a value type, so
+	// mutating h.clock would only touch the harness's own copy — the
+	// handler holds a separate one via ClientContext.
+	h.ctx.Clock = fixedClock{now: "2026-06-02T00:00:00.000000Z"}
+	h.handler = NewClientHandler(h.ctx, "/api/licensing/v1")
+
+	if rec, _ := h.post("/api/licensing/v1/heartbeat", map[string]any{"token": token}); rec.Code != 200 {
+		t.Fatalf("heartbeat status=%d", rec.Code)
+	}
+
+	page, err = h.storage.ListUsages(
+		lic.LicenseUsageFilter{LicenseID: &l.ID},
+		lic.PageRequest{Limit: 10},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after := page.Items[0].LastSeenAt
+	if after == before {
+		t.Fatalf("heartbeat did not advance last_seen_at (still %q)", before)
+	}
+	if after != "2026-06-02T00:00:00.000000Z" {
+		t.Fatalf("last_seen_at should be the heartbeat instant, got %q", after)
 	}
 }
 

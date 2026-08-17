@@ -207,6 +207,9 @@ function mapUsage(r: Record<string, unknown>): LicenseUsage {
     status: r.status as LicenseUsage['status'],
     registered_at: r.registered_at as string,
     revoked_at: (r.revoked_at as string | null) ?? null,
+    // 0004 added last_seen_at nullable (SQLite cannot promote a column to
+    // NOT NULL), so a pre-backfill row coalesces to registered_at.
+    last_seen_at: (r.last_seen_at as string | null) ?? (r.registered_at as string),
     client_meta: parseJson(r.client_meta),
     created_at: r.created_at as string,
     updated_at: r.updated_at as string,
@@ -599,8 +602,8 @@ export class SqliteStorage implements Storage {
         .query(
           `INSERT INTO license_usages (
              id, license_id, fingerprint, status, registered_at, revoked_at,
-             client_meta, created_at, updated_at
-           ) VALUES (?,?,?,?,?,?,?,?,?)`,
+             client_meta, created_at, updated_at, last_seen_at
+           ) VALUES (?,?,?,?,?,?,?,?,?,?)`,
         )
         .run(
           id,
@@ -612,6 +615,9 @@ export class SqliteStorage implements Storage {
           toJson(input.client_meta),
           now,
           now,
+          // A brand-new seat has never heartbeat; its liveness clock starts
+          // at registration so a sweep needs no "never reported" case.
+          input.registered_at,
         );
       const row = this.#db.query('SELECT * FROM license_usages WHERE id = ?').get(id) as Record<
         string,

@@ -1,10 +1,10 @@
-import type { ColumnDef } from '@tanstack/vue-table';
 import { h } from 'vue';
 import type { components } from '#open-fetch-schemas/licensing';
 import DataTableColumnHeader from '~/components/DataTable/DataTableColumnHeader.vue';
 import UsageRowActions from '~/components/UsageRowActions.vue';
 import UsageStatusBadge from '~/components/UsageStatusBadge.vue';
 import { formatAbsolute, formatRelative, shortId } from '~/lib/datetime';
+import type { AppColumnDef } from '~/lib/table';
 
 type Usage = components['schemas']['Usage'];
 
@@ -18,11 +18,11 @@ type Usage = components['schemas']['Usage'];
  * navigate — we want the operator to see the confirm dialog, not leave
  * the page.
  */
-export const usageColumns: ColumnDef<Usage>[] = [
+export const usageColumns: AppColumnDef<Usage>[] = [
   {
     accessorKey: 'fingerprint',
     id: 'fingerprint',
-    header: ({ column }) => h(DataTableColumnHeader, { column, title: 'fingerprint' }),
+    header: ({ column }) => h(DataTableColumnHeader<Usage>, { column, title: 'fingerprint' }),
     cell: ({ row }) =>
       h(
         'span',
@@ -35,7 +35,7 @@ export const usageColumns: ColumnDef<Usage>[] = [
   {
     accessorKey: 'license_id',
     id: 'license_id',
-    header: ({ column }) => h(DataTableColumnHeader, { column, title: 'license' }),
+    header: ({ column }) => h(DataTableColumnHeader<Usage>, { column, title: 'license' }),
     cell: ({ row }) =>
       h(
         'span',
@@ -46,7 +46,7 @@ export const usageColumns: ColumnDef<Usage>[] = [
   {
     accessorKey: 'status',
     id: 'status',
-    header: ({ column }) => h(DataTableColumnHeader, { column, title: 'status' }),
+    header: ({ column }) => h(DataTableColumnHeader<Usage>, { column, title: 'status' }),
     cell: ({ row }) => h(UsageStatusBadge, { status: row.original.status }),
     filterFn: (row, columnId, filterValue: unknown) => {
       if (!Array.isArray(filterValue) || filterValue.length === 0) return true;
@@ -56,7 +56,7 @@ export const usageColumns: ColumnDef<Usage>[] = [
   {
     accessorKey: 'registered_at',
     id: 'registered_at',
-    header: ({ column }) => h(DataTableColumnHeader, { column, title: 'registered' }),
+    header: ({ column }) => h(DataTableColumnHeader<Usage>, { column, title: 'registered' }),
     cell: ({ row }) =>
       h(
         'time',
@@ -71,7 +71,7 @@ export const usageColumns: ColumnDef<Usage>[] = [
   {
     accessorKey: 'revoked_at',
     id: 'revoked_at',
-    header: ({ column }) => h(DataTableColumnHeader, { column, title: 'revoked' }),
+    header: ({ column }) => h(DataTableColumnHeader<Usage>, { column, title: 'revoked' }),
     cell: ({ row }) => {
       const v = row.original.revoked_at;
       if (!v) return h('span', { class: 'font-mono text-xs text-muted-foreground' }, '—');

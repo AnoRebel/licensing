@@ -433,6 +433,14 @@ func (h *ClientHandler) handleHeartbeat(w http.ResponseWriter, r *http.Request) 
 		if u == nil || u.Status != lic.UsageStatusActive {
 			return lic.NewError(lic.CodeLicenseRevoked, "usage "+usageID+" is no longer active", nil)
 		}
+		// Record liveness. Without this the endpoint validates and forgets,
+		// leaving a seat held by a decommissioned device indistinguishable
+		// from one in daily use — and nothing for an inactivity sweep to
+		// measure.
+		seen := h.ctx.Clock.NowISO()
+		if _, err := tx.UpdateUsage(usageID, lic.LicenseUsagePatch{LastSeenAt: &seen}); err != nil {
+			return err
+		}
 		return nil
 	})
 	if txErr != nil {
