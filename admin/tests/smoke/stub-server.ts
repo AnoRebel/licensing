@@ -62,10 +62,29 @@ export function servedLicenseStatuses(): string[] {
 }
 
 export function startStubServer() {
+  /**
+   * Endpoint suffixes forced to 500, mutable at runtime.
+   *
+   * The dashboard composes four widgets over three endpoints, and each is
+   * supposed to fail independently. Proving that needs one endpoint broken
+   * while the others stay healthy — so failure is a property of the running
+   * stub, not a separate server the test has to stand up.
+   */
+  const failing = new Set<string>();
+
   const server = Bun.serve({
     port: 0,
     fetch(req) {
       const { pathname } = new URL(req.url);
+
+      for (const suffix of failing) {
+        if (pathname.endsWith(suffix)) {
+          return Response.json(
+            { success: false, error: { code: 'Internal', message: 'simulated upstream failure' } },
+            { status: 500 },
+          );
+        }
+      }
 
       // Any bearer is accepted: this stub makes the UI deterministic, it is
       // not a place to re-test auth (which has its own coverage upstream).
@@ -86,6 +105,10 @@ export function startStubServer() {
 
   return {
     baseUrl: `http://127.0.0.1:${server.port}/api/licensing/v1`,
+    /** Force every request whose path ends with `suffix` to 500. */
+    failEndpoint: (suffix: string) => failing.add(suffix),
+    /** Clear all forced failures. */
+    healAll: () => failing.clear(),
     stop: () => server.stop(true),
   };
 }

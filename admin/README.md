@@ -145,8 +145,20 @@ with a message naming the variable to set.
 
 What it covers: every list view renders rows with no uncaught page errors,
 sorting reorders rows, the free-text filter narrows them, and hiding a
-column removes it. Assertions read rendered DOM — row text and counts —
-never component internals.
+column removes it. On the dashboard, all four widgets render, and a single
+failing upstream endpoint degrades **only its own widget** while the others
+keep their data. Assertions read rendered DOM — row text, counts, and
+widget body text — never component internals.
+
+Widget assertions deliberately read the widget's *body*, not its heading:
+headings render from static markup whether or not the fetch succeeded, so a
+heading-only check passes even with every endpoint down.
+
+Each file runs in its own `bun test` process (`tests/smoke/run.ts`).
+bunwright's `browser` is a module-level singleton, and Bun runs test files
+concurrently in one process — so two files share one browser and the first
+`afterAll` closes it out from under the second. Symptom: each file passes
+alone, they fail together.
 
 The upstream API is stubbed, and the payloads are **generated from
 `openapi/licensing-admin.yaml`** (`tests/smoke/openapi-fixtures.ts`) rather
