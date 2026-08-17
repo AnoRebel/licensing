@@ -223,5 +223,15 @@ describe('issueToken — transparency hook', () => {
     );
     expect(dupSeen).toBe(false);
     expect(seenJtis.size).toBe(N);
-  });
+    // Explicit timeout: each issueToken decrypts the signing key with
+    // PBKDF2 at 600k iterations, so N=20 concurrent issues cost ~3.2s of
+    // pure KDF work on an unloaded machine — already most of bun's 5s
+    // default. Under full-suite parallelism it tipped over and failed as a
+    // timeout roughly one run in five, which read as a jti-collision flake
+    // but never was: the assertions above always held.
+    //
+    // Raised rather than shrinking N — the point of the test is that
+    // *concurrent* issuance yields distinct jtis, and lowering the
+    // concurrency would weaken exactly what it exists to prove.
+  }, 30_000);
 });
