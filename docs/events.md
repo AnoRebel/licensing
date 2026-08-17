@@ -129,11 +129,24 @@ page, err := storage.ListAudit(
 
 ## Adding a new event
 
-1. Add the string to this document under the appropriate section.
-2. Pick a stable name following the `<entity>.<verb>` convention.
-3. Emit it from the matching state-machine transition (Go + TS in lockstep).
-4. The interop test that round-trips the audit log across ports will pick up
-   the new event automatically once both sides emit it.
+1. Pick a stable name following the `<entity>.<verb>` convention.
+2. Add the string to this document under the appropriate section.
+3. Add it to `fixtures/events/canonical.json` — under `reserved` if it is
+   documented but not yet emitted, or `emitted` once both ports emit it.
+4. Emit it from the matching state-machine transition (Go + TS in lockstep).
+
+`TestAuditEventVocabularyParity` (in `licensing/interop/`) enforces steps
+3–4: it fails if an `emitted` name is missing from either port, if a
+`reserved` name is emitted by either, or if a port emits anything the
+fixture does not list. It deliberately does not round-trip audit rows —
+those are never exchanged between ports, so the shared *vocabulary* is the
+only thing that can actually drift.
+
+**Events currently `reserved`** — documented below, deliberately not yet
+emitted by either port: `license.refreshed`, `template.updated`,
+`template.deleted`, `trial.issued`, `trial.reset`. They are held so the
+strings are not repurposed; implementing one means adding the emitter to
+both ports and moving it to `emitted` in the same change.
 
 **Never repurpose an existing event string.** Add a new one and migrate the
 emitter; existing rows in production audit logs reference the old name.
