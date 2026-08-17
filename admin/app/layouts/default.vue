@@ -44,6 +44,7 @@ const signOut = useSignOut();
                 { to: '/keys', label: 'keys' },
                 { to: '/templates', label: 'templates' },
                 { to: '/usages', label: 'usages' },
+                { to: '/activity', label: 'activity' },
                 { to: '/audit', label: 'audit' },
               ]"
               :key="item.to"
