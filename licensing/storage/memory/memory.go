@@ -1017,9 +1017,12 @@ func createUsage(s *state, clk lic.Clock, in lic.LicenseUsageInput) (*lic.Licens
 		Status:       in.Status,
 		RegisteredAt: in.RegisteredAt,
 		RevokedAt:    in.RevokedAt,
-		ClientMeta:   orEmptyMap(in.ClientMeta),
-		CreatedAt:    now,
-		UpdatedAt:    now,
+		// A brand-new seat has never heartbeat; its liveness clock starts
+		// at registration so a sweep needs no "never reported" special case.
+		LastSeenAt: in.RegisteredAt,
+		ClientMeta: orEmptyMap(in.ClientMeta),
+		CreatedAt:  now,
+		UpdatedAt:  now,
 	}
 	s.usages[row.ID] = row
 	return &row, nil
@@ -1072,6 +1075,9 @@ func updateUsage(s *state, clk lic.Clock, id string, patch lic.LicenseUsagePatch
 	}
 	if patch.RevokedAt.Set {
 		cur.RevokedAt = patch.RevokedAt.Value
+	}
+	if patch.LastSeenAt != nil {
+		cur.LastSeenAt = *patch.LastSeenAt
 	}
 	if patch.ClientMeta.Set {
 		cur.ClientMeta = orEmptyMap(patch.ClientMeta.Value)

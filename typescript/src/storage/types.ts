@@ -154,6 +154,7 @@ export interface LicenseTemplatePatch {
 export interface LicenseUsagePatch {
   readonly status?: UsageStatus;
   readonly revoked_at?: string | null;
+  readonly last_seen_at?: string;
   readonly client_meta?: Readonly<Record<string, JSONValue>>;
 }
 

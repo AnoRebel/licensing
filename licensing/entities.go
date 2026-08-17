@@ -114,15 +114,20 @@ type LicenseTemplate struct {
 // Uniqueness is (license_id, fingerprint) — the same fingerprint can
 // register under multiple licenses.
 type LicenseUsage struct {
-	ID           string         `json:"id"`
-	LicenseID    string         `json:"license_id"`
-	Fingerprint  string         `json:"fingerprint"`
-	Status       UsageStatus    `json:"status"`
-	RegisteredAt string         `json:"registered_at"`
-	RevokedAt    *string        `json:"revoked_at"`
-	ClientMeta   map[string]any `json:"client_meta"`
-	CreatedAt    string         `json:"created_at"`
-	UpdatedAt    string         `json:"updated_at"`
+	ID           string      `json:"id"`
+	LicenseID    string      `json:"license_id"`
+	Fingerprint  string      `json:"fingerprint"`
+	Status       UsageStatus `json:"status"`
+	RegisteredAt string      `json:"registered_at"`
+	RevokedAt    *string     `json:"revoked_at"`
+	// LastSeenAt is the most recent heartbeat for this seat, defaulting to
+	// RegisteredAt for a usage that has never reported. Drives inactivity
+	// sweeps — a seat held by a decommissioned device would otherwise be
+	// indistinguishable from one in daily use.
+	LastSeenAt string         `json:"last_seen_at"`
+	ClientMeta map[string]any `json:"client_meta"`
+	CreatedAt  string         `json:"created_at"`
+	UpdatedAt  string         `json:"updated_at"`
 }
 
 // LicenseKey mirrors typescript/packages/core/src/types.ts LicenseKey.
@@ -325,6 +330,7 @@ type LicenseTemplatePatch struct {
 type LicenseUsagePatch struct {
 	Status     *UsageStatus
 	RevokedAt  OptString
+	LastSeenAt *string
 	ClientMeta OptJSON
 }
 

@@ -95,6 +95,13 @@ export interface LicenseUsage {
   readonly status: UsageStatus;
   readonly registered_at: Instant;
   readonly revoked_at: Instant | null;
+  /**
+   * Most recent heartbeat for this seat, defaulting to `registered_at` for
+   * a usage that has never reported. Drives inactivity sweeps — a seat held
+   * by a decommissioned device would otherwise be indistinguishable from
+   * one in daily use.
+   */
+  readonly last_seen_at: Instant;
   readonly client_meta: Readonly<Record<string, JSONValue>>;
   readonly created_at: Instant;
   readonly updated_at: Instant;
@@ -138,7 +145,8 @@ export interface AuditLogEntry {
 export interface TrialIssuance {
   readonly id: UUIDv7;
   readonly template_id: UUIDv7 | null;
-  /** SHA-256 hex of `pepper || canonical_fingerprint_input`, lowercase. */
+  /** HMAC-SHA256 hex of the canonical fingerprint input, keyed by the
+   *  operator pepper, lowercase. */
   readonly fingerprint_hash: string;
   readonly issued_at: Instant;
 }

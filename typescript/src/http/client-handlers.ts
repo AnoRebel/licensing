@@ -321,9 +321,14 @@ async function handleHeartbeat(
     if (usage === null || usage.status !== 'active') {
       return err(403, 'LicenseRevoked', `usage ${usageId} is no longer active`);
     }
+    // Record liveness. Without this the endpoint validates and forgets,
+    // leaving a seat held by a decommissioned device indistinguishable from
+    // one in daily use — and nothing for an inactivity sweep to measure.
+    const seen = ctx.clock.nowIso();
+    await ctx.storage.updateUsage(usageId, { last_seen_at: seen });
     return ok({
       ok: true,
-      server_time: ctx.clock.nowIso(),
+      server_time: seen,
     });
   } catch (e) {
     return errFromLicensing(e);

@@ -14,7 +14,10 @@ package licensing
 //  4. Usable-status guard: active, pending, grace are allowed. Suspended,
 //     revoked, expired are rejected with their respective error codes.
 
-import "fmt"
+import (
+	"fmt"
+	"time"
+)
 
 // RegisterUsageInput is the caller-supplied shape for registering a usage.
 type RegisterUsageInput struct {
@@ -263,4 +266,112 @@ func countActiveUsages(tx StorageTx, licenseID string) (int, error) {
 		}
 		cursor = page.Cursor
 	}
+}
+
+// ---------- inactivity sweep ----------
+
+// SweepInactiveUsagesOptions configures SweepInactiveUsages.
+type SweepInactiveUsagesOptions struct {
+	// LicenseID limits the sweep to a single license. Nil sweeps all.
+	LicenseID *string
+	// Actor attributes the audit rows. Defaults to "system".
+	Actor string
+	// InactiveFor is how long a seat may go without a heartbeat before it
+	// is considered abandoned. Required; must be positive.
+	InactiveFor time.Duration
+	// DryRun reports what would be revoked without writing anything.
+	DryRun bool
+}
+
+// SweepInactiveUsagesResult reports what a sweep did (or would do).
+type SweepInactiveUsagesResult struct {
+	// Stale lists the usage IDs past the inactivity threshold. Populated in
+	// both dry-run and live mode.
+	Stale []string
+	// Revoked lists the usage IDs actually revoked. Empty on a dry run.
+	Revoked []string
+	// Scanned is the number of active usages examined.
+	Scanned int
+}
+
+// SweepInactiveUsages revokes active seats whose last heartbeat is older
+// than opts.InactiveFor, freeing them on a max_usages-constrained license.
+//
+// Seat reclamation is deliberately explicit rather than implied by a stale
+// heartbeat at verification time: silently dropping a seat mid-session
+// would surprise a user whose machine merely slept. A sweep is an operator
+// action, auditable and dry-runnable.
+//
+// Each revocation goes through RevokeUsage, so it emits the same
+// `usage.revoked` audit row as an admin-initiated revoke — a sweep leaves
+// no differently-shaped history.
+func SweepInactiveUsages(
+	storage Storage,
+	clock Clock,
+	opts SweepInactiveUsagesOptions,
+) (*SweepInactiveUsagesResult, error) {
+	// Programmer misuse rather than a domain condition, so a plain error
+	// instead of a coded licensing error the caller might try to handle.
+	if opts.InactiveFor <= 0 {
+		return nil, fmt.Errorf("licensing: SweepInactiveUsages requires a positive InactiveFor, got %s",
+			opts.InactiveFor)
+	}
+	now, err := time.Parse(time.RFC3339Nano, clock.NowISO())
+	if err != nil {
+		return nil, fmt.Errorf("licensing: clock returned an unparseable instant %q: %w",
+			clock.NowISO(), err)
+	}
+	cutoff := now.Add(-opts.InactiveFor)
+
+	result := &SweepInactiveUsagesResult{}
+
+	// Collect first, mutate after: revoking while paging the same list
+	// would shift the cursor under us.
+	err = storage.WithTransaction(func(tx StorageTx) error {
+		cursor := ""
+		for {
+			page, err := tx.ListUsages(
+				LicenseUsageFilter{
+					LicenseID: opts.LicenseID,
+					Status:    []UsageStatus{UsageStatusActive},
+				},
+				PageRequest{Limit: 500, Cursor: cursor},
+			)
+			if err != nil {
+				return err
+			}
+			for i := range page.Items {
+				u := page.Items[i]
+				result.Scanned++
+				seen, err := time.Parse(time.RFC3339Nano, u.LastSeenAt)
+				if err != nil {
+					// An unparseable timestamp is a data defect, not a
+					// reason to revoke a seat — skip rather than guess.
+					continue
+				}
+				if seen.Before(cutoff) {
+					result.Stale = append(result.Stale, u.ID)
+				}
+			}
+			if page.Cursor == "" {
+				return nil
+			}
+			cursor = page.Cursor
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if opts.DryRun {
+		return result, nil
+	}
+
+	for _, id := range result.Stale {
+		if _, err := RevokeUsage(storage, clock, id, RevokeUsageOptions{Actor: opts.Actor}); err != nil {
+			return nil, err
+		}
+		result.Revoked = append(result.Revoked, id)
+	}
+	return result, nil
 }

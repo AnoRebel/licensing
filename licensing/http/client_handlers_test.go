@@ -357,6 +357,60 @@ func TestClientHandler_Heartbeat_HappyPath(t *testing.T) {
 	}
 }
 
+// A heartbeat must RECORD liveness, not merely validate it. Before
+// last_seen_at existed the endpoint returned {ok:true} and forgot, leaving
+// a seat held by a decommissioned device indistinguishable from one in
+// daily use — and nothing for an inactivity sweep to measure.
+func TestClientHandler_Heartbeat_StampsLastSeen(t *testing.T) {
+	h := newHarness(t)
+	l := h.createLicense("LK-H2")
+
+	_, env := h.post("/api/licensing/v1/activate", map[string]any{
+		"license_key": l.LicenseKey, "fingerprint": "fp-seen",
+	})
+	token := env.Data.(map[string]any)["token"].(string)
+
+	page, err := h.storage.ListUsages(
+		lic.LicenseUsageFilter{LicenseID: &l.ID},
+		lic.PageRequest{Limit: 10},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Items) != 1 {
+		t.Fatalf("expected 1 usage, got %d", len(page.Items))
+	}
+	before := page.Items[0].LastSeenAt
+	if before == "" {
+		t.Fatal("a freshly registered usage must carry a last_seen_at")
+	}
+
+	// Advance the clock the HANDLER reads. fixedClock is a value type, so
+	// mutating h.clock would only touch the harness's own copy — the
+	// handler holds a separate one via ClientContext.
+	h.ctx.Clock = fixedClock{now: "2026-06-02T00:00:00.000000Z"}
+	h.handler = NewClientHandler(h.ctx, "/api/licensing/v1")
+
+	if rec, _ := h.post("/api/licensing/v1/heartbeat", map[string]any{"token": token}); rec.Code != 200 {
+		t.Fatalf("heartbeat status=%d", rec.Code)
+	}
+
+	page, err = h.storage.ListUsages(
+		lic.LicenseUsageFilter{LicenseID: &l.ID},
+		lic.PageRequest{Limit: 10},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	after := page.Items[0].LastSeenAt
+	if after == before {
+		t.Fatalf("heartbeat did not advance last_seen_at (still %q)", before)
+	}
+	if after != "2026-06-02T00:00:00.000000Z" {
+		t.Fatalf("last_seen_at should be the heartbeat instant, got %q", after)
+	}
+}
+
 // ---------------- /deactivate ----------------
 
 func TestClientHandler_Deactivate_HappyPath(t *testing.T) {

@@ -880,10 +880,14 @@ func createUsage(ctx context.Context, q queryable, clk lic.Clock, in lic.License
 	id := lic.NewUUIDv7()
 	row, err := queryOne[lic.LicenseUsage](ctx, q, scanUsage,
 		`INSERT INTO license_usages (
-			id, license_id, fingerprint, status, registered_at, revoked_at, client_meta
-		) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+			id, license_id, fingerprint, status, registered_at, revoked_at,
+			last_seen_at, client_meta
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
 		id, in.LicenseID, in.Fingerprint, string(in.Status),
 		tsVal(in.RegisteredAt), tsOrNull(in.RevokedAt),
+		// A brand-new seat has never heartbeat; its liveness clock starts
+		// at registration so a sweep needs no "never reported" special case.
+		tsVal(in.RegisteredAt),
 		jsonArg(in.ClientMeta),
 	)
 	if err != nil {
@@ -918,6 +922,9 @@ func updateUsage(ctx context.Context, q queryable, id string, patch lic.LicenseU
 	}
 	if patch.RevokedAt.Set {
 		ub.set("revoked_at", tsOrNull(patch.RevokedAt.Value))
+	}
+	if patch.LastSeenAt != nil {
+		ub.set("last_seen_at", tsVal(*patch.LastSeenAt))
 	}
 	if patch.ClientMeta.Set {
 		ub.set("client_meta", jsonArg(patch.ClientMeta.Value))
@@ -1438,11 +1445,18 @@ func scanUsage(rows pgx.Rows) (*lic.LicenseUsage, error) {
 		revokedAt            *time.Time
 		clientJSON           []byte
 		createdAt, updatedAt time.Time
+		// Nullable in the scan even though the column is NOT NULL: callers
+		// reading through an older connection pool mid-migration would
+		// otherwise fail hard. Coalesced to registered_at below.
+		lastSeenAt *time.Time
 	)
+	// Column order follows the table, and 0004 appends last_seen_at after
+	// updated_at — this scan is positional against `SELECT *`, so the
+	// trailing position is deliberate, not incidental.
 	err := rows.Scan(
 		&r.ID, &r.LicenseID, &r.Fingerprint, &r.Status,
 		&registeredAt, &revokedAt, &clientJSON,
-		&createdAt, &updatedAt,
+		&createdAt, &updatedAt, &lastSeenAt,
 	)
 	if err != nil {
 		return nil, err
@@ -1452,6 +1466,11 @@ func scanUsage(rows pgx.Rows) (*lic.LicenseUsage, error) {
 	r.ClientMeta = jsonFromBytes(clientJSON)
 	r.CreatedAt = isoFromTime(createdAt)
 	r.UpdatedAt = isoFromTime(updatedAt)
+	if lastSeenAt != nil {
+		r.LastSeenAt = isoFromTime(*lastSeenAt)
+	} else {
+		r.LastSeenAt = r.RegisteredAt
+	}
 	return &r, nil
 }
 

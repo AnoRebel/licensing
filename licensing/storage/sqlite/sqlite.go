@@ -904,11 +904,14 @@ func createUsage(q queryable, clk lic.Clock, in lic.LicenseUsageInput, inTx bool
 	_, err := q.Exec(
 		`INSERT INTO license_usages (
 			id, license_id, fingerprint, status, registered_at, revoked_at,
-			client_meta, created_at, updated_at
-		) VALUES (?,?,?,?,?,?,?,?,?)`,
+			client_meta, created_at, updated_at, last_seen_at
+		) VALUES (?,?,?,?,?,?,?,?,?,?)`,
 		id, in.LicenseID, in.Fingerprint, string(in.Status),
 		in.RegisteredAt, in.RevokedAt,
 		jsonText(in.ClientMeta), now, now,
+		// A brand-new seat has never heartbeat; its liveness clock starts
+		// at registration so a sweep needs no "never reported" special case.
+		in.RegisteredAt,
 	)
 	if err != nil {
 		return nil, mapSqliteError(err)
@@ -941,6 +944,9 @@ func updateUsage(q queryable, clk lic.Clock, id string, patch lic.LicenseUsagePa
 	}
 	if patch.RevokedAt.Set {
 		ub.set("revoked_at", patch.RevokedAt.Value)
+	}
+	if patch.LastSeenAt != nil {
+		ub.set("last_seen_at", *patch.LastSeenAt)
 	}
 	if patch.ClientMeta.Set {
 		ub.set("client_meta", jsonText(patch.ClientMeta.Value))
@@ -1490,11 +1496,15 @@ func scanOneUsage(row *sql.Row) (*lic.LicenseUsage, error) {
 	var (
 		r          lic.LicenseUsage
 		clientJSON string
+		// 0004 added last_seen_at nullable (SQLite cannot promote a column
+		// to NOT NULL), so a row written before the backfill scans as NULL
+		// and is coalesced to registered_at below.
+		lastSeen sql.NullString
 	)
 	err := row.Scan(
 		&r.ID, &r.LicenseID, &r.Fingerprint, &r.Status,
 		&r.RegisteredAt, &r.RevokedAt, &clientJSON,
-		&r.CreatedAt, &r.UpdatedAt,
+		&r.CreatedAt, &r.UpdatedAt, &lastSeen,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -1503,6 +1513,11 @@ func scanOneUsage(row *sql.Row) (*lic.LicenseUsage, error) {
 		return nil, err
 	}
 	r.ClientMeta = jsonFromText(clientJSON)
+	if lastSeen.Valid && lastSeen.String != "" {
+		r.LastSeenAt = lastSeen.String
+	} else {
+		r.LastSeenAt = r.RegisteredAt
+	}
 	return &r, nil
 }
 
@@ -1510,16 +1525,25 @@ func scanRowUsage(rows *sql.Rows) (*lic.LicenseUsage, error) {
 	var (
 		r          lic.LicenseUsage
 		clientJSON string
+		// 0004 added last_seen_at nullable (SQLite cannot promote a column
+		// to NOT NULL), so a row written before the backfill scans as NULL
+		// and is coalesced to registered_at below.
+		lastSeen sql.NullString
 	)
 	err := rows.Scan(
 		&r.ID, &r.LicenseID, &r.Fingerprint, &r.Status,
 		&r.RegisteredAt, &r.RevokedAt, &clientJSON,
-		&r.CreatedAt, &r.UpdatedAt,
+		&r.CreatedAt, &r.UpdatedAt, &lastSeen,
 	)
 	if err != nil {
 		return nil, err
 	}
 	r.ClientMeta = jsonFromText(clientJSON)
+	if lastSeen.Valid && lastSeen.String != "" {
+		r.LastSeenAt = lastSeen.String
+	} else {
+		r.LastSeenAt = r.RegisteredAt
+	}
 	return &r, nil
 }
 
