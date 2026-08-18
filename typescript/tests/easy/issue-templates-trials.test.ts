@@ -15,6 +15,7 @@ import { describe, expect, it } from 'bun:test';
 import { Licensing } from '@anorebel/licensing';
 import type { LicenseTemplateInput } from '@anorebel/licensing/storage';
 import { MemoryStorage } from '@anorebel/licensing/storage/memory';
+import { hashFingerprint } from '../../src/trials/pepper.ts';
 
 const PASSPHRASE = 'test-passphrase-must-be-at-least-32-chars';
 const PEPPER = 'a'.repeat(32);
@@ -127,19 +128,24 @@ describe('Issuer.issue() — trial issuance', () => {
     expect(license.raw.meta.is_trial).toBe(true);
     // expiresAt derived from template.trial_duration_sec (14 days).
     expect(license.expiresAt).not.toBeNull();
-    // Trial-issuance row exists.
+
+    // The dedupe row must exist under the hash the issuer actually wrote.
+    // Deriving it with the same keyed hash the issuer uses is what makes
+    // this an assertion about persistence rather than about a constant:
+    // a hardcoded literal here would simply return null forever and the
+    // test would still pass.
+    const expectedHash = hashFingerprint(PEPPER, FINGERPRINT);
     const found = await db.findTrialIssuance({
       template_id: template.id,
-      fingerprint_hash: 'a8c84a39bc24b89bdb95b65f82ddb96e0d65e34dd34cd1cf3a1de87ec4d7619a', // computed below; we'll just check non-null:
+      fingerprint_hash: expectedHash,
     });
-    // The above hash is illustrative — instead, use the issuer-side helper to confirm a row exists for *some* hash.
-    if (found === null) {
-      // Fall back to listing.
-      // findTrialIssuance lookup is exact; for a smoke check, list everything.
-      // The test asserts a trial issuance exists by querying via a fresh hash:
-      // … actually, we already know recordTrialIssuance ran by the time the
-      // license came back. So instead, just assert the dedupe path works:
-    }
+    expect(found).not.toBeNull();
+    expect(found?.template_id).toBe(template.id);
+    expect(found?.fingerprint_hash).toBe(expectedHash);
+
+    // The raw fingerprint must never be persisted — only its keyed hash.
+    expect(expectedHash).not.toContain(FINGERPRINT);
+    expect(JSON.stringify(found)).not.toContain(FINGERPRINT);
   });
 
   it('rejects re-trial within the cooldown window', async () => {

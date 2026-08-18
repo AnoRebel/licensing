@@ -1,6 +1,10 @@
 package client
 
-import "testing"
+import (
+	"net/http"
+	"testing"
+	"time"
+)
 
 func TestParseRetryAfter(t *testing.T) {
 	cases := []struct {
@@ -33,8 +37,24 @@ func TestTransportOptions_DefaultClientHasTimeout(t *testing.T) {
 }
 
 func TestTransportOptions_CustomClientRespected(t *testing.T) {
-	custom := &struct{}{} // just a marker; we use identity comparison
-	_ = custom
-	// Can't easily construct a custom *http.Client and compare by identity
-	// without importing net/http in a trivial test — skip noise.
+	// The previous body constructed an unused marker value and asserted
+	// nothing, so it passed whether or not a custom client was honoured.
+	// net/http is already an ordinary dependency here, so identity
+	// comparison is straightforward.
+	custom := &http.Client{Timeout: 3 * time.Second}
+	opts := TransportOptions{Client: custom}
+	if got := opts.httpClient(); got != custom {
+		t.Fatalf("custom client not respected: got %p, want %p", got, custom)
+	}
+}
+
+func TestTransportOptions_DefaultClientWhenUnset(t *testing.T) {
+	opts := TransportOptions{}
+	first := opts.httpClient()
+	if first == nil {
+		t.Fatal("default client must not be nil")
+	}
+	if first.Timeout == 0 {
+		t.Fatal("default client must have a timeout (avoid hung goroutines)")
+	}
 }

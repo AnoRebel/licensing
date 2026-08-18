@@ -355,10 +355,18 @@ func TestVerify_UnknownKid(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------
-// Sanity — expected_token.txt matches Encode() output given known inputs.
-// For the ed25519 fixture we can't reproduce this without the ed25519
-// backend, so here we only assert the canonical headers/payloads
-// round-trip through base64url back to the expected bytes.
+// Fixture segment shape.
+//
+// This asserts only that the fixture's base64url segments decode back to
+// the committed canonical bytes. It does NOT call Encode() — the real
+// backends live in subpackages that this package cannot import without a
+// cycle. Byte-identity against the shipped encoder is covered where the
+// backends are reachable: licensing/interop (TestTokenRoundTrip_GoSign_*,
+// which re-signs via lic.Encode and byte-compares) for Go, and
+// typescript/tests/core/codec-byte-identity.test.ts for TypeScript.
+//
+// Do not restate this as an Encode() check: an earlier version of this
+// comment did, which is misleading about what fails if the encoder drifts.
 // -----------------------------------------------------------------------
 
 func TestFixtureTokenBase64urlSegments(t *testing.T) {

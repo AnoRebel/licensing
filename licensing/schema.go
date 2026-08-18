@@ -2,8 +2,9 @@ package licensing
 
 // CanonicalSchema is the single source of truth for the licensing
 // entity schema. Every Storage adapter returns this exact description
-// from its DescribeSchema() method — a conformance test asserts parity
-// against fixtures/schema/entities.md.
+// from its DescribeSchema() method. TestCanonicalSchema_MatchesEntitiesFixture
+// parses fixtures/schema/entities.md and asserts parity against this
+// function.
 //
 // When the canonical schema changes, update BOTH:
 //  1. fixtures/schema/entities.md (the canonical source)
