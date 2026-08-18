@@ -25,7 +25,28 @@ type VerifyOptions struct {
 // (kid, alg) pair never reaches a backend's Verify call.
 func Verify(token string, opts VerifyOptions) (LIC1DecodedParts, error) {
 	var zero LIC1DecodedParts
+	// Verify's contract returns LIC1-shaped parts, so it serves LIC1 tokens
+	// only; DecodeUnverified rejects any other registered format with a
+	// clear error. Callers accepting more than one format use
+	// VerifyEnvelope.
 	parts, err := DecodeUnverified(token)
+	if err != nil {
+		return zero, err
+	}
+	if _, err := VerifyEnvelope(token, opts); err != nil {
+		return zero, err
+	}
+	return parts, nil
+}
+
+// VerifyEnvelope parses and verifies a token in any registered format,
+// returning the format-agnostic envelope.
+//
+// The signing input comes from the codec that owns the token's prefix, so a
+// signature valid only under a different format's construction is rejected.
+func VerifyEnvelope(token string, opts VerifyOptions) (DecodedEnvelope, error) {
+	var zero DecodedEnvelope
+	parts, err := DecodeEnvelope(token)
 	if err != nil {
 		return zero, err
 	}
