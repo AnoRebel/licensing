@@ -523,6 +523,14 @@ export class Client {
   readonly #nowSec: () => number;
 
   constructor(config: ClientConfig) {
+    if (typeof config?.serverUrl !== 'string' || config.serverUrl.length === 0) {
+      throw new Error(
+        '`Client` is the device-side half of the SDK and talks to your issuer ' +
+          'over HTTP — it requires `serverUrl`, e.g. ' +
+          "`new Client({ serverUrl: 'https://license.example.com' })`. " +
+          'To issue licences in-process instead, use `Issuer`.',
+      );
+    }
     this.#serverUrl = stripTrailingSlash(config.serverUrl);
     this.#storage = config.storage ?? defaultClientStorage();
     this.#pathPrefix = config.pathPrefix ?? '/api/licensing/v1';

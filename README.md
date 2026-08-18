@@ -116,9 +116,32 @@ license, _ := issuer.Issue(context.Background(), easy.IssueInput{
 
 The `Issuer` writes a `license.created` audit row, picks an active
 signing key (auto-generating one if storage is empty), and returns a
-ready-to-distribute license. The corresponding `Client` (TS) /
-`easy.Client` (Go) handles activation, refresh, and offline validation
-on the device side; the framework adapters under
+ready-to-distribute license.
+
+### Two halves: `Issuer` runs on your server, `Client` runs on the device
+
+The two are not interchangeable, and they take different config:
+
+| | `Issuer` (TS) / `easy.Issuer` (Go) | `Client` (TS) / `easy.Client` (Go) |
+| --- | --- | --- |
+| Runs on | your licensing server | the end user's machine |
+| Talks to | your database, directly | your issuer, over HTTP |
+| Needs | `db` + `signing` | `serverUrl` |
+| Does | issue, revoke, rotate, find | activate, refresh, deactivate, offline validate |
+
+So a device-side client is constructed with a URL, not a database:
+
+```ts
+import { Client } from '@anorebel/licensing';
+
+const client = new Client({ serverUrl: 'https://license.example.com' });
+await client.activate(license.licenseKey, { fingerprint });
+const handle = await client.guard({ fingerprint });
+```
+
+`Client` never touches your database — that is the point. It holds a
+token locally and can validate it offline, reaching the issuer only to
+activate, refresh, or deactivate. The framework adapters under
 [`docs/framework-integrations.md`](docs/framework-integrations.md)
 plug it into your HTTP layer with a single middleware call.
 
