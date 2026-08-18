@@ -8,9 +8,87 @@ Three artefacts are released in lockstep — `@anorebel/licensing` on npm,
 `@anorebel/licensing` on jsr.io, and `github.com/AnoRebel/licensing` on
 pkg.go.dev. A single entry below describes all three.
 
-## [Unreleased]
+## [0.2.0] — 2026-08-18
 
 ### Added
+
+**License-key rotation.** New `POST /admin/licenses/{id}/rotate-key`
+(`RotateLicenseKey` in Go, `rotateLicenseKey` in TS) issues a fresh
+license key and revokes every active seat in the same transaction, so a
+partially-rotated license cannot exist. Revoked licenses are refused.
+The `license.key_rotated` audit row records the seat count but **neither
+the old nor the new key** — the log is readable by support staff, and
+the key is the secret the rotation exists to protect. `license_key`
+remains immutable through `PATCH /admin/licenses/{id}`.
+
+**Audit actor attribution.** `audit_logs` gains `actor_kind`
+(`system` | `admin` | `client` | `unknown`) and a nullable `actor_id`,
+via migration `0005` across postgres and sqlite in both ports. Both
+handlers already authenticated a principal and then discarded it,
+hardcoding `actor: "admin"`; a multi-operator deployment could not
+attribute an action to a person. The free-form `actor` label is kept
+and still required, so existing rows, queries, and the admin UI are
+unaffected.
+
+**Seat liveness and inactivity sweep.** Usage rows record last-seen
+liveness, and `sweepInactiveUsages` / `SweepInactiveUsages` reclaims
+seats that have gone quiet past a configurable window.
+
+**Template hierarchy tree.** The admin template detail view renders the
+inheritance chain as nested lists rather than a breadcrumb plus a flat
+list, so depth is announced to assistive technology instead of only
+being drawn. Standalone templates now say so explicitly.
+
+### Changed
+
+**Trial fingerprint hashing switched to HMAC.** `hashFingerprint` /
+`HashFingerprint` now compute `HMAC-SHA256(key: pepper, msg: input)`
+instead of `SHA-256(pepper || input)`. The prefix-MAC construction was
+length-extendable; HMAC is the correct primitive for a keyed digest.
+**This changes every trial fingerprint hash** — `trial_issuances` rows
+written by an earlier version will not match hashes computed by this
+one, so trial dedupe restarts from empty. Shared fixtures were
+regenerated accordingly.
+
+**Default key IDs are no longer time-only.** `defaultMakeKid` derived
+the kid from a leading timestamp slice, so keys minted in the same
+millisecond collided — 200 generated keys produced 3 distinct kids. The
+formula now mixes in the random UUIDv7 segment and matches across ports.
+
+### Fixed
+
+**`Client` rejects a config with no `serverUrl`.** Constructing the
+device-side `Client` with the `Issuer`'s shape failed inside a private
+URL helper with `undefined is not an object (evaluating 's.endsWith')`,
+naming an internal function rather than the missing field. Go's
+`easy.NewClient` already rejected an empty `ServerURL`; the ports now
+agree. The README gained an `Issuer` vs `Client` comparison — server
+versus device, database versus HTTP — because the previous wording
+never said that `Client` reaches the issuer over the network.
+
+**Symmetric algorithms are rejected in the key hierarchy.** HMAC keys
+can no longer be used where an asymmetric signing key is required.
+
+**Examples and docs.** The TypeScript example printed
+`verified.payload.fingerprint`, which is never set (the LIC1 claim is
+`usage_fingerprint`), so it always logged `undefined`. Both Go examples
+and their README documented `cd golang && go run ./examples/...`; there
+is no `golang/` directory. Found by installing the published artefacts
+into fresh projects and running the documented commands verbatim.
+
+**Admin UI.** The activity page was missing from the primary nav. The
+ad-hoc template card tested a raw prop instead of its coalesced ref, so
+it rendered the wrong branch.
+
+### Dependencies
+
+Go and TypeScript dependency trees refreshed, including the **TanStack
+Table v8 → v9** migration (admin `DataTable` moved to the
+`tableFeatures()` architecture behind a single app-wide feature set).
+TypeScript in the admin workspace is held back pending `vue-tsc`
+support.
+
+### Added (earlier in this cycle)
 
 **Templates / inheritance / trials.** `license_templates.parent_id`
 and `license_templates.trial_cooldown_sec` are now first-class on
@@ -161,5 +239,6 @@ passphrases and never accepts passphrases via argv.
   (hypothetical `LIC2`) is an anticipated future release; the dispatch
   registry leaves the path open without shipping any PASETO code today.
 
-[Unreleased]: https://github.com/AnoRebel/licensing/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/AnoRebel/licensing/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/AnoRebel/licensing/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/AnoRebel/licensing/releases/tag/v0.1.0

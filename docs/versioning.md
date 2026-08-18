@@ -83,7 +83,7 @@ Both ports move in lockstep. If only one port needs a bug fix, the other gets th
 
 ### Pre-1.0 caveat
 
-While `MAJOR == 0`, the API is **unstable**. Breaking changes may ship on a minor bump (`0.1.0 → 0.2.0`). Downstream consumers should pin to exact versions (`"@anorebel/licensing": "0.1.0"` and `github.com/AnoRebel/licensing v0.1.0`) until `1.0.0`.
+While `MAJOR == 0`, the API is **unstable**. Breaking changes may ship on a minor bump — `0.2.0` did exactly that, dropping four fields from the client heartbeat input on both ports. Downstream consumers should pin to exact versions (`"@anorebel/licensing": "0.2.0"` and `github.com/AnoRebel/licensing v0.2.0`) until `1.0.0`.
 
 ---
 
