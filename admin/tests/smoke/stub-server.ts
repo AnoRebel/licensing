@@ -80,10 +80,33 @@ export function startStubServer() {
    */
   let ownersResolve = false;
 
+  /**
+   * When set, the next matching POST is rejected with this code and a 409.
+   * Cycle rejection is server-side (a template cannot be its own ancestor),
+   * so the UI's job is only to surface the upstream message — which needs
+   * an upstream that can produce one.
+   */
+  let rejectPostWith: { code: string; message: string } | null = null;
+
   const server = Bun.serve({
     port: 0,
     fetch(req) {
       const { pathname } = new URL(req.url);
+
+      if (rejectPostWith !== null && req.method === 'POST') {
+        const body = rejectPostWith;
+        rejectPostWith = null; // one-shot, so a retry sees a healthy server
+        return Response.json({ success: false, error: body }, { status: 409 });
+      }
+
+      // Writes are acknowledged rather than persisted: these checks assert
+      // what the UI does with a response, not that the stub has a database.
+      if (req.method === 'POST' || req.method === 'PATCH' || req.method === 'DELETE') {
+        return Response.json({
+          success: true,
+          data: { id: '00000000-0000-4000-8000-000000000001' },
+        });
+      }
 
       for (const suffix of failing) {
         if (pathname.endsWith(suffix)) {
@@ -150,6 +173,10 @@ export function startStubServer() {
     failEndpoint: (suffix: string) => failing.add(suffix),
     /** Clear all forced failures. */
     healAll: () => failing.clear(),
+    /** Reject the next POST with a 409 and this error body. */
+    rejectNextPost: (code: string, message: string) => {
+      rejectPostWith = { code, message };
+    },
     /** Make `/owners/{type}/{id}` return a resolved owner. */
     resolveOwners: (on: boolean) => {
       ownersResolve = on;
