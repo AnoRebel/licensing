@@ -7,7 +7,7 @@
 // `mockTransport` with http.DefaultTransport pointed at your issuer to run
 // it for real.
 //
-// Run: cd golang && go run ./examples/client_flow.go
+// Run: go run ./examples/go/client_flow.go
 
 package main
 

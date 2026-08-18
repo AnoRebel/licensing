@@ -108,7 +108,7 @@ async function main() {
 
   console.log('Verified payload:', {
     license_id: verified.payload.license_id,
-    fingerprint: verified.payload.fingerprint,
+    usage_fingerprint: verified.payload.usage_fingerprint,
     exp: verified.payload.exp,
   });
 }

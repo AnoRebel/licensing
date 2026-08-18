@@ -24,9 +24,8 @@ Go 1.26+.
 ## Run
 
 ```bash
-cd golang
-go run ./examples/issue_and_verify.go
-go run ./examples/client_flow.go
+go run ./examples/go/issue_and_verify.go
+go run ./examples/go/client_flow.go
 ```
 
 Both are self-contained — no env vars, no HTTP server required.

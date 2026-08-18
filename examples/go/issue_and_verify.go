@@ -6,7 +6,7 @@
 // Shows the full service-layer flow without any HTTP surface. Uses
 // in-memory storage so it runs in isolation.
 //
-// Run: cd golang && go run ./examples/issue_and_verify.go
+// Run: go run ./examples/go/issue_and_verify.go
 
 package main
 

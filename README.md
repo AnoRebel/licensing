@@ -164,7 +164,7 @@ the shared `DataTable` is wired.
 - `kid → alg` is pre-registered at validator construction; any mismatch fails
   with `AlgorithmMismatch` before any backend is invoked.
 
-See `docs/security.md` (landing in task 14.3) for full details.
+See [`docs/security.md`](docs/security.md) for full details.
 
 ## Contributing
 
