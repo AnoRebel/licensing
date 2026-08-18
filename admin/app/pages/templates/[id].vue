@@ -829,11 +829,53 @@ const templateErrorMessage = computed(() =>
         <DialogHeader>
           <DialogTitle>Issue license from template</DialogTitle>
           <DialogDescription>
-            Creates a license under <span class="font-mono">{{ template.name }}</span>. The
-            template's defaults (max_usages, trial / grace windows, entitlements) copy onto the
-            new license at creation time.
+            Creates a license under <span class="font-mono">{{ template.name }}</span>. These
+            defaults copy onto the new license at creation time.
           </DialogDescription>
         </DialogHeader>
+
+        <!--
+          Show the values being accepted rather than describing them in
+          prose. Only this template's OWN fields are listed: inheritance
+          from a parent resolves server-side at issuance and the admin API
+          exposes no resolved view, so rendering an inherited number here
+          would be a guess presented as fact. The parent link is offered
+          instead when one exists.
+        -->
+        <dl class="rounded-md border border-border bg-muted/40 p-3 text-xs">
+          <div class="flex items-baseline justify-between gap-4 py-0.5">
+            <dt class="text-muted-foreground">max_usages</dt>
+            <dd class="font-mono tabular-nums">{{ template.max_usages }}</dd>
+          </div>
+          <div class="flex items-baseline justify-between gap-4 py-0.5">
+            <dt class="text-muted-foreground">trial_duration_sec</dt>
+            <dd class="font-mono tabular-nums">{{ template.trial_duration_sec }}</dd>
+          </div>
+          <div class="flex items-baseline justify-between gap-4 py-0.5">
+            <dt class="text-muted-foreground">grace_duration_sec</dt>
+            <dd class="font-mono tabular-nums">{{ template.grace_duration_sec }}</dd>
+          </div>
+          <div class="flex items-baseline justify-between gap-4 py-0.5">
+            <dt class="text-muted-foreground">force_online_after_sec</dt>
+            <dd class="font-mono tabular-nums">
+              {{ template.force_online_after_sec ?? '—' }}
+            </dd>
+          </div>
+          <div class="flex items-baseline justify-between gap-4 py-0.5">
+            <dt class="text-muted-foreground">entitlements</dt>
+            <dd class="font-mono">
+              {{ Object.keys(template.entitlements ?? {}).length || 'none' }}
+            </dd>
+          </div>
+          <p v-if="template.parent_id" class="mt-2 text-muted-foreground">
+            Inherits from a
+            <NuxtLink
+              :to="`/templates/${template.parent_id}`"
+              class="underline underline-offset-2 hover:text-foreground"
+              >parent template</NuxtLink
+            >; any field left unset here resolves from that chain at issuance.
+          </p>
+        </dl>
 
         <form class="space-y-4" @submit.prevent.stop="issueForm.handleSubmit()">
           <issueForm.Field name="licensable_type">

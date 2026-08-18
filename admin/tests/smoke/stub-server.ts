@@ -92,6 +92,22 @@ export function startStubServer() {
         if (pathname.endsWith(p)) return Response.json(listResponseFor(p, ROWS));
       }
 
+      // Detail routes: /admin/<resource>/<id>. Served from the same
+      // generated page so a detail view shows a row the list also shows —
+      // matching by id, or falling back to the first row when the caller
+      // asks for an id this stub never minted.
+      for (const p of LIST_PATHS) {
+        const idx = pathname.indexOf(`${p}/`);
+        if (idx === -1) continue;
+        const id = pathname.slice(idx + p.length + 1);
+        if (id === '' || id.includes('/')) continue;
+        const page = listResponseFor(p, ROWS) as {
+          data: { items: Array<Record<string, unknown>> };
+        };
+        const match = page.data.items.find((i) => i.id === id) ?? page.data.items[0];
+        return Response.json({ success: true, data: match });
+      }
+
       if (pathname.endsWith('/admin/stats/licenses')) {
         return Response.json(objectResponseFor('/admin/stats/licenses'));
       }
