@@ -13,8 +13,9 @@
  *      `created_at`, `updated_at`). The adapter populates them. Supplying
  *      them in input is tolerated but MUST be ignored per entities.md §7.
  *   2. Updates use a `Partial<…Patch>` shape keyed by `id`. Only mutable
- *      fields are in the patch; unique natural keys (`license_key`, `slug`,
- *      `kid`, `fingerprint`) are never updatable.
+ *      fields are in the patch. Unique natural keys (`slug`, `kid`,
+ *      `fingerprint`) are never updatable; `license_key` is reachable only
+ *      through `rotateLicenseKey`, never through the admin update route.
  *   3. Lists always return a page + opaque `cursor`. A null cursor means the
  *      caller has reached the end. The cursor is adapter-specific but the
  *      opacity contract is universal: callers pass it back verbatim.
@@ -139,6 +140,14 @@ export interface LicensePatch {
   readonly meta?: Readonly<Record<string, JSONValue>>;
   readonly scope_id?: UUIDv7 | null;
   readonly template_id?: UUIDv7 | null;
+  /**
+   * Set only by `rotateLicenseKey`. `license_key` is otherwise immutable —
+   * `PATCH /admin/licenses/{id}` cannot reach it — so the mutation stays
+   * explicit and auditable rather than a side effect of an update. The
+   * unique index still applies, so a collision surfaces as a constraint
+   * violation rather than silently overwriting another license.
+   */
+  readonly license_key?: string;
 }
 
 export interface LicenseScopePatch {

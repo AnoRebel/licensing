@@ -39,6 +39,7 @@ import type {
   LicenseTemplate,
   LicenseUsage,
   UsageStatus,
+  UUIDv7,
 } from '../index.ts';
 import {
   createLicense,
@@ -52,6 +53,7 @@ import {
   resume as resumeLicense,
   revoke as revokeLicense,
   revokeUsage as revokeUsageService,
+  rotateLicenseKey,
   rotateSigningKey,
   suspend as suspendLicense,
 } from '../index.ts';
@@ -975,6 +977,9 @@ export function adminRoutes(ctx: AdminHandlerContext, prefix = ''): readonly Rou
       lifecycleTransition(ctx, req, params, 'revoke'),
     ),
     postP(p('/admin/licenses/:id/renew'), (req, params) => handleRenewLicense(ctx, req, params)),
+    postP(p('/admin/licenses/:id/rotate-key'), (req, params) =>
+      handleRotateLicenseKey(ctx, req, params),
+    ),
 
     // Scopes
     get0(p('/admin/scopes'), (req) => handleListScopes(ctx, req)),
@@ -1017,3 +1022,25 @@ export type { AuditLogEntry, License, LicenseScope, LicenseTemplate, LicenseUsag
 // it transitively via the core services' throws, but a direct reference here
 // keeps static analyzers happy.
 void errors;
+
+/**
+ * Issues a fresh license_key and revokes every active seat. See
+ * `rotateLicenseKey` for why both happen together.
+ */
+async function handleRotateLicenseKey(
+  ctx: AdminHandlerContext,
+  req: HandlerRequest,
+  params: Readonly<Record<string, string>>,
+): Promise<HandlerResponse> {
+  return guard(async () => {
+    const res = await rotateLicenseKey(
+      ctx.storage,
+      ctx.clock,
+      (params.id ?? '') as UUIDv7,
+      adminActor(req, 'rotate-key'),
+    );
+    // Returns the license carrying its NEW key — the operator needs it to
+    // redistribute. The prior key is deliberately not echoed back.
+    return ok(asJson(res.license));
+  });
+}

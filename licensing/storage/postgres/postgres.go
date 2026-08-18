@@ -574,6 +574,9 @@ func updateLicense(ctx context.Context, q queryable, id string, patch lic.Licens
 	if patch.MaxUsages != nil {
 		ub.set("max_usages", *patch.MaxUsages)
 	}
+	if patch.LicenseKey != nil {
+		ub.set("license_key", *patch.LicenseKey)
+	}
 	if patch.ActivatedAt.Set {
 		ub.set("activated_at", tsOrNull(patch.ActivatedAt.Value))
 	}

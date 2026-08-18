@@ -307,6 +307,44 @@ paths:
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /admin/licenses/{id}/rotate-key:
+    parameters: [{ $ref: '#/components/parameters/IdPath' }]
+    post:
+      operationId: rotateLicenseKey
+      tags: [Admin Licenses]
+      summary: Issue a new license key and force re-activation
+      description: >-
+        Replaces the license's `license_key` with a freshly generated one and
+        revokes every active usage, so each device must re-activate with the
+        new key.
+
+
+        This is leak response, not routine maintenance. The old key stops
+        working immediately and every copy already distributed to the customer
+        becomes invalid, so the operator must deliver the new key out of band.
+        Seats are revoked deliberately: a rotation that left existing devices
+        running would not contain a leaked key.
+
+
+        `license_key` is otherwise immutable — it is the public natural key and
+        is never patchable through `PATCH /admin/licenses/{id}`. This endpoint
+        is the only way it changes, which keeps the mutation auditable and
+        explicit rather than a side effect of an update.
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: OK — returns the license carrying its new `license_key`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LicenseEnvelope' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: License is revoked — a terminal state, so its key cannot be rotated.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorEnvelope' }
+
   /admin/licenses/{id}/renew:
     parameters: [{ $ref: '#/components/parameters/IdPath' }]
     post:

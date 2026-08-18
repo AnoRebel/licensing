@@ -77,6 +77,7 @@ type PendingAction =
   | { kind: 'resume' }
   | { kind: 'revoke-license' }
   | { kind: 'revoke-usage'; usage: Usage }
+  | { kind: 'rotate-key' }
   | null;
 
 const action = ref<PendingAction>(null);
@@ -94,6 +95,11 @@ const canRenew = computed(() => license.value && license.value.status !== 'revok
 function openConfirmRevokeLicense() {
   if (!license.value) return;
   action.value = { kind: 'revoke-license' };
+  confirmOpen.value = true;
+}
+
+function openConfirmRotateKey() {
+  action.value = { kind: 'rotate-key' };
   confirmOpen.value = true;
 }
 
@@ -147,6 +153,14 @@ async function onConfirm() {
       });
       toast.success('License revoked');
       await refreshLicense();
+    } else if (action.value.kind === 'rotate-key') {
+      await $licensing('/admin/licenses/{id}/rotate-key', {
+        method: 'POST',
+        path: { id: licenseId.value },
+      });
+      toast.success('License key rotated — every device must re-activate');
+      // Seats are revoked server-side, so the usages table is stale too.
+      await Promise.all([refreshLicense(), refreshUsages()]);
     } else if (action.value.kind === 'revoke-usage') {
       const usageId = action.value.usage.id;
       await $licensing('/admin/usages/{id}/revoke', {
@@ -292,6 +306,15 @@ const confirmConfig = computed(() => {
       actionLabel: 'Revoke license',
     };
   }
+  if (action.value.kind === 'rotate-key' && license.value) {
+    return {
+      title: 'Rotate license key',
+      description:
+        'Issues a new license key and revokes every active seat. Every copy of the current key already given to the customer stops working immediately, and each device must re-activate with the new one — so deliver it out of band first. No undo.',
+      confirmPhrase: license.value.license_key,
+      actionLabel: 'Rotate key',
+    };
+  }
   if (action.value.kind === 'revoke-usage') {
     return {
       title: 'Revoke usage',
@@ -386,6 +409,19 @@ const usageTableMeta = computed<UsageTableMeta>(() => ({
             @click="openConfirmRevokeLicense"
           >
             Revoke…
+          </Button>
+          <!--
+            Rotate sits beside Revoke because it is comparably destructive:
+            it invalidates every copy of the key already distributed and
+            drops every seat. It is leak response, not maintenance.
+          -->
+          <Button
+            variant="outline"
+            size="sm"
+            :disabled="licensePending || license?.status === 'revoked'"
+            @click="openConfirmRotateKey"
+          >
+            Rotate key…
           </Button>
           <Button variant="ghost" size="sm" :disabled="licensePending" @click="refreshLicense()">
             Refresh

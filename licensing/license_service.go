@@ -1,5 +1,7 @@
 package licensing
 
+import "fmt"
+
 // License creation orchestration — Go port of
 // typescript/packages/core/src/license-service.ts.
 //
@@ -118,4 +120,134 @@ func writeCreatedAudit(tx StorageTx, license *License, occurredAt string, opts C
 		OccurredAt: occurredAt,
 	})
 	return err
+}
+
+// RotateLicenseKeyOptions configures RotateLicenseKey.
+type RotateLicenseKeyOptions struct {
+	ActorID   *string
+	Actor     string
+	ActorKind ActorKind
+}
+
+// RotateLicenseKeyResult reports what a rotation did.
+type RotateLicenseKeyResult struct {
+	License *License
+	// RevokedUsageIDs lists the seats revoked by the rotation.
+	//
+	// The prior key is deliberately NOT returned: the caller already held it
+	// before rotating, and echoing a just-invalidated secret back through
+	// another layer only widens where it can be logged.
+	RevokedUsageIDs []string
+}
+
+// RotateLicenseKey issues a fresh license_key and revokes every active
+// seat, forcing each device to re-activate with the new key.
+//
+// This is leak response, not routine maintenance. Every copy of the old key
+// already distributed to the customer stops working, so the operator must
+// deliver the new one out of band. Seats are revoked deliberately: a
+// rotation that left existing devices running would not contain a leaked
+// key, which is the only reason to rotate.
+//
+// license_key is otherwise immutable — LicensePatch.LicenseKey exists for
+// this function alone and PATCH /admin/licenses/{id} cannot reach it, so
+// the mutation stays explicit and auditable rather than a side effect of an
+// ordinary update.
+//
+// Revoked licenses are refused: revoked is terminal, and handing out a new
+// key for a dead license would imply it could be used.
+func RotateLicenseKey(
+	storage Storage,
+	clock Clock,
+	licenseID string,
+	opts RotateLicenseKeyOptions,
+) (*RotateLicenseKeyResult, error) {
+	result := &RotateLicenseKeyResult{}
+	err := storage.WithTransaction(func(tx StorageTx) error {
+		license, err := tx.GetLicense(licenseID)
+		if err != nil {
+			return err
+		}
+		if license == nil {
+			return newError(CodeLicenseNotFound,
+				fmt.Sprintf("license not found: %s", licenseID),
+				map[string]any{"id": licenseID})
+		}
+		if license.Status == LicenseStatusRevoked {
+			return newError(CodeLicenseRevoked,
+				"license is revoked; its key cannot be rotated", nil)
+		}
+
+		newKey := GenerateLicenseKey()
+		updated, err := tx.UpdateLicense(license.ID, LicensePatch{LicenseKey: &newKey})
+		if err != nil {
+			return err
+		}
+		result.License = updated
+
+		now := clock.NowISO()
+		actor := opts.Actor
+		if actor == "" {
+			actor = "system"
+		}
+
+		// Revoke every live seat. Done inside the same transaction as the
+		// key change so a partial rotation cannot exist: either the key is
+		// new and the seats are gone, or neither happened.
+		cursor := ""
+		for {
+			page, err := tx.ListUsages(
+				LicenseUsageFilter{
+					LicenseID: &license.ID,
+					Status:    []UsageStatus{UsageStatusActive},
+				},
+				PageRequest{Limit: 500, Cursor: cursor},
+			)
+			if err != nil {
+				return err
+			}
+			for i := range page.Items {
+				u := page.Items[i]
+				if _, err := tx.UpdateUsage(u.ID, LicenseUsagePatch{
+					Status:    ptr(UsageStatusRevoked),
+					RevokedAt: OptString{Set: true, Value: &now},
+				}); err != nil {
+					return err
+				}
+				result.RevokedUsageIDs = append(result.RevokedUsageIDs, u.ID)
+			}
+			if page.Cursor == "" {
+				break
+			}
+			cursor = page.Cursor
+		}
+
+		// One audit row for the rotation itself. The key values are
+		// deliberately absent from both states — writing the new key into an
+		// append-only log that operators and support staff can read would
+		// leak the very secret the rotation exists to protect.
+		if _, err := tx.AppendAudit(AuditLogInput{
+			LicenseID: &license.ID,
+			ScopeID:   license.ScopeID,
+			Actor:     actor,
+			ActorKind: opts.ActorKind,
+			ActorID:   opts.ActorID,
+			Event:     "license.key_rotated",
+			PriorState: map[string]any{
+				"active_usages": len(result.RevokedUsageIDs),
+			},
+			NewState: map[string]any{
+				"active_usages":  0,
+				"usages_revoked": len(result.RevokedUsageIDs),
+			},
+			OccurredAt: now,
+		}); err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
 }

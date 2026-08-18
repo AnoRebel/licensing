@@ -251,6 +251,15 @@ export class MemoryStorage implements Storage {
     return this.writeOp((s) => {
       const cur = s.licenses.get(id);
       if (!cur) throw errors.licenseNotFound(id);
+      if (patch.license_key !== undefined) {
+        // Uniqueness is enforced here the way createLicense does it; the
+        // SQL adapters get the same guarantee from their unique index.
+        for (const row of s.licenses.values()) {
+          if (row.id !== id && row.license_key === patch.license_key) {
+            throw errors.uniqueConstraintViolation('license_key', patch.license_key);
+          }
+        }
+      }
       const next: License = {
         ...cur,
         ...patch,

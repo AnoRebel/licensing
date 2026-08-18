@@ -361,10 +361,19 @@ type OptJSON struct {
 }
 
 // LicensePatch describes a partial update of a License. All fields are
-// optional; unique natural keys (`license_key`) are never patchable.
+// optional.
+//
+// `license_key` is deliberately NOT part of the general update surface —
+// PATCH /admin/licenses/{id} cannot reach it. RotateLicenseKey sets it
+// through this field so the mutation stays auditable and explicit rather
+// than a side effect of an ordinary update.
 type LicensePatch struct {
-	Status      *LicenseStatus
-	MaxUsages   *int
+	Status    *LicenseStatus
+	MaxUsages *int
+	// LicenseKey is set only by RotateLicenseKey. The storage layer's
+	// unique index still applies, so a collision surfaces as a constraint
+	// violation rather than silently overwriting another license.
+	LicenseKey  *string
 	ActivatedAt OptString
 	ExpiresAt   OptString
 	GraceUntil  OptString

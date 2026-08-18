@@ -445,46 +445,20 @@ const templateErrorMessage = computed(() =>
         </div>
       </header>
 
-      <section
-        v-if="ancestors.length > 0 || children.length > 0"
-        aria-label="Template hierarchy"
-        class="rounded-md border border-border bg-card p-4 space-y-3"
-      >
+      <!--
+        Always rendered, including for a standalone template: "no parent, no
+        children" is information an operator wants when reasoning about
+        where a template's defaults come from.
+      -->
+      <section class="space-y-3 rounded-md border border-border bg-card p-4">
         <p class="font-mono text-xs uppercase tracking-[0.18em] text-muted-foreground">
           hierarchy
         </p>
-        <div v-if="ancestors.length > 0" class="space-y-1">
-          <p class="text-xs font-normal text-muted-foreground">Ancestors (inheritance chain)</p>
-          <nav aria-label="Parent chain" class="flex flex-wrap items-center gap-1 text-sm">
-            <template v-for="(a, idx) in ancestors.slice().reverse()" :key="a.id">
-              <NuxtLink
-                :to="`/templates/${a.id}`"
-                class="rounded-md px-1.5 py-0.5 font-mono text-xs underline-offset-2 hover:bg-muted hover:underline"
-              >
-                {{ a.name }}
-              </NuxtLink>
-              <span v-if="idx < ancestors.length - 1" aria-hidden="true" class="text-muted-foreground">›</span>
-            </template>
-            <span aria-hidden="true" class="text-muted-foreground">›</span>
-            <span class="rounded-md bg-muted px-1.5 py-0.5 font-mono text-xs">{{ template.name }}</span>
-          </nav>
-        </div>
-        <div v-if="children.length > 0" class="space-y-1">
-          <p class="text-xs font-normal text-muted-foreground">
-            Direct children ({{ children.length }})
-          </p>
-          <ul class="grid gap-1 sm:grid-cols-2">
-            <li v-for="c in children" :key="c.id">
-              <NuxtLink
-                :to="`/templates/${c.id}`"
-                class="block rounded-md border border-border px-2 py-1 text-xs hover:bg-muted"
-              >
-                <span class="font-mono">{{ c.name }}</span>
-                <span class="ml-2 text-muted-foreground">{{ c.id.slice(0, 8) }}</span>
-              </NuxtLink>
-            </li>
-          </ul>
-        </div>
+        <TemplateHierarchyTree
+          :ancestors="ancestors"
+          :current="template"
+          :children="children"
+        />
       </section>
 
       <section class="rounded-md border border-border bg-card p-4" aria-label="Template metadata">

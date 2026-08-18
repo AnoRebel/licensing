@@ -11,6 +11,7 @@
  * `lifecycle.ts`. This module is just the create-path glue.
  */
 
+import { errors } from './errors.ts';
 import type { Clock } from './id.ts';
 import { assertLicenseKey, generateLicenseKey, normalizeLicenseKey } from './license-key.ts';
 import type { Storage, StorageTx } from './storage/types.ts';
@@ -125,5 +126,102 @@ async function writeCreatedAudit(
       template_id: license.template_id,
     },
     occurred_at,
+  });
+}
+
+/** Configures {@link rotateLicenseKey}. */
+export interface RotateLicenseKeyOptions {
+  readonly actor?: string;
+  readonly actorKind?: ActorKind;
+  readonly actorId?: string | null;
+}
+
+/** Reports what a rotation did. */
+export interface RotateLicenseKeyResult {
+  readonly license: License;
+  /**
+   * Seats revoked by the rotation.
+   *
+   * The prior key is deliberately NOT returned: the caller already held it
+   * before rotating, and echoing a just-invalidated secret back through
+   * another layer only widens where it can be logged.
+   */
+  readonly revokedUsageIds: UUIDv7[];
+}
+
+/**
+ * Issues a fresh `license_key` and revokes every active seat, forcing each
+ * device to re-activate with the new key.
+ *
+ * This is leak response, not routine maintenance. Every copy of the old key
+ * already distributed to the customer stops working, so the operator must
+ * deliver the new one out of band. Seats are revoked deliberately: a
+ * rotation that left existing devices running would not contain a leaked
+ * key, which is the only reason to rotate.
+ *
+ * `license_key` is otherwise immutable — `LicensePatch.license_key` exists
+ * for this function alone and the admin update route cannot reach it, so
+ * the mutation stays explicit and auditable.
+ *
+ * Revoked licences are refused: revoked is terminal, and handing out a new
+ * key for a dead licence would imply it could be used.
+ *
+ * Mirrors Go's `RotateLicenseKey`.
+ */
+export async function rotateLicenseKey(
+  storage: Storage,
+  clock: Clock,
+  licenseId: UUIDv7,
+  opts: RotateLicenseKeyOptions = {},
+): Promise<RotateLicenseKeyResult> {
+  return storage.withTransaction(async (tx) => {
+    const license = await tx.getLicense(licenseId);
+    if (license === null) throw errors.licenseNotFound(licenseId);
+    if (license.status === 'revoked') {
+      // Terminal state: a new key would imply the licence could still be used.
+      throw errors.licenseRevoked();
+    }
+
+    const updated = await tx.updateLicense(license.id, {
+      license_key: generateLicenseKey(),
+    });
+
+    const now = clock.nowIso();
+    const revokedUsageIds: UUIDv7[] = [];
+
+    // Revoke every live seat inside the same transaction as the key change,
+    // so a partial rotation cannot exist: either the key is new and the
+    // seats are gone, or neither happened.
+    let cursor: string | null | undefined;
+    while (true) {
+      const page = await tx.listUsages(
+        { license_id: license.id, status: ['active'] },
+        cursor === null || cursor === undefined ? { limit: 500 } : { limit: 500, cursor },
+      );
+      for (const usage of page.items) {
+        await tx.updateUsage(usage.id, { status: 'revoked', revoked_at: now });
+        revokedUsageIds.push(usage.id);
+      }
+      if (page.cursor === null) break;
+      cursor = page.cursor;
+    }
+
+    // One audit row for the rotation. Key values are deliberately absent
+    // from both states — writing the new key into an append-only log that
+    // operators and support staff can read would leak the very secret the
+    // rotation exists to protect.
+    await tx.appendAudit({
+      license_id: license.id,
+      scope_id: license.scope_id,
+      actor: opts.actor ?? 'system',
+      ...(opts.actorKind !== undefined ? { actor_kind: opts.actorKind } : {}),
+      ...(opts.actorId !== undefined ? { actor_id: opts.actorId } : {}),
+      event: 'license.key_rotated',
+      prior_state: { active_usages: revokedUsageIds.length },
+      new_state: { active_usages: 0, usages_revoked: revokedUsageIds.length },
+      occurred_at: now,
+    });
+
+    return { license: updated, revokedUsageIds };
   });
 }

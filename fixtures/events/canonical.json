@@ -1,11 +1,12 @@
 {
-  "_doc": "Canonical audit event vocabulary. `emitted` names MUST be emitted by both ports — a name present in one port and not the other is drift, and the parity test fails. `reserved` names are documented and intentionally not yet emitted; they are held so the string is not repurposed for something else later. Moving a name from reserved to emitted is the last step of implementing its emitter, in both ports, in the same change.",
+  "_doc": "Canonical audit event vocabulary. `emitted` names MUST be emitted by both ports \u2014 a name present in one port and not the other is drift, and the parity test fails. `reserved` names are documented and intentionally not yet emitted; they are held so the string is not repurposed for something else later. Moving a name from reserved to emitted is the last step of implementing its emitter, in both ports, in the same change.",
   "emitted": [
     "key.rotated",
     "license.activated",
     "license.created",
     "license.expired",
     "license.grace_entered",
+    "license.key_rotated",
     "license.renewed",
     "license.resumed",
     "license.revoked",

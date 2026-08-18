@@ -721,6 +721,16 @@ func updateLicense(s *state, clk lic.Clock, id string, patch lic.LicensePatch) (
 	if patch.MaxUsages != nil {
 		cur.MaxUsages = *patch.MaxUsages
 	}
+	if patch.LicenseKey != nil {
+		// Uniqueness is enforced here the way createLicense does it; the
+		// SQL adapters get the same guarantee from their unique index.
+		for _, row := range s.licenses {
+			if row.ID != id && row.LicenseKey == *patch.LicenseKey {
+				return nil, uniqueViolation("license_key", *patch.LicenseKey)
+			}
+		}
+		cur.LicenseKey = *patch.LicenseKey
+	}
 	if patch.ActivatedAt.Set {
 		cur.ActivatedAt = patch.ActivatedAt.Value
 	}

@@ -597,6 +597,9 @@ func updateLicense(q queryable, clk lic.Clock, id string, patch lic.LicensePatch
 	if patch.MaxUsages != nil {
 		ub.set("max_usages", *patch.MaxUsages)
 	}
+	if patch.LicenseKey != nil {
+		ub.set("license_key", *patch.LicenseKey)
+	}
 	if patch.ActivatedAt.Set {
 		ub.set("activated_at", patch.ActivatedAt.Value)
 	}

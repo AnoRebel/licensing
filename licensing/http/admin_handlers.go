@@ -14,7 +14,7 @@ import (
 // openapi/licensing-admin.yaml:
 //
 //	Licenses:  GET/POST  /admin/licenses,        GET/PATCH/DELETE /admin/licenses/{id}
-//	           POST /admin/licenses/{id}/{suspend,resume,revoke,renew}
+//	           POST /admin/licenses/{id}/{suspend,resume,revoke,renew,rotate-key}
 //	Scopes:    GET/POST  /admin/scopes,          GET/PATCH/DELETE /admin/scopes/{id}
 //	Templates: GET/POST  /admin/templates,       GET/PATCH/DELETE /admin/templates/{id}
 //	Usages:    GET       /admin/usages,          GET              /admin/usages/{id}
@@ -193,6 +193,8 @@ func (h *AdminHandler) routeLicenses(w http.ResponseWriter, r *http.Request, seg
 			h.handleLifecycle(w, r, id, lic.Revoke, "revoke")
 		case "renew":
 			h.handleRenewLicense(w, r, id)
+		case "rotate-key":
+			h.handleRotateLicenseKey(w, r, id)
 		default:
 			writeError(w, 404, "NotFound", "no handler for "+r.Method+" "+r.URL.Path)
 		}
@@ -1139,4 +1141,20 @@ func adminActor(r *http.Request, action string) (actor string, kind lic.ActorKin
 		return actor, lic.ActorAdmin, &subject
 	}
 	return actor, lic.ActorAdmin, nil
+}
+
+// handleRotateLicenseKey issues a fresh license_key and revokes every
+// active seat. See lic.RotateLicenseKey for why both happen together.
+func (h *AdminHandler) handleRotateLicenseKey(w http.ResponseWriter, r *http.Request, id string) {
+	actor, kind, actorID := adminActor(r, "rotate-key")
+	res, err := lic.RotateLicenseKey(h.ctx.Storage, h.ctx.Clock, id, lic.RotateLicenseKeyOptions{
+		Actor: actor, ActorKind: kind, ActorID: actorID,
+	})
+	if err != nil {
+		writeErrorFromLicensing(w, err)
+		return
+	}
+	// Returns the license carrying its NEW key — the operator needs it to
+	// redistribute. The prior key is deliberately not echoed back.
+	writeOK(w, res.License)
 }
