@@ -21,7 +21,8 @@
  */
 
 import type { AlgorithmRegistry, KeyAlgBindings, KeyRecord } from '../crypto/index.ts';
-import { decodeUnverified, type LIC1DecodedParts, verify } from '../lic1.ts';
+import { decodeUnverified, verify } from '../lic1.ts';
+import type { DecodedEnvelope } from '../token-codec.ts';
 
 import { clientErrors } from './errors.ts';
 import type { JtiLedger } from './jti-ledger.ts';
@@ -100,7 +101,7 @@ export async function validate(token: string, opts: ValidateOptions): Promise<Va
   // 1. Parse + cryptographic verify. `verify` already gates on kid binding
   //    (alg-confusion), unknown kid, and signature validity — we translate
   //    those core errors into client-facing codes below.
-  let parts: LIC1DecodedParts;
+  let parts: DecodedEnvelope;
   try {
     parts = await verify(token, {
       registry: opts.registry,
