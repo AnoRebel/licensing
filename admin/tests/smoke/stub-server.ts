@@ -72,6 +72,14 @@ export function startStubServer() {
    */
   const failing = new Set<string>();
 
+  /**
+   * Whether `/owners/{type}/{id}` resolves. Off by default: an unset owner
+   * resolver is the state most deployments are in, and the card is
+   * supposed to degrade to a documented "unconfigured" notice rather than
+   * an error — so that is what an un-opted-in view should render.
+   */
+  let ownersResolve = false;
+
   const server = Bun.serve({
     port: 0,
     fetch(req) {
@@ -112,6 +120,23 @@ export function startStubServer() {
         return Response.json(objectResponseFor('/admin/stats/licenses'));
       }
 
+      // Consumer-supplied owner resolver. Not part of the admin OpenAPI
+      // spec — it is the consumer's own endpoint that the proxy forwards
+      // to — so it is hand-shaped here rather than generated. Opt-in via
+      // resolveOwners() because "not configured" is the DEFAULT state the
+      // card must handle, and most views should exercise that.
+      if (ownersResolve && pathname.includes('/owners/')) {
+        const [type, id] = pathname.split('/owners/')[1]?.split('/') ?? [];
+        return Response.json({
+          success: true,
+          data: {
+            name: `Owner ${id ?? '?'}`,
+            email: `${id ?? 'owner'}@example.test`,
+            type: type ?? 'User',
+          },
+        });
+      }
+
       return Response.json(
         { success: false, error: { code: 'NotFound', message: `no stub for ${pathname}` } },
         { status: 404 },
@@ -125,6 +150,10 @@ export function startStubServer() {
     failEndpoint: (suffix: string) => failing.add(suffix),
     /** Clear all forced failures. */
     healAll: () => failing.clear(),
+    /** Make `/owners/{type}/{id}` return a resolved owner. */
+    resolveOwners: (on: boolean) => {
+      ownersResolve = on;
+    },
     stop: () => server.stop(true),
   };
 }

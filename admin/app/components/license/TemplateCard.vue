@@ -68,7 +68,7 @@ const errorMessage = computed(() =>
       </NuxtLink>
     </header>
 
-    <p v-if="templateId === null" class="p-4 text-sm text-muted-foreground">
+    <p v-if="templateIdRef === null" class="p-4 text-sm text-muted-foreground">
       Ad-hoc license — not bound to a template.
     </p>
     <div v-else-if="pending && !template" class="space-y-2 p-4" aria-busy="true">
