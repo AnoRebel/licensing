@@ -10,6 +10,7 @@ export * from './errors.ts';
 export * from './id.ts';
 export * from './key-hierarchy.ts';
 export * from './lic1.ts';
+export * from './lic2.ts';
 export * from './license-key.ts';
 export * from './license-service.ts';
 export * from './lifecycle.ts';

@@ -89,6 +89,21 @@ export function decodeUnverified(token: string): DecodedEnvelope {
   return codecFor(token).decode(token);
 }
 
+/**
+ * Parse a LIC1 token into its full LIC1-specific parts, including the `v`
+ * and `typ` header fields that the common envelope omits. Throws if the
+ * token is not LIC1.
+ */
+export function decodeLIC1Parts(token: string): LIC1DecodedParts {
+  const codec = codecFor(token);
+  if (codec.prefix !== LIC1_PREFIX) {
+    throw errors.unsupportedTokenFormat(
+      `${codec.prefix} — decodeLIC1Parts only accepts LIC1 tokens; use decodeUnverified for any format`,
+    );
+  }
+  return decodeLIC1(token);
+}
+
 /** LIC1-specific parse. Assumes the prefix has already been matched. */
 function decodeLIC1(token: string): LIC1DecodedParts {
   const parts = token.split('.');
@@ -153,6 +168,10 @@ export const lic1Codec: TokenCodec = {
   prefix: LIC1_PREFIX,
   supportedAlgs: LIC1_ALGS,
   decode(token: string): DecodedEnvelope {
+    // Returns the full LIC1 parts. DecodedEnvelope requires `alg` and
+    // `kid`; LIC1 additionally carries `v` and `typ`, and callers depend on
+    // reading them off verify() output, so they are deliberately not
+    // stripped here.
     return decodeLIC1(token);
   },
   async encode(input: CodecEncodeInput): Promise<string> {

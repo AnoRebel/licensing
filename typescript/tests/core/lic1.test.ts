@@ -3,11 +3,29 @@ import { TokenFormatError } from '../../src/errors.ts';
 import { decodeUnverified } from '../../src/lic1.ts';
 
 describe('LIC1 format dispatch', () => {
-  it('rejects v4.public.* (PASETO) with UnsupportedTokenFormat', () => {
+  // `v4.public.` used to be rejected as an unknown prefix. LIC2 now owns
+  // it, so the guarantee changed shape: a PASETO-prefixed token is routed
+  // to the LIC2 codec and fails with that codec's own error, never with a
+  // LIC1-shaped one. Routing a foreign token into the LIC1 parser is
+  // exactly the hazard the codec router removed.
+  it('routes v4.public.* to LIC2, not the LIC1 parser', () => {
     const paseto = 'v4.public.eyJmb28iOiJiYXIifQ.signature-placeholder';
-    expect(() => decodeUnverified(paseto)).toThrow(TokenFormatError);
+    let caught: TokenFormatError | undefined;
     try {
       decodeUnverified(paseto);
+    } catch (e) {
+      caught = e as TokenFormatError;
+    }
+    expect(caught).toBeDefined();
+    // Not the LIC1 segment-count error.
+    expect(caught?.message).not.toContain('dot-separated');
+  });
+
+  it('still rejects a genuinely unknown prefix with UnsupportedTokenFormat', () => {
+    const unknown = 'v9.public.eyJmb28iOiJiYXIifQ.sig';
+    expect(() => decodeUnverified(unknown)).toThrow(TokenFormatError);
+    try {
+      decodeUnverified(unknown);
     } catch (e) {
       expect((e as TokenFormatError).code).toBe('UnsupportedTokenFormat');
     }

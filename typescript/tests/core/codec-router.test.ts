@@ -94,7 +94,10 @@ describe('dispatch routes to the owning codec', () => {
 
 describe('unregistered prefixes', () => {
   it('are rejected with UnsupportedTokenFormat', () => {
-    expect(() => codecFor('v4.public.abc')).toThrow(/unsupported|format/i);
+    // Note: "v4.public." is NOT usable here — LIC2 owns it. Picking a
+    // registered prefix as the "unknown" case would pass for the wrong
+    // reason.
+    expect(() => codecFor('v9.public.abc')).toThrow(/unsupported|format/i);
   });
 
   it('are rejected before any decoding happens', () => {

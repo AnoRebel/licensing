@@ -110,7 +110,10 @@ func TestDispatch_RoutesEachPrefixToItsOwner(t *testing.T) {
 }
 
 func TestDispatch_UnregisteredPrefixRejected(t *testing.T) {
-	for _, token := range []string{"v4.public.abc", "NOPE.!!!not-base64!!!", "eyJhbGciOiJub25lIn0."} {
+	// Note: "v4.public." is NOT usable here — LIC2 owns it. Picking a
+	// registered prefix as the "unknown" case would make this test pass
+	// for the wrong reason.
+	for _, token := range []string{"v9.public.abc", "NOPE.!!!not-base64!!!", "eyJhbGciOiJub25lIn0."} {
 		if _, err := CodecFor(token); !errors.Is(err, ErrUnsupportedTokenFormat) {
 			t.Fatalf("token %q: expected UnsupportedTokenFormat, got %v", token, err)
 		}
