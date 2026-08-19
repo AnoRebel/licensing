@@ -271,7 +271,7 @@ export interface PeekResult {
 
 // ---------- internals ----------
 
-/** Narrow validated-claims view over the opaque `LIC1Payload`. */
+/** Narrow validated-claims view over the opaque decoded payload. */
 interface RequiredClaims {
   readonly jti: string;
   readonly iat: number;

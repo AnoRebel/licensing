@@ -2,7 +2,8 @@
  * Online activation.
  *
  * `activate(licenseKey)` posts `{ license_key, fingerprint, metadata }`
- * to `/activate`, receives a LIC1 token back, and persists it via the
+ * to `/activate`, receives a signed token back — LIC1 or LIC2, whichever
+ * the issuer is configured to emit — and persists it via the
  * configured {@link TokenStore}. On any issuer error (invalid key, seat
  * limit, revoked, suspended, ...), the local store is NOT mutated — the
  * previous token (if any) stays intact so a failed re-activation doesn't

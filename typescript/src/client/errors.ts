@@ -126,7 +126,7 @@ export const clientErrors = {
   ): LicensingClientError =>
     new LicensingClientError('RateLimited', msg, { httpStatus: 429, retryAfterSec }),
   invalidTokenFormat: (
-    msg = 'token is not a well-formed LIC1 envelope',
+    msg = 'token is not a well-formed envelope in any supported format',
     cause?: unknown,
   ): LicensingClientError =>
     new LicensingClientError('InvalidTokenFormat', msg, cause !== undefined ? { cause } : {}),
