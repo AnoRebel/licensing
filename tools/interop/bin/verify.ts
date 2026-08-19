@@ -36,6 +36,10 @@ import {
   type SignatureBackend,
 } from '@anorebel/licensing/crypto';
 import { decodeUnverified, verify } from '@anorebel/licensing/lic1';
+// Importing the LIC2 module registers its codec with the router, so this
+// harness can verify either envelope. Without it a v4.public. token would
+// be rejected as an unregistered prefix.
+import '@anorebel/licensing/lic2';
 
 import { runCli } from '../src/io.ts';
 import { type KeyAlg, type KeyRef, loadFixtureKey } from '../src/keys.ts';

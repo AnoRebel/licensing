@@ -27,6 +27,7 @@ import {
   type SignatureBackend,
 } from '@anorebel/licensing/crypto';
 import { encode } from '@anorebel/licensing/lic1';
+import { lic2Codec } from '@anorebel/licensing/lic2';
 
 import { runCli } from '../src/io.ts';
 import { type KeyAlg, type KeyRef, loadFixtureKey } from '../src/keys.ts';
@@ -37,6 +38,9 @@ interface SignInput {
   kid: string;
   header: Record<string, unknown>;
   payload: Record<string, unknown>;
+  /** Envelope to emit. Defaults to LIC1 when absent, so existing callers
+   *  are unaffected. */
+  format?: 'LIC1' | 'LIC2';
 }
 
 function backendFor(alg: KeyAlg): SignatureBackend {
@@ -64,6 +68,17 @@ await runCli(async (raw) => {
   // interop suite compared Go's output against a *copy* of the TS algorithm
   // rather than against the TS implementation. A regression in the real
   // encode() passed the whole suite.
+  if (input.format === 'LIC2') {
+    const token = await lic2Codec.encode({
+      alg: input.alg,
+      kid: input.kid,
+      payload: input.payload,
+      privateKey: priv,
+      backend,
+    });
+    return { token };
+  }
+
   const token = await encode({
     header: input.header as never,
     payload: input.payload,
