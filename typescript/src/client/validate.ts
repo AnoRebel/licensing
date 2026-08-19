@@ -22,6 +22,13 @@
 
 import type { AlgorithmRegistry, KeyAlgBindings, KeyRecord } from '../crypto/index.ts';
 import { decodeUnverified, verify } from '../lic1.ts';
+// Registers the LIC2 codec. Required, not incidental: this module reaches
+// the codec registry through `verify`/`decodeUnverified`, and a client that
+// imports only `@anorebel/licensing/client` would otherwise have no LIC2
+// codec registered — a LIC2 token would fail with `unsupported token
+// format prefix: "v4."` on the device, which is exactly the offline path
+// LIC2 exists to serve.
+import '../lic2.ts';
 import type { DecodedEnvelope } from '../token-codec.ts';
 
 import { clientErrors } from './errors.ts';
