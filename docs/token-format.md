@@ -33,9 +33,13 @@ interpreted as described in [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119).
 LIC1.<header_b64>.<payload_b64>.<sig_b64>
 ```
 
-- `LIC1` — literal ASCII format prefix. Verifiers MUST reject any other
-  prefix (including `LIC2`, `v4.public.`, JWT-style `eyJ...`) with
-  `UnsupportedTokenFormat` **before** parsing the rest.
+- `LIC1` — literal ASCII format prefix. Verifiers dispatch on it: a token
+  is parsed only by the codec registered for its prefix, never by
+  another format's parser. A prefix with no registered codec (JWT-style
+  `eyJ...`, an unrecognised PASETO version, anything else) MUST be
+  rejected with `UnsupportedTokenFormat` **before** parsing the rest.
+  `v4.public.` is registered — see §9 — so it routes to the LIC2 codec
+  rather than being rejected.
 - `<header_b64>` — base64url of the canonical header JSON bytes, no padding.
 - `<payload_b64>` — base64url of the canonical payload JSON bytes, no padding.
 - `<sig_b64>` — base64url of the raw signature bytes, no padding.
@@ -55,14 +59,28 @@ canonical JSON alone, and not with any trailing newline or whitespace.
 
 ### 1.2 Format prefix dispatch
 
-The literal `LIC1` prefix is dispatched through a prefix allowlist (see
-`licensing/lic1.go::dispatchFormat` and `typescript/src/token.ts::dispatch`).
-Verifiers SHOULD treat unknown prefixes as opaque and surface
-`UnsupportedTokenFormat` so a future format extension does not silently
-re-route to the LIC1 parser.
+Tokens are routed by prefix through a codec registry
+(`licensing/token_codec.go`, `typescript/src/token-codec.ts`). A codec
+owns three things for its format: decoding, the signing-input
+construction its signatures cover, and encoding.
 
-This allowlist is **prefix-only**: it does not parse alternate formats,
-only declares which prefixes are eligible to reach the LIC1 parser.
+Dispatch guarantees:
+
+- A token bearing a registered prefix is parsed **only** by that
+  prefix's codec. It never reaches another format's parser, so a parse
+  failure surfaces the owning codec's error rather than a misleading
+  one from an unrelated format.
+- A prefix with no registered codec is rejected with
+  `UnsupportedTokenFormat` **before** any base64 decoding, payload
+  parsing, or signature verification.
+- The rejection error names the offending prefix clipped to a bounded
+  length, so arbitrary attacker-supplied input cannot expand log output.
+- Signature verification asks the token's own codec for its signing
+  input. Codecs may define different constructions — LIC1 concatenates
+  `<header_b64>.<payload_b64>` as ASCII, LIC2 uses PAE (§9.3) — and a
+  signature valid under one is rejected under the other.
+
+Registered prefixes today: `LIC1.` (§1) and `v4.public.` (§9).
 
 ## 2. Header
 
@@ -434,66 +452,139 @@ The `licensing/interop/` and `tools/interop/` packages drive the
 cross-port harness: TS signs → Go verifies, Go signs → TS verifies, plus
 canonical-JSON byte-equality on every fixture. CI fails on any drift.
 
-## 9. LIC2 (planned)
+## 9. LIC2 — PASETO v4.public
 
-LIC1 is the only token format that ships in v0.1.0. Future major
-versions MAY introduce LIC2 as a sibling format; the prefix-based
-dispatch in §1.2 is the extension point.
+LIC2 is a second token format, shipping alongside LIC1. It is **opt-in**:
+LIC1 remains the default issuance format and nothing emits LIC2 unless a
+caller selects it. Verifiers accept both regardless of which format the
+issuer is configured to produce, so an operator can switch issuance
+without invalidating tokens already in the field.
 
-The leading candidate for LIC2 is a [PASETO](https://paseto.io/)-
-compatible layer (`v4.public` for Ed25519, `v4.local` for symmetric
-deployments). PASETO offers two properties LIC1 doesn't:
+### 9.1 Envelope
 
-1. **Versioned algorithm bundles** — a single PASETO `v4` token
-   commits to Ed25519, BLAKE2b, and a fixed encoding. Algorithm-
-   confusion attacks reduce to "is this the right version", which
-   tooling can enforce structurally.
-2. **External ecosystem** — multiple language SDKs already exist
-   ([`o1egl/paseto`](https://github.com/o1egl/paseto) for Go,
-   [`auth70/paseto-ts`](https://github.com/auth70/paseto-ts) for
-   TypeScript), so consumers wanting a third-party verifier could
-   bring their own.
+```
+v4.public.<base64url(message || signature)>.<base64url(footer)>
+```
 
-LIC2 is **not on the v0.1.0 roadmap**. Adding it requires:
+- `v4.public.` — the PASETO version-and-purpose header, including its
+  trailing dot. This is the prefix the codec registry dispatches on.
+- `message` — the canonical-JSON payload bytes (§4). The same
+  canonicalisation LIC1 uses, so both formats are byte-comparable across
+  ports.
+- `signature` — a 64-byte Ed25519 detached signature, appended directly
+  to the message inside a single base64url segment.
+- `footer` — canonical JSON carrying `{"kid": "..."}`. Authenticated but
+  not encrypted.
 
-- A `v4.` prefix entry in the dispatch allowlist (§1.2).
-- Cross-port fixtures under `fixtures/tokens/lic2-<alg>-<status>/`.
-- A migration story for callers who hard-code `LIC1.` parsing —
-  realistically, a major-version bump on both ports.
-- A decision on whether LIC1 remains the default issuance format
-  (most likely yes) or whether `Issuer.format` becomes a config
-  knob.
+### 9.2 Why there is no header segment
 
-Until that work lands, the safe assumption is **LIC1 only**. The
-prefix-allowlist in §1.2 already rejects `v4.public.` /
-`v4.local.` payloads with `UnsupportedTokenFormat`, which is the
-correct behaviour pre-LIC2.
+PASETO deliberately forbids algorithm agility: the version string **is**
+the algorithm commitment. `v4` means Ed25519, always. There is no header
+field naming an algorithm, so there is nothing an attacker can tamper
+with to select a weaker primitive — the algorithm-confusion class that
+LIC1 defends against with a `kid → alg` pre-registration table does not
+exist here structurally.
 
-### 9.1 Decision matrix — LIC1 today, LIC2 someday
+Because there is no header, `kid` travels in the footer. The footer is
+fed into the pre-authentication encoding (§9.3), so rewriting it
+invalidates the signature; it cannot be used to redirect a verifier to a
+key of the attacker's choosing.
 
-| Concern                                  | LIC1 (today)                                                                 | LIC2 (planned)                                                                                  |
-| ---------------------------------------- | ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| **Cross-port byte determinism**          | ✅ Required & enforced by fixtures + interop tests.                          | Same requirement. PASETO is structurally deterministic for `v4.public`; salt-bearing modes (XChaCha20) need protocol-level salt fixing the same way RSA-PSS does today. |
-| **Algorithm-confusion resistance**       | ✅ `kid → alg` pre-registration table in `AlgorithmRegistry`.                | ✅ Built into PASETO's versioned suite.                                                         |
-| **Custom payload claims**                | ✅ Free-form JSON object after the canonical-JSON contract in §4.            | ⚠️ PASETO has its own canonical claim set; trial / scope / fingerprint claims would need a footer convention or a wrapped sub-payload. |
-| **Third-party verifier ecosystem**       | ❌ One verifier per port, both first-party.                                  | ✅ Multiple PASETO libraries; consumers can roll their own.                                     |
-| **Ed25519 default**                      | ✅ `header.alg == "ed25519"`.                                                | ✅ `v4.public` is Ed25519 by definition.                                                        |
-| **HMAC support**                         | ✅ `hs256` for symmetric / kiosk deployments.                                | ✅ `v4.local` (XChaCha20-SIV).                                                                  |
-| **RSA-PSS support**                      | ✅ `rs256-pss` for legacy interop.                                           | ❌ PASETO `v4` drops RSA. A LIC1-RSA fallback would have to coexist for legacy verifiers.       |
-| **Adoption cost**                        | None — already shipping.                                                     | A major bump on both ports + new fixture set + dispatch entry + consumer migration.             |
-| **Right call when…**                     | Operating any v0.x.y release; running a small number of first-party SDKs.    | Onboarding third-party verifier ecosystems; standardising on a published format.                |
+### 9.3 Signing input (PAE)
 
-**Pick LIC1 if**: you're shipping in 2026, you already control the
-verifier code, and you don't have a hard requirement to interoperate
-with PASETO tooling. That's the common case and the only thing that
-ships today.
+The signature covers `PAE([h, m, f, i])`, where `h` is the header
+`v4.public.`, `m` the message, `f` the footer, and `i` the implicit
+assertion (always empty for LIC2).
 
-**Pick LIC2 (when available) if**: you need third-party PASETO
-verifiers, you're starting a new project that doesn't already
-depend on `header.kid` / `header.alg` claim semantics, and you can
-take the major-version bump cost.
+PAE — Pre-Authentication Encoding — is:
 
-There is no migration path from LIC1 to LIC2 without re-issuing
-tokens. Existing licenses survive — the storage rows and lifecycle
-state machines are format-agnostic — but the offline tokens cached
-on every device need fresh re-issuance against the new format.
+```
+LE64(count) || (LE64(len(piece)) || piece)...
+```
+
+`LE64` is a 64-bit unsigned little-endian length with the most
+significant bit cleared. The length prefixes make the encoding
+unambiguous: two different piece vectors cannot produce the same byte
+string, so an attacker cannot shift bytes between the header, payload,
+and footer.
+
+This construction differs from LIC1's, which concatenates
+`<header_b64>.<payload_b64>` as ASCII. Each codec owns its own signing
+input; a signature valid under one construction is rejected under the
+other.
+
+### 9.4 Algorithm constraint
+
+LIC2 supports **Ed25519 only**. Configuring an issuer for LIC2 with
+RSA-PSS or HMAC fails at construction with an error naming both
+remedies — switch the algorithm, or switch the format — rather than
+producing a token no verifier will accept.
+
+This is a property of PASETO, not a project restriction: there is no v4
+encoding for RSA-PSS.
+
+### 9.5 Why `v4.local` is excluded
+
+PASETO's symmetric mode is deliberately **not** implemented.
+
+`v4.local` is symmetric, so any party that can read a token can also
+mint one. §6.1 already rejects that property for this product's primary
+deployment model: it rules out distributing verification keys to many
+client devices, because every device would then hold a key capable of
+minting unlimited tokens. Offline device-side validation is exactly that
+model.
+
+The stated reason to adopt PASETO is third-party verifiability, and that
+benefit evaporates when the verifier needs the secret. The narrow
+server-to-server case `v4.local` would serve is already covered by LIC1
+HS256 (§6.1).
+
+The codec registry is built so a third format could register later
+without redesign, should a concrete requirement for opaque payloads
+appear.
+
+### 9.6 Implementation
+
+Both ports implement v4.public directly on their existing
+runtime-backed Ed25519 backend rather than depending on a PASETO
+library. v4.public is Ed25519 over a PAE-encoded string and nothing
+more, and the project's crypto principle is that no third-party curve
+library is pulled in — auditors only need to trust the runtime.
+
+Correctness is established three ways:
+
+1. **An independent implementation.** `paseto-ts` is a devDependency;
+   the conformance suite asserts that tokens this port produces verify
+   under it, and that tokens it produces decode here. This is not
+   decorative — dropping a single empty piece from the PAE vector passed
+   every in-house test and was caught only by the independent verifier.
+2. **Specification vectors.** PAE is pinned to the vectors published in
+   the PASETO spec, in both ports.
+3. **Cross-port fixtures.** `fixtures/tokens-lic2/` carries committed
+   vectors whose payloads are lifted verbatim from the ed25519 LIC1
+   vectors, so the two families differ only in envelope. Both ports
+   re-encode and byte-compare.
+
+### 9.7 Choosing between LIC1 and LIC2
+
+| Concern | LIC1 | LIC2 |
+| --- | --- | --- |
+| **Default** | ✅ Yes — issued unless another format is selected. | Opt-in via `tokenFormat`. |
+| **Algorithms** | ed25519, rs256-pss, hs256. | ed25519 only. |
+| **Algorithm-confusion resistance** | `kid → alg` pre-registration table. | Structural — the version string is the algorithm. |
+| **Third-party verifiers** | First-party only. | Any PASETO v4 library. |
+| **Cross-port byte determinism** | Enforced by fixtures + interop. | Same, via `fixtures/tokens-lic2/`. |
+| **Claim set** | Domain claims in the payload. | Identical — the formats differ only in envelope. |
+
+**Pick LIC1** unless you have a specific reason not to. It supports every
+algorithm, it is what the issuer emits by default, and it is what the
+overwhelming majority of the test corpus covers.
+
+**Pick LIC2** when a third party needs to verify your tokens with
+off-the-shelf tooling, or when you want the algorithm commitment to be
+structural rather than enforced by a registration table.
+
+Both formats can be verified by the same verifier, so adopting LIC2 does
+not require re-issuing existing LIC1 tokens. Switching *issuance* to LIC2
+affects only tokens minted after the switch.
+

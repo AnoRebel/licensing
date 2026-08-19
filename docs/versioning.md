@@ -15,20 +15,30 @@ All three share one version. A license issued by any port at version `X.Y.Z` is 
 The repo-root `VERSION` file holds the canonical semver string (no `v` prefix, no trailing newline required but tolerated). Release-candidate suffixes (`-rc.N`, `-beta.N`) are permitted and flow through to every manifest unchanged:
 
 ```
-0.1.0-rc.0
+0.2.0
 ```
 
-Every other manifest is generated / rewritten from this file by `scripts/sync-versions.mjs`:
+### Who writes what
 
-| File | What it holds | Who reads it |
+Two systems touch release files, and **no file is written by both** — that
+overlap is what previously let them fight.
+
+| File | Writer | What it holds |
 |---|---|---|
-| `VERSION` | `0.1.0` | sync script; humans |
-| `typescript/package.json` | `"version": "0.1.0"` | npm publish, Bun workspace |
-| `typescript/jsr.json` | `"version": "0.1.0"` | `npx jsr publish` |
-| `admin/package.json` | `"version": "0.1.0"` | Nuxt build (cosmetic) |
-| `examples/ts/package.json` | `"version": "0.1.0"` | workspace resolution |
-| `tools/*/package.json` | `"version": "0.1.0"` | workspace resolution |
-| `licensing/version.go` | `const Version = "0.1.0"` | Go module; surfaced on pkg.go.dev |
+| `VERSION` | release-please | the canonical semver string |
+| `CHANGELOG.md` | release-please | generated from conventional commits |
+| `.release-please-manifest.json` | release-please | its own last-released baseline |
+| `typescript/package.json` | `version:sync` | `"version"` |
+| `typescript/jsr.json` | `version:sync` | `"version"` |
+| `admin/package.json` | `version:sync` | `"version"` (cosmetic) |
+| `examples/ts/package.json` | `version:sync` | `"version"` |
+| `tools/*/package.json` | `version:sync` | `"version"` |
+| `licensing/version.go` | `version:sync` | `const Version`, surfaced on pkg.go.dev |
+
+release-please decides the version and writes the changelog;
+`scripts/sync-versions.mjs` propagates that version into the derived
+manifests. The release workflow runs the sync into the release PR, so a
+maintainer merges one coherent commit.
 
 ### Commands
 
@@ -81,19 +91,46 @@ bun run version:check
 
 Both ports move in lockstep. If only one port needs a bug fix, the other gets the same version bump with a no-op changelog entry — this keeps `X.Y.Z ↔ vX.Y.Z` a reliable contract for cross-language consumers.
 
-### Pre-1.0 caveat
+### Pre-1.0 caveat (applies today)
 
 While `MAJOR == 0`, the API is **unstable**. Breaking changes may ship on a minor bump — `0.2.0` did exactly that, dropping four fields from the client heartbeat input on both ports. Downstream consumers should pin to exact versions (`"@anorebel/licensing": "0.2.0"` and `github.com/AnoRebel/licensing v0.2.0`) until `1.0.0`.
+
+### Stability policy from 1.0.0 onward
+
+Once `1.0.0` ships, the caveat above is retired and the following holds until the next major.
+
+**Covered — a breaking change to any of these requires a major bump:**
+
+- The exported API surface of both ports: function signatures, exported types, error codes, and the `kid`/`alg` binding semantics.
+- Token wire formats. A token issued by `1.x` verifies under any later `1.y`. LIC1 and LIC2 bytes are both frozen; a change to either is a major.
+- The HTTP contract in `openapi/licensing-admin.yaml`: paths, request and response shapes, and status codes.
+- The storage schema as described in `fixtures/schema/entities.md`. Additive migrations are minor; a column removal or type change is major.
+- Which token format is issued by default. LIC1 is the default, and changing that default is a breaking change.
+
+**Not covered — these may change in a minor or patch:**
+
+- Internal module layout, unexported identifiers, and anything under a path documented as internal.
+- The admin UI. It is an operator console, not an API; its routes and components carry no compatibility promise.
+- Log output, error *messages* (as opposed to error codes), and audit-row prose.
+- Development tooling: fixture-generator internals, the interop harness, lint configuration, and CI workflow shape.
+- Adding a new token format, a new optional config field, a new endpoint, or a new error code. These are minor by the table above.
+
+**Deprecation.** A covered surface slated for removal is documented as deprecated in the changelog for at least one minor release before the major that removes it. Pre-1.0 there is no such guarantee — deprecated shims are removed in the same commit that replaces them.
 
 ---
 
 ## Token-format versioning is separate
 
-`LIC1` is the **token envelope** version, carried in the `v` header claim of every token. It is **not** tied to the package version — a token issued by `@anorebel/licensing@0.1.0` and one issued by `@anorebel/licensing@2.4.7` are both `LIC1` tokens and remain cross-compatible.
+Token envelope versions are **not** tied to the package version. A token issued by `@anorebel/licensing@0.1.0` and one issued by `@anorebel/licensing@2.4.7` are both valid LIC1 tokens and remain cross-compatible.
 
-A future `LIC2` envelope (if/when PASETO compatibility lands) will ship alongside `LIC1` — the prefix-based dispatch registry (`LIC1.` / `LIC2.`) lets a single library accept both simultaneously.
+Two envelopes ship:
 
-See [`docs/token-format.md`](token-format.md) for the LIC1 spec.
+- **LIC1** — the default. Carried by the `v` header claim; wire prefix `LIC1.`.
+- **LIC2** — PASETO `v4.public`, opt-in via `tokenFormat`. Wire prefix `v4.public.`.
+
+The codec registry lets a single verifier accept both simultaneously, so adopting LIC2 for new issuance does not invalidate LIC1 tokens already on devices.
+
+See [`docs/token-format.md`](token-format.md) for both specs.
 
 ---
 
@@ -104,10 +141,10 @@ See [`docs/token-format.md`](token-format.md) for the LIC1 spec.
 go list -m -versions github.com/AnoRebel/licensing
 
 # Pin a specific version
-go get github.com/AnoRebel/licensing@v0.1.0
+go get github.com/AnoRebel/licensing@v0.2.0
 
 # View on the registry
-open https://pkg.go.dev/github.com/AnoRebel/licensing@v0.1.0
+open https://pkg.go.dev/github.com/AnoRebel/licensing@v0.2.0
 ```
 
 ## TypeScript consumers: checking available versions

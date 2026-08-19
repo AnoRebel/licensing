@@ -16,7 +16,9 @@ in CI. Both expose the same building blocks — key hierarchy, issuer lifecycle,
 HTTP handlers, pluggable storage (memory, Postgres, SQLite) — so you can pick
 the runtime that fits your stack without rewriting the licensing layer.
 
-> **Status:** pre-release. Tracking `v0.1.0`. Not yet production-ready.
+> **Status:** `v0.2.0` released. Pre-1.0 — the API is still allowed to
+> change on a minor bump, so pin exact versions. See
+> [`docs/versioning.md`](docs/versioning.md).
 
 ## What's in the box
 
@@ -40,11 +42,12 @@ licensing/
 
 ## Design at a glance
 
-- **Own token format (LIC1).** Four-part base64url envelope over canonical
-  JSON: `LIC1.<header_b64>.<payload_b64>.<sig_b64>`. Canonicalization rules
-  are specified in `fixtures/README.md` and enforced by byte-identical
-  fixture tests in both languages. A version prefix keeps the door open for
-  a future `LIC2` = PASETO-compatible layer without breaking v1 consumers.
+- **Two token formats, one default.** LIC1 is a four-part base64url
+  envelope over canonical JSON:
+  `LIC1.<header_b64>.<payload_b64>.<sig_b64>`. LIC2 is PASETO `v4.public`
+  and is opt-in; verifiers accept both. Canonicalization rules are
+  specified in `fixtures/README.md` and enforced by byte-identical fixture
+  tests in both languages.
 - **Pluggable crypto.** Ed25519 (default), RSA-PSS, HMAC-SHA-256 — all
   register into a shared backend registry keyed by the header `alg`.
   Algorithm-confusion attacks are blocked by pre-registered `kid → alg`
@@ -159,6 +162,51 @@ lives in:
 …and the surface area is documented as a whole in
 [`docs/security.md`](docs/security.md) and
 [`docs/token-format.md`](docs/token-format.md).
+
+### Token formats
+
+Two token envelopes ship. **LIC1 is the default** — you get it unless you
+ask for something else, and it is the right choice unless you have a
+specific reason otherwise.
+
+| | LIC1 | LIC2 |
+| --- | --- | --- |
+| Wire prefix | `LIC1.` | `v4.public.` (PASETO v4.public) |
+| Algorithms | ed25519, rs256-pss, hs256 | ed25519 only |
+| Third-party verifiers | first-party only | any PASETO v4 library |
+
+Select LIC2 per call:
+
+```ts
+const { token } = await issueToken(storage, clock, backends, {
+  license,
+  usage,
+  ttlSeconds: 3600,
+  alg: 'ed25519',
+  signingPassphrase: process.env.LICENSING_SIGNING_PW!,
+  tokenFormat: 'LIC2', // omit for LIC1
+});
+```
+
+```go
+res, err := lic.IssueToken(store, clk, backends, lic.IssueTokenInput{
+    License:           license,
+    Usage:             usage,
+    TTLSeconds:        3600,
+    Alg:               lic.AlgEd25519,
+    SigningPassphrase: os.Getenv("LICENSING_SIGNING_PW"),
+    TokenFormat:       lic.FormatLIC2, // omit for LIC1
+})
+```
+
+Verifiers accept **both** formats regardless of what the issuer emits, so
+switching issuance does not invalidate tokens already on devices. Pairing
+LIC2 with a non-Ed25519 algorithm fails before a token is produced rather
+than yielding one nothing can verify.
+
+See [`docs/token-format.md` §9](docs/token-format.md) for the envelope,
+the PAE signing input, and why PASETO's symmetric `v4.local` mode is
+deliberately excluded.
 
 ## Admin UI
 

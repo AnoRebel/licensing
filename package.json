@@ -20,6 +20,7 @@
     "typecheck": "bun run --filter='@anorebel/licensing' typecheck",
     "version:sync": "node scripts/sync-versions.mjs",
     "version:check": "node scripts/sync-versions.mjs --check",
+    "docs:check": "node scripts/check-doc-versions.mjs",
     "commitlint": "commitlint --edit"
   },
   "devDependencies": {
