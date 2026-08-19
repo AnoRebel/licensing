@@ -108,8 +108,13 @@ export const errors = {
       `unsupported token format prefix: ${JSON.stringify(prefix)}`,
       { prefix },
     ),
+  // Format-agnostic: this helper serves every codec, so it must not name
+  // one. It previously said "malformed LIC1 token", which produced
+  // self-contradicting output for LIC2 failures ("malformed LIC1 token:
+  // LIC2 payload is 3 bytes...") — the exact mis-attribution the codec
+  // router exists to prevent. Callers name their own format in `reason`.
   tokenMalformed: (reason: string): TokenFormatError =>
-    new TokenFormatError('TokenMalformed', `malformed LIC1 token: ${reason}`),
+    new TokenFormatError('TokenMalformed', `malformed token: ${reason}`),
   tokenSignatureInvalid: (): TokenFormatError =>
     new TokenFormatError('TokenSignatureInvalid', 'token signature verification failed'),
   tokenExpired: (): TokenFormatError => new TokenFormatError('TokenExpired', 'token has expired'),

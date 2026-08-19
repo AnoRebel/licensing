@@ -108,7 +108,9 @@ export function decodeLIC1Parts(token: string): LIC1DecodedParts {
 function decodeLIC1(token: string): LIC1DecodedParts {
   const parts = token.split('.');
   if (parts.length !== 4) {
-    throw errors.tokenMalformed(`expected 4 dot-separated segments, got ${parts.length}`);
+    throw errors.tokenMalformed(
+      `LIC1 token has ${parts.length} dot-separated segments, expected 4`,
+    );
   }
   const [, headerB64, payloadB64, sigB64] = parts as [string, string, string, string];
   const headerBytes = b64urlDecode(headerB64);

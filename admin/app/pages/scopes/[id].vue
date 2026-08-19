@@ -485,8 +485,8 @@ const keyTableMeta = computed<KeyTableMeta>(() => ({
           <DialogDescription>
             Provisions a new signing key bound to this scope. The server generates the
             keypair and stores the private half in the KMS — only the public PEM is
-            returned to clients. <code>kid</code> is the identifier that appears in LIC1
-            token headers; keep it short and stable.
+            returned to clients. <code>kid</code> is the identifier that identifies this
+            key inside issued tokens; keep it short and stable.
           </DialogDescription>
         </DialogHeader>
 
