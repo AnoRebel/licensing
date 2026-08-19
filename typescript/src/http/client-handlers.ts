@@ -178,6 +178,7 @@ async function handleActivate(
       ttlSeconds: ttl,
       alg,
       signingPassphrase: ctx.signingPassphrase,
+      ...(ctx.tokenFormat !== undefined ? { tokenFormat: ctx.tokenFormat } : {}),
       ...(ctx.forceOnlineAfter !== undefined ? { forceOnlineAfter: ctx.forceOnlineAfter } : {}),
       ...(ctx.transparencyHook !== undefined ? { transparencyHook: ctx.transparencyHook } : {}),
     });
@@ -246,6 +247,7 @@ async function reissueFromToken(
     ttlSeconds: ttl,
     alg,
     signingPassphrase: ctx.signingPassphrase,
+    ...(ctx.tokenFormat !== undefined ? { tokenFormat: ctx.tokenFormat } : {}),
     ...(ctx.forceOnlineAfter !== undefined ? { forceOnlineAfter: ctx.forceOnlineAfter } : {}),
     ...(ctx.transparencyHook !== undefined ? { transparencyHook: ctx.transparencyHook } : {}),
   });

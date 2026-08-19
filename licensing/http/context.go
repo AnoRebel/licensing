@@ -25,7 +25,22 @@ type ClientContext struct {
 	DefaultAlg        lic.KeyAlg
 	SigningPassphrase string
 	Version           string
-	TokenTTLSec       int
+	// TokenFormat selects the envelope to issue. Zero value means LIC1.
+	//
+	// FormatLIC2 emits PASETO v4.public and supports Ed25519 only, so
+	// pairing it with a non-Ed25519 DefaultAlg is rejected. Verification
+	// accepts both formats regardless of this setting, so an operator can
+	// switch issuance without invalidating tokens already in the field.
+	TokenFormat lic.TokenFormat
+	TokenTTLSec int
+}
+
+// tokenFormat returns the configured envelope, defaulting to LIC1.
+func (c *ClientContext) tokenFormat() lic.TokenFormat {
+	if c.TokenFormat != "" {
+		return c.TokenFormat
+	}
+	return lic.FormatLIC1
 }
 
 func (c *ClientContext) alg() lic.KeyAlg {

@@ -70,6 +70,41 @@ export interface TokenCodec {
 /** Key-record shape codecs may need when importing a public key. */
 export type CodecKeyRecord = KeyRecord;
 
+/**
+ * Selectable token envelopes.
+ *
+ * A name rather than a prefix, because the prefix is an encoding detail
+ * (`LIC2` is written `v4.public.` on the wire) and callers should not have
+ * to know it to choose a format.
+ */
+export type TokenFormat = 'LIC1' | 'LIC2';
+
+/** Wire prefix owned by each selectable format. */
+const FORMAT_PREFIXES: Readonly<Record<TokenFormat, string>> = {
+  LIC1: 'LIC1.',
+  LIC2: 'v4.public.',
+};
+
+/**
+ * Resolve a format name to its registered codec.
+ *
+ * Throws when the codec has not been registered — which means the module
+ * defining it was never imported, a wiring bug rather than bad input.
+ */
+export function codecForFormat(format: TokenFormat): TokenCodec {
+  const prefix = FORMAT_PREFIXES[format];
+  if (prefix === undefined) {
+    throw errors.unsupportedTokenFormat(`unknown token format: ${String(format)}`);
+  }
+  const codec = codecs.get(prefix);
+  if (codec === undefined) {
+    throw errors.unsupportedTokenFormat(
+      `token format ${format} is not registered — its codec module was not imported`,
+    );
+  }
+  return codec;
+}
+
 // ---------- registry ----------
 
 const codecs = new Map<string, TokenCodec>();

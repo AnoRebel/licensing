@@ -526,6 +526,7 @@ func (h *ClientHandler) issueFor(license *lic.License, usage *lic.LicenseUsage) 
 		Alg:               h.ctx.alg(),
 		SigningPassphrase: h.ctx.SigningPassphrase,
 		TransparencyHook:  h.ctx.TransparencyHook,
+		TokenFormat:       h.ctx.tokenFormat(),
 	}
 	if h.ctx.ForceOnlineAfter != nil {
 		v := *h.ctx.ForceOnlineAfter

@@ -35,7 +35,13 @@ type IssueTokenInput struct {
 	TransparencyHook  TransparencyHook
 	Alg               KeyAlg
 	SigningPassphrase string
-	TTLSeconds        int
+	// TokenFormat selects the envelope to emit. Zero value means LIC1.
+	//
+	// FormatLIC2 emits PASETO v4.public, which supports Ed25519 only —
+	// pairing it with any other Alg fails before a token is produced. LIC1
+	// remains the default indefinitely; LIC2 is opt-in.
+	TokenFormat TokenFormat
+	TTLSeconds  int
 }
 
 // TransparencyHook is the signature of the post-issue callback. The
@@ -219,9 +225,25 @@ func IssueToken(
 		return nil, err
 	}
 
-	header := LIC1Header{V: 1, Typ: "lic", Alg: input.Alg, Kid: signing.Kid}
-	token, err := Encode(EncodeOptions{
-		Header:     header,
+	// Dispatch on the requested envelope. Selecting the codec by name here
+	// is what keeps the rest of issuance format-agnostic: claim assembly,
+	// key resolution, and the transparency hook are identical either way.
+	format := input.TokenFormat
+	if format == "" {
+		format = FormatLIC1
+	}
+	codec, err := CodecForFormat(format)
+	if err != nil {
+		return nil, err
+	}
+	if !codec.SupportsAlg(input.Alg) {
+		return nil, newError(CodeUnsupportedAlgorithm,
+			fmt.Sprintf("token format %s does not support alg=%s", format, input.Alg),
+			map[string]any{"format": string(format), "alg": string(input.Alg)})
+	}
+	token, err := codec.Encode(CodecEncodeInput{
+		Alg:        input.Alg,
+		Kid:        signing.Kid,
 		Payload:    payload,
 		PrivateKey: handle,
 		Backend:    backend,

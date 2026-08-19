@@ -63,6 +63,47 @@ type TokenCodec interface {
 	Encode(input CodecEncodeInput) (string, error)
 }
 
+// TokenFormat names a selectable token envelope.
+//
+// A name rather than a prefix, because the prefix is an encoding detail
+// (LIC2 is written "v4.public." on the wire) and callers should not have to
+// know it to choose a format.
+type TokenFormat string
+
+// TokenFormat values.
+const (
+	FormatLIC1 TokenFormat = "LIC1"
+	FormatLIC2 TokenFormat = "LIC2"
+)
+
+// formatPrefix maps a selectable format to the wire prefix its codec owns.
+var formatPrefix = map[TokenFormat]string{
+	FormatLIC1: LIC1Prefix,
+	FormatLIC2: LIC2Prefix,
+}
+
+// CodecForFormat resolves a format name to its registered codec.
+//
+// An unregistered codec means the package defining it was never linked in —
+// a wiring bug rather than bad input.
+func CodecForFormat(format TokenFormat) (TokenCodec, error) {
+	prefix, ok := formatPrefix[format]
+	if !ok {
+		return nil, newError(CodeUnsupportedTokenFormat,
+			fmt.Sprintf("unknown token format: %s", format),
+			map[string]any{"format": string(format)})
+	}
+	codecMu.RLock()
+	defer codecMu.RUnlock()
+	codec, ok := codecs[prefix]
+	if !ok {
+		return nil, newError(CodeUnsupportedTokenFormat,
+			fmt.Sprintf("token format %s is not registered", format),
+			map[string]any{"format": string(format)})
+	}
+	return codec, nil
+}
+
 var (
 	codecMu sync.RWMutex
 	codecs  = map[string]TokenCodec{}
