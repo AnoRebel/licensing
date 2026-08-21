@@ -91,13 +91,13 @@ bun run version:check
 
 Both ports move in lockstep. If only one port needs a bug fix, the other gets the same version bump with a no-op changelog entry — this keeps `X.Y.Z ↔ vX.Y.Z` a reliable contract for cross-language consumers.
 
-### Pre-1.0 caveat (applies today)
+### Pre-1.0 caveat (historical) <!-- doc-version: historical -->
 
-While `MAJOR == 0`, the API is **unstable**. Breaking changes may ship on a minor bump — `0.2.0` did exactly that, dropping four fields from the client heartbeat input on both ports. Downstream consumers should pin to exact versions (`"@anorebel/licensing": "0.2.0"` and `github.com/AnoRebel/licensing v0.2.0`) until `1.0.0`.
+Retired. While `MAJOR == 0` the API was unstable and breaking changes could ship on a minor bump — `0.2.0` did exactly that, dropping four fields from the client heartbeat input on both ports. That no longer applies; the policy below governs.
 
-### Stability policy from 1.0.0 onward
+### Stability policy
 
-Once `1.0.0` ships, the caveat above is retired and the following holds until the next major.
+In effect as of `1.0.0`, and holding until the next major.
 
 **Covered — a breaking change to any of these requires a major bump:**
 

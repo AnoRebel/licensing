@@ -16,9 +16,9 @@ in CI. Both expose the same building blocks — key hierarchy, issuer lifecycle,
 HTTP handlers, pluggable storage (memory, Postgres, SQLite) — so you can pick
 the runtime that fits your stack without rewriting the licensing layer.
 
-> **Status:** `v0.2.0` released. Pre-1.0 — the API is still allowed to
-> change on a minor bump, so pin exact versions. See
-> [`docs/versioning.md`](docs/versioning.md).
+> **Status:** `v1.0.0`. The API is stable — see the compatibility promise
+> in [`docs/versioning.md`](docs/versioning.md) for what a major bump
+> covers and what it does not.
 
 ## What's in the box
 

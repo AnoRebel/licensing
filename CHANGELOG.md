@@ -8,6 +8,87 @@ Three artefacts are released in lockstep — `@anorebel/licensing` on npm,
 `@anorebel/licensing` on jsr.io, and `github.com/AnoRebel/licensing` on
 pkg.go.dev. A single entry below describes all three.
 
+## [1.0.0] — 2026-08-21
+
+First stable release. The compatibility promise in
+[`docs/versioning.md`](docs/versioning.md) takes effect: the exported API
+of both ports, both token wire formats, the OpenAPI contract, the storage
+schema, and the default issuance format are covered by semver from here.
+
+### Added
+
+**LIC2 — a second token format.** PASETO `v4.public`, opt-in via
+`tokenFormat` (TS) / `TokenFormat` (Go) on `issueToken` and on the client
+handler context. LIC1 remains the default and is unchanged; verifiers
+accept both formats regardless of which one an issuer emits, so adopting
+LIC2 does not invalidate tokens already on devices.
+
+LIC2 is Ed25519-only — PASETO commits to the algorithm in its version
+string, so there is no v4 encoding for RSA-PSS. Pairing LIC2 with another
+algorithm fails at construction rather than producing an unverifiable
+token. PASETO's symmetric `v4.local` mode is deliberately excluded: it
+would let any party that can read a token also mint one, which is
+incompatible with distributing verification keys to devices.
+
+Implemented directly on the existing runtime-backed Ed25519 backend rather
+than via a PASETO dependency, keeping the package's runtime dependency
+count at zero. Correctness is pinned three ways: an independent
+implementation (`paseto-ts`, a devDependency) verifies tokens this library
+produces and vice versa, PAE is checked against the specification's own
+vectors in both ports, and committed cross-port fixtures under
+`fixtures/tokens-lic2/` byte-compare Go and TypeScript output.
+
+**Token codec registry.** Tokens are routed by prefix to a codec that owns
+decoding, encoding, and its own signing-input construction. A token bearing
+a registered prefix is never parsed by another format's parser, an
+unregistered prefix is rejected before any decoding, and a signature valid
+under one format's construction is rejected under another's.
+
+**GitHub Releases.** Every tag now publishes a Release with notes derived
+from this changelog, the npm tarball, the Go module zip, and a SHA-256
+checksum file. Prereleases are marked as such.
+
+**Transparency hook records the issued format.** `TokenIssuedEvent` carries
+`tokenFormat`, so an operator running mixed formats can tell which devices
+hold which envelope.
+
+### Fixed
+
+**Token-format assumptions that would have made LIC2 unusable.** Four
+separate places assumed LIC1 was the only format:
+
+- The Go device client rejected every LIC2 token — `Validate` and `Peek`
+  used LIC1-only entry points, so a device would activate successfully and
+  then fail every subsequent call, permanently, unable even to refresh.
+- The TypeScript device client had the same symptom via a different
+  mechanism: the LIC2 codec was absent from the `@anorebel/licensing/client`
+  import graph.
+- The Go HTTP server rejected the tokens it had just issued — a
+  LIC2-configured deployment would mint a token on `/activate` and refuse
+  it on `/refresh`, `/heartbeat`, and `/deactivate`.
+- The OpenAPI activate/refresh response pinned the token to a LIC1-only
+  regex, so LIC2 responses violated the published contract.
+
+**Release automation.** `release-please` had never cut a release: it
+derives its baseline from published GitHub Releases and there were none, so
+every proposal was computed from an empty history. Publishing Releases
+fixes the baseline; file ownership is now disjoint, with `release-please`
+owning `VERSION`, `CHANGELOG.md`, and its manifest, and `version:sync`
+owning the derived manifests.
+
+**A `notify-go-proxy` step that had been failing silently since it was
+written** — the Go module proxy requires case-escaped paths, and the
+unescaped URL returned 404 on every release behind a warning-only fallback.
+
+### Changed
+
+**Documentation.** `docs/token-format.md` §9 is now a specification of LIC2
+rather than a plan. `docs/versioning.md` gains the stability policy and
+retires the pre-1.0 caveat. `RELEASING.md` documents the automated release
+path first, with the manual path as a recovery exception. A new
+`docs:check` CI gate fails when a shipped doc names a version other than
+the current one.
+
 ## [0.2.0] — 2026-08-18
 
 ### Added
@@ -239,6 +320,7 @@ passphrases and never accepts passphrases via argv.
   (hypothetical `LIC2`) is an anticipated future release; the dispatch
   registry leaves the path open without shipping any PASETO code today.
 
-[Unreleased]: https://github.com/AnoRebel/licensing/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/AnoRebel/licensing/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/AnoRebel/licensing/compare/v0.2.0...v1.0.0
 [0.2.0]: https://github.com/AnoRebel/licensing/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/AnoRebel/licensing/releases/tag/v0.1.0
