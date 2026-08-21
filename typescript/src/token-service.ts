@@ -56,9 +56,10 @@ import { errors } from './errors.ts';
 import type { Clock } from './id.ts';
 import { newUuidV7 } from './id.ts';
 import { KeyHierarchy } from './key-hierarchy.ts';
-import { encode as encodeLic1, type LIC1Header } from './lic1.ts';
+
 import { effectiveStatus } from './lifecycle.ts';
 import type { Storage } from './storage/types.ts';
+import { codecForFormat, type TokenFormat } from './token-codec.ts';
 import type {
   JSONValue,
   KeyAlg,
@@ -86,6 +87,14 @@ export interface IssueTokenInput {
   /** Passphrase for the active signing key's encrypted PKCS8 blob. Provided
    *  per-call (from KMS/env/HSM) rather than cached in-memory. */
   readonly signingPassphrase: string;
+  /**
+   * Token envelope to emit. Defaults to `'LIC1'`.
+   *
+   * `'LIC2'` emits PASETO v4.public, which supports Ed25519 only — pairing
+   * it with any other `alg` fails before a token is produced. LIC1 remains
+   * the default indefinitely; LIC2 is opt-in.
+   */
+  readonly tokenFormat?: TokenFormat;
   /** Optional override: absolute unix-seconds deadline by which the client
    *  MUST re-check with the server. When omitted, falls back to
    *  `license.meta.force_online_after_sec` relative to `iat` (if set).
@@ -127,13 +136,22 @@ export interface TokenIssuedEvent {
   readonly licenseId: string;
   readonly usageId: string;
   readonly kid: string;
+  /**
+   * The envelope this token was issued in (`'LIC1'` or `'LIC2'`).
+   *
+   * Token issuance is not written to the audit log — only the token hash
+   * leaves the process — so without this an operator who switches a
+   * deployment to LIC2 has no record of which devices hold which envelope,
+   * which is precisely the question that matters during a rollback.
+   */
+  readonly tokenFormat: TokenFormat;
   readonly iat: number;
   readonly exp: number;
   readonly tokenSha256: string;
 }
 
 export interface IssueTokenResult {
-  /** The encoded LIC1 token — safe to hand to a client for offline use. */
+  /** The encoded token — safe to hand to a client for offline use. */
   readonly token: string;
   /** The signing key used (`kid`, `alg`) — handy for logging. */
   readonly kid: string;
@@ -269,13 +287,24 @@ export async function issueToken(
   const backend = backends.get(input.alg);
   if (!backend) throw errors.unsupportedAlgorithm(input.alg);
 
-  const header: LIC1Header = {
-    v: 1,
-    typ: 'lic',
+  // Dispatch on the requested envelope. Selecting the codec by name here
+  // is what keeps the rest of issuance format-agnostic: claim assembly,
+  // key resolution, and the transparency hook are identical either way.
+  const format = input.tokenFormat ?? 'LIC1';
+  const codec = codecForFormat(format);
+  if (!codec.supportedAlgs.has(input.alg)) {
+    throw errors.unsupportedAlgorithm(
+      `token format ${format} does not support alg=${input.alg} — ` +
+        `supported: ${[...codec.supportedAlgs].join(', ')}`,
+    );
+  }
+  const token = await codec.encode({
     alg: input.alg,
     kid: signing.kid,
-  };
-  const token = await encodeLic1({ header, payload, privateKey: handle, backend });
+    payload,
+    privateKey: handle,
+    backend,
+  });
 
   // Fire the transparency hook. Hash the full wire-token bytes — that's
   // what an external log would record and what a third party would
@@ -288,6 +317,7 @@ export async function issueToken(
       licenseId: input.license.id,
       usageId: input.usage.id,
       kid: signing.kid,
+      tokenFormat: format,
       iat,
       exp,
       tokenSha256,

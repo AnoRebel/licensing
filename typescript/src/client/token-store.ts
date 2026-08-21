@@ -3,7 +3,8 @@
  *
  * The client stores three pieces of state:
  *
- *   - `token`: the encoded LIC1 string returned by `/activate` or `/refresh`.
+ *   - `token`: the encoded token string returned by `/activate` or
+ *     `/refresh`. Either registered envelope; the store treats it as opaque.
  *   - `graceStartSec`: absolute unix-seconds timestamp when the client
  *     entered unreachable-grace, or null when not in grace.
  *
@@ -53,7 +54,7 @@ export interface TokenStore {
  * File layout:
  *
  *   {
- *     "token": "LIC1.<header>.<payload>.<sig>" | null,
+ *     "token": "LIC1.<header>.<payload>.<sig>"    (or a LIC2 token) | null,
  *     "graceStartSec": 1746000000 | null
  *   }
  *

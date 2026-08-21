@@ -519,6 +519,19 @@ func testPaginationMalformed(t *testing.T, factory Factory) {
 
 // ---------- Schema parity ----------
 
+// testSchemaCanonical asserts that an adapter's DescribeSchema agrees with
+// CanonicalSchema.
+//
+// Note what this can and cannot catch. Every adapter currently implements
+// DescribeSchema as `return lic.CanonicalSchema()`, so this compares a
+// function against itself and will pass even if an adapter's actual DDL
+// drifts from the canonical description. It is a guard against an adapter
+// starting to build its own description and getting it wrong, not evidence
+// that the migrations match.
+//
+// Parity between CanonicalSchema and the normative fixture is covered by
+// TestCanonicalSchema_MatchesEntitiesFixture in the licensing package,
+// which parses fixtures/schema/entities.md.
 func testSchemaCanonical(t *testing.T, factory Factory) {
 	s := factory(t)
 	got := s.DescribeSchema()

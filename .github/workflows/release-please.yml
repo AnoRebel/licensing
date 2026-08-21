@@ -40,10 +40,52 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
+      # release-please bumps VERSION but does not own the seven derived
+      # manifests — scripts/sync-versions.mjs does, and nothing may write a
+      # file twice. Left alone, a release PR would carry a bumped VERSION
+      # with stale manifests and fail its own version:check gate in ts.yml.
+      # Syncing here means the PR arrives green and a maintainer merges one
+      # coherent commit.
+      - uses: actions/checkout@v7
+        if: ${{ steps.release.outputs.pr }}
+        with:
+          fetch-depth: 0
+
+      - uses: oven-sh/setup-bun@v2
+        if: ${{ steps.release.outputs.pr }}
+        with:
+          bun-version: 1.3.12
+
+      - name: Sync derived manifests into the release PR
+        if: ${{ steps.release.outputs.pr }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_BRANCH: ${{ fromJSON(steps.release.outputs.pr).headBranchName }}
+        run: |
+          git fetch origin "$PR_BRANCH"
+          git checkout "$PR_BRANCH"
+
+          bun install --frozen-lockfile
+          bun run version:sync
+
+          if git diff --quiet; then
+            echo "Manifests already match VERSION; nothing to sync."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "chore: sync derived manifests to VERSION"
+          git push origin "$PR_BRANCH"
+
   # After release-please cuts a release (PR merged → tag pushed),
-  # sanity-check that every manifest agrees with VERSION. Guards against
-  # a release-please-config.json extra-files list that silently skipped
-  # a file.
+  # sanity-check that every derived manifest agrees with VERSION.
+  #
+  # release-please owns VERSION, CHANGELOG.md, and its own manifest;
+  # scripts/sync-versions.mjs owns the seven derived manifests. Nothing is
+  # written by both — that overlap is what previously let the two fight.
+  # This step catches the remaining failure mode: a release PR that bumps
+  # VERSION without version:sync having been run against it.
   verify-release:
     needs: release-please
     if: ${{ needs.release-please.outputs.releases_created == 'true' }}

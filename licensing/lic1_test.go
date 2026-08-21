@@ -71,28 +71,39 @@ func TestDispatchFormat_RejectsJWT(t *testing.T) {
 	}
 }
 
-func TestRegisterFormat_RejectsDuplicate(t *testing.T) {
-	err := RegisterFormat("LIC1.")
+func TestRegisterCodec_RejectsDuplicate(t *testing.T) {
+	err := RegisterCodec(LIC1Codec)
 	if err == nil {
-		t.Fatal("expected error for duplicate LIC1. registration")
+		t.Fatal("expected error for duplicate LIC1 codec registration")
 	}
 	if !errors.Is(err, ErrUnsupportedTokenFormat) {
 		t.Fatalf("expected UnsupportedTokenFormat, got %v", err)
 	}
+	// The previously registered codec must remain in effect.
+	codec, err := CodecFor("LIC1.a.b.c")
+	if err != nil {
+		t.Fatalf("LIC1 dispatch broke after a rejected duplicate: %v", err)
+	}
+	if codec.Prefix() != LIC1Prefix {
+		t.Fatalf("expected the original LIC1 codec, got prefix %q", codec.Prefix())
+	}
 }
 
-func TestRegisterFormat_AcceptsNewPrefix(t *testing.T) {
-	// Register a dummy LIC9 prefix. dispatchFormat now allowlists it, so the
-	// codec-level failure shifts from UnsupportedTokenFormat to TokenMalformed
-	// (the LIC1 shape check further downstream). The registry is an
-	// allowlist, not a parser router — see the future-LIC2 comment in lic1.go.
+// RegisterFormat used to accept a bare prefix with no parser behind it, so a
+// token bearing that prefix fell through to the LIC1 parser and failed with a
+// misleading TokenMalformed. That is the hazard the codec router removes, so
+// the old entry point must refuse rather than reintroduce it.
+func TestRegisterFormat_RejectsBarePrefix(t *testing.T) {
 	err := RegisterFormat("LIC9.")
-	if err != nil {
-		t.Fatal(err)
+	if err == nil {
+		t.Fatal("expected RegisterFormat to reject a bare prefix")
 	}
-	_, err = DecodeUnverified("LIC9.stub")
-	if errors.Is(err, ErrUnsupportedTokenFormat) {
-		t.Fatalf("LIC9. prefix was still rejected as UnsupportedTokenFormat: %v", err)
+	if !errors.Is(err, ErrUnsupportedTokenFormat) {
+		t.Fatalf("expected UnsupportedTokenFormat, got %v", err)
+	}
+	// Nothing was registered, so the prefix is still unknown.
+	if _, err := DecodeUnverified("LIC9.stub"); !errors.Is(err, ErrUnsupportedTokenFormat) {
+		t.Fatalf("expected LIC9. to remain unregistered, got %v", err)
 	}
 }
 
@@ -344,10 +355,18 @@ func TestVerify_UnknownKid(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------
-// Sanity — expected_token.txt matches Encode() output given known inputs.
-// For the ed25519 fixture we can't reproduce this without the ed25519
-// backend, so here we only assert the canonical headers/payloads
-// round-trip through base64url back to the expected bytes.
+// Fixture segment shape.
+//
+// This asserts only that the fixture's base64url segments decode back to
+// the committed canonical bytes. It does NOT call Encode() — the real
+// backends live in subpackages that this package cannot import without a
+// cycle. Byte-identity against the shipped encoder is covered where the
+// backends are reachable: licensing/interop (TestTokenRoundTrip_GoSign_*,
+// which re-signs via lic.Encode and byte-compares) for Go, and
+// typescript/tests/core/codec-byte-identity.test.ts for TypeScript.
+//
+// Do not restate this as an Encode() check: an earlier version of this
+// comment did, which is misleading about what fails if the encoder drifts.
 // -----------------------------------------------------------------------
 
 func TestFixtureTokenBase64urlSegments(t *testing.T) {

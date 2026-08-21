@@ -74,7 +74,7 @@ paths:
       operationId: activate
       tags: [Client]
       summary: Exchange a license key for a signed token
-      description: First-time activation. Validates the key, registers a `LicenseUsage` row for the device fingerprint (or re-attaches idempotently to an existing one), and returns a freshly signed LIC1 token plus its refresh cadence.
+      description: First-time activation. Validates the key, registers a `LicenseUsage` row for the device fingerprint (or re-attaches idempotently to an existing one), and returns a freshly signed token plus its refresh cadence. The envelope is LIC1 unless the deployment is configured to issue LIC2; verifiers accept both.
       security: []
       requestBody:
         required: true
@@ -629,7 +629,7 @@ paths:
       operationId: listKeys
       tags: [Admin Keys]
       summary: List signing keys
-      description: Paginated, cursor-based listing of `LicenseKey` rows (signing keys used to sign LIC1 tokens). Filter by `scope_id` to see keys bound to a specific scope, or by `state` to separate `active` from `retiring`.
+      description: Paginated, cursor-based listing of `LicenseKey` rows (signing keys used to sign issued tokens). Filter by `scope_id` to see keys bound to a specific scope, or by `state` to separate `active` from `retiring`.
       security: [{ bearerAuth: [] }]
       parameters:
         - { $ref: '#/components/parameters/Limit' }
@@ -861,7 +861,17 @@ components:
           properties:
             token:
               type: string
-              pattern: '^LIC1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$'
+              # Accepts either registered envelope: LIC1 is four
+              # dot-separated base64url segments, LIC2 is PASETO v4.public
+              # (`v4.public.<payload>.<footer>`). Pinning LIC1 only would
+              # make every response from a LIC2-configured deployment
+              # violate this contract.
+              #
+              # Written as one alternation rather than `oneOf` because the
+              # conformance validators deliberately implement a subset of
+              # JSON Schema and do not support `oneOf` — using it here
+              # would silently stop enforcing the pattern at all.
+              pattern: '^(LIC1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+|v4\.public\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)$'
             expires_at:
               type: string
               format: date-time

@@ -65,20 +65,24 @@ for (const file of manifestFiles) {
   });
 }
 
-// release-please's manifest carries the "last released version" per
-// package path. Without keeping this in sync with VERSION,
-// release-please computes the next bump from the wrong baseline and
-// the next release PR overwrites our manual bump. The shape is
-// `{ ".": "<version>" }` (the `.` is the root-package key declared in
-// release-please-config.json).
-const releasePleaseManifest = join(repoRoot, '.release-please-manifest.json');
-await rewriteJson(releasePleaseManifest, (obj) => {
-  // Update every entry — works for monorepo configs that grow more
-  // package keys later. Today we only have one (`.`).
-  for (const key of Object.keys(obj)) {
-    if (typeof obj[key] === 'string') obj[key] = version;
-  }
-});
+// NOTE: this script deliberately does NOT write
+// .release-please-manifest.json.
+//
+// It used to. The reason was that release-please computed the next bump
+// from the wrong baseline, so the manifest had to be forced into agreement
+// with VERSION or the next release PR would overwrite a manual bump. That
+// baseline problem had a different root cause: release-please reads the
+// last shipped version from published GitHub Releases, and this repository
+// had none — four tags, zero Releases. Now that release.yml publishes a
+// Release per tag, release-please derives the baseline correctly and owns
+// its own manifest.
+//
+// Single-writer ownership after that fix:
+//   release-please : VERSION, CHANGELOG.md, .release-please-manifest.json
+//   this script    : every derived manifest below
+//
+// Two writers on one file is what produced the contention in the first
+// place; do not reintroduce it.
 
 // Go: single-constant file, generated so pkg.go.dev surfaces the version.
 const goVersionFile = join(repoRoot, 'licensing/version.go');

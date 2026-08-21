@@ -71,13 +71,17 @@ type PeekResult struct {
 	Exp              int64
 }
 
-// Validate performs full offline validation of a LIC1 token.
-// Check order: (1) parse + sig verify, (2) nbf/exp with skew,
+// Validate performs full offline validation of a token in any registered
+// format. Check order: (1) parse + sig verify, (2) nbf/exp with skew,
 // (3) status in {active, grace}, (4) force_online_after hard deadline,
 // (5) fingerprint match.
+//
+// Uses VerifyEnvelope rather than Verify: the latter is LIC1-only by
+// contract and rejects every other format, which would make LIC2 tokens
+// unusable on exactly the offline device path LIC2 exists to serve.
 func Validate(token string, opts ValidateOptions) (*ValidateResult, error) {
 	// 1. Parse + signature verify.
-	parts, err := lic.Verify(token, lic.VerifyOptions{
+	parts, err := lic.VerifyEnvelope(token, lic.VerifyOptions{
 		Registry: opts.Registry,
 		Bindings: opts.Bindings,
 		Keys:     opts.Keys,
@@ -223,11 +227,16 @@ func audDescription(aud []string) string {
 	return fmt.Sprintf("aud=[%d values]", len(aud))
 }
 
-// Peek performs a synchronous, unverified decode of a LIC1 token. Returns
-// the header and lifetime claims. Used by Refresh to cheaply decide if a
-// refresh is due without paying the crypto cost.
+// Peek performs a synchronous, unverified decode of a token in any
+// registered format. Returns the header and lifetime claims. Used by
+// Refresh to cheaply decide if a refresh is due without paying the crypto
+// cost.
+//
+// Uses DecodeEnvelope rather than DecodeUnverified for the same reason
+// Validate uses VerifyEnvelope: the LIC1-only entry point would make a
+// LIC2 device unable to even refresh out of the state.
 func Peek(token string) (*PeekResult, error) {
-	parts, err := lic.DecodeUnverified(token)
+	parts, err := lic.DecodeEnvelope(token)
 	if err != nil {
 		return nil, TranslateVerifyError(err)
 	}

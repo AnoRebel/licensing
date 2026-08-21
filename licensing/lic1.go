@@ -4,9 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"slices"
 	"strings"
-	"sync"
 	"unicode/utf8"
 )
 
@@ -118,9 +116,33 @@ func headerToMap(h LIC1Header) (map[string]any, error) {
 // would short-circuit the parse.
 func DecodeUnverified(token string) (LIC1DecodedParts, error) {
 	var zero LIC1DecodedParts
-	if err := dispatchFormat(token); err != nil {
+	codec, err := CodecFor(token)
+	if err != nil {
 		return zero, err
 	}
+	if codec.Prefix() != LIC1Prefix {
+		return zero, newError(CodeUnsupportedTokenFormat,
+			fmt.Sprintf("token format %s is not LIC1; use DecodeEnvelope for format-agnostic decoding", codec.Prefix()),
+			map[string]any{"prefix": codec.Prefix()})
+	}
+	return decodeLIC1(token)
+}
+
+// DecodeEnvelope performs a shallow parse of a token in any registered
+// format, returning the format-agnostic envelope. Use this when the caller
+// must accept more than one token format.
+func DecodeEnvelope(token string) (DecodedEnvelope, error) {
+	codec, err := CodecFor(token)
+	if err != nil {
+		return DecodedEnvelope{}, err
+	}
+	return codec.Decode(token)
+}
+
+// decodeLIC1 is the LIC1-specific parse. It assumes the prefix has already
+// been matched by the router.
+func decodeLIC1(token string) (LIC1DecodedParts, error) {
+	var zero LIC1DecodedParts
 	parts := strings.Split(token, ".")
 	if len(parts) != 4 {
 		return zero, newError(CodeTokenMalformed,
@@ -157,70 +179,79 @@ func DecodeUnverified(token string) (LIC1DecodedParts, error) {
 	}, nil
 }
 
-// Format-prefix ALLOWLIST. The only entry today is "LIC1."; any other
-// prefix (`v4.public.`, JWT-style `eyJ...`, `LIC2.`, etc.) is rejected
-// before we touch the bytes.
-//
-// This registry is intentionally prefix-only — it does NOT route to
-// different parsers. DecodeUnverified below is the only parser, and it
-// is LIC1-specific. Registering a non-LIC1 prefix here would let a token
-// *reach* the LIC1 parser, which would then fail with a wrong
-// TokenMalformed code. Do NOT register a non-LIC1 prefix until the
-// broader token-codec refactor lands.
-//
-// ────────────────────────────────────────────────────────────────────
-// Future LIC2 / PASETO seam:
-// When we add a second token format, lift LIC1DecodedParts to an
-// interface that each codec implements, and turn this allowlist into a
-// real parser router — RegisterFormat(prefix, parseFn) where parseFn
-// returns the common envelope type. Verify will also need its own
-// dispatch because the signing-input construction differs per codec
-// (LIC1 concatenates `<h>.<p>` ASCII; PASETO uses PAE).
-// ────────────────────────────────────────────────────────────────────
-var (
-	formatMu       sync.RWMutex
-	formatPrefixes = []string{"LIC1."}
-)
+// -----------------------------------------------------------------------
+// Codec registration
+// -----------------------------------------------------------------------
 
-// RegisterFormat adds prefix to the allowlist. Registering a duplicate
-// prefix returns ErrUnsupportedTokenFormat. A registered prefix is the
-// necessary-but-not-sufficient condition for DecodeUnverified to accept
-// the token — the LIC1-shaped parse check still runs afterwards.
-func RegisterFormat(prefix string) error {
-	formatMu.Lock()
-	defer formatMu.Unlock()
-	if slices.Contains(formatPrefixes, prefix) {
-		return newError(CodeUnsupportedTokenFormat,
-			fmt.Sprintf("format prefix already registered: %s", prefix),
-			map[string]any{"prefix": prefix})
-	}
-	formatPrefixes = append(formatPrefixes, prefix)
-	return nil
+// LIC1Prefix is the ASCII prefix the LIC1 codec owns.
+const LIC1Prefix = "LIC1."
+
+// lic1Codec adapts LIC1 to the TokenCodec interface. Decode assumes the
+// prefix has already been matched by the router, so a token belonging to
+// another format never reaches the LIC1 parser and can never fail with a
+// misleading LIC1-shaped ErrTokenMalformed.
+type lic1CodecImpl struct{}
+
+// LIC1Codec is the registered LIC1 codec.
+var LIC1Codec TokenCodec = lic1CodecImpl{}
+
+// Prefix returns the ASCII prefix the LIC1 codec owns.
+func (lic1CodecImpl) Prefix() string { return LIC1Prefix }
+
+// SupportsAlg reports whether LIC1 can carry alg.
+func (lic1CodecImpl) SupportsAlg(alg KeyAlg) bool {
+	_, ok := headerAllowedAlgs[string(alg)]
+	return ok
 }
 
-// dispatchFormat returns nil if token's prefix is allowlisted, or
-// ErrUnsupportedTokenFormat otherwise. The error carries a clipped prefix
-// (up to and including the first dot, or 16 chars) so attackers cannot
-// blow up log lines by pasting binary data.
-func dispatchFormat(token string) error {
-	formatMu.RLock()
-	defer formatMu.RUnlock()
-	for _, p := range formatPrefixes {
-		if strings.HasPrefix(token, p) {
-			return nil
-		}
+// Decode parses a LIC1 token without verifying its signature. The prefix is
+// assumed to have been matched by the router.
+func (lic1CodecImpl) Decode(token string) (DecodedEnvelope, error) {
+	parts, err := decodeLIC1(token)
+	if err != nil {
+		return DecodedEnvelope{}, err
 	}
-	var clipped string
-	if idx := strings.IndexByte(token, '.'); idx >= 0 {
-		clipped = token[:idx+1]
-	} else if len(token) > 16 {
-		clipped = token[:16]
-	} else {
-		clipped = token
+	return DecodedEnvelope{
+		Header:       EnvelopeHeader{Alg: parts.Header.Alg, Kid: parts.Header.Kid},
+		Payload:      parts.Payload,
+		SigningInput: parts.SigningInput,
+		Signature:    parts.Signature,
+	}, nil
+}
+
+// Encode builds a signed LIC1 token.
+func (lic1CodecImpl) Encode(input CodecEncodeInput) (string, error) {
+	return Encode(EncodeOptions{
+		Header: LIC1Header{
+			V:   1,
+			Typ: "lic",
+			Alg: input.Alg,
+			Kid: input.Kid,
+		},
+		Payload:    LIC1Payload(input.Payload),
+		PrivateKey: input.PrivateKey,
+		Backend:    input.Backend,
+	})
+}
+
+func init() {
+	if err := RegisterCodec(LIC1Codec); err != nil {
+		panic("licensing: registering the LIC1 codec: " + err.Error())
 	}
+}
+
+// RegisterFormat is retained for source compatibility with the previous
+// prefix-allowlist API, and now always fails.
+//
+// The old RegisterFormat(prefix) only recorded a permitted prefix; it had no
+// parser to route to, so a registered prefix with nothing behind it fell
+// through to the LIC1 parser. That is precisely the hazard the codec router
+// removes, so accepting such a registration would reintroduce it. Register a
+// TokenCodec with RegisterCodec instead.
+func RegisterFormat(prefix string) error {
 	return newError(CodeUnsupportedTokenFormat,
-		fmt.Sprintf("unsupported token format prefix: %q", clipped),
-		map[string]any{"prefix": clipped})
+		fmt.Sprintf("RegisterFormat no longer accepts a bare prefix (%s); register a TokenCodec via RegisterCodec", prefix),
+		map[string]any{"prefix": prefix})
 }
 
 // -----------------------------------------------------------------------

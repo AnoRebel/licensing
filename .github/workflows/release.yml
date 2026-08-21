@@ -256,9 +256,117 @@ jobs:
       - name: Prime proxy.golang.org
         run: |
           VERSION="${GITHUB_REF_NAME}"
-          MODULE="github.com/AnoRebel/licensing"
+          # The module proxy requires case-escaped paths: an uppercase
+          # letter is written as "!" + its lowercase form, so AnoRebel
+          # becomes !ano!rebel. Without the escaping every request 404s,
+          # which the fallback below would report only as a warning.
+          MODULE="github.com/!ano!rebel/licensing"
           echo "Priming $MODULE@$VERSION on proxy.golang.org"
           curl -fsSL "https://proxy.golang.org/${MODULE}/@v/${VERSION}.info" || {
             echo "::warning::Proxy did not pick up the tag immediately; this is usually transient"
             exit 0
           }
+
+  github-release:
+    name: Publish GitHub Release
+    # Depends on every publish job, so a Release never advertises artefacts
+    # that failed to reach a registry. `verify` is transitively required.
+    needs: [publish-npm, publish-jsr, notify-go-proxy]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # creating a Release writes to the repository
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # Release notes come from CHANGELOG.md so the notes and the changelog
+      # cannot drift. A missing section fails the job rather than publishing
+      # a Release with empty or auto-generated-only notes.
+      - name: Extract release notes from CHANGELOG
+        id: notes
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          node scripts/changelog-section.mjs "$VERSION" > /tmp/release-notes.md
+          echo "Release notes for $VERSION:"
+          cat /tmp/release-notes.md
+
+      # Build the artefacts a consumer can download and verify without
+      # installing from a registry.
+      - name: Build distributable artefacts
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          mkdir -p /tmp/artefacts
+
+          # npm tarball — exactly what `npm pack` would publish.
+          cd typescript
+          bun run build
+          npm pack --pack-destination /tmp/artefacts
+          cd ..
+
+          # Go module zip, as the module proxy serves it. The proxy
+          # requires case-escaped paths — an uppercase letter is written as
+          # "!" + its lowercase form — so AnoRebel becomes !ano!rebel.
+          MODULE="github.com/!ano!rebel/licensing"
+          curl -fsSL -o "/tmp/artefacts/go-module-${VERSION}.zip" \
+            "https://proxy.golang.org/${MODULE}/@v/${GITHUB_REF_NAME}.zip" || {
+            echo "::warning::Go module zip not yet available from the proxy; omitting it from the Release"
+            rm -f "/tmp/artefacts/go-module-${VERSION}.zip"
+          }
+
+          ls -la /tmp/artefacts
+
+      # A checksum file covering every attached artefact, so a download can
+      # be verified independently of the transport.
+      - name: Generate checksums
+        run: |
+          cd /tmp/artefacts
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      # Prereleases (-rc.N, -beta.N) are flagged so they never become the
+      # repository's "latest" release.
+      - name: Determine prerelease flag
+        id: prerelease
+        run: |
+          if [[ "${GITHUB_REF_NAME}" == *-* ]]; then
+            echo "value=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # `gh release create --clobber`-style idempotency: edit in place when
+      # the Release already exists so a re-run updates rather than
+      # duplicating.
+      - name: Create or update the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          PRERELEASE_FLAG=""
+          if [[ "${{ steps.prerelease.outputs.value }}" == "true" ]]; then
+            PRERELEASE_FLAG="--prerelease"
+          else
+            PRERELEASE_FLAG="--latest"
+          fi
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG exists — updating in place"
+            gh release edit "$TAG" \
+              --notes-file /tmp/release-notes.md \
+              --title "$TAG" \
+              $PRERELEASE_FLAG
+            gh release upload "$TAG" /tmp/artefacts/* --clobber
+          else
+            echo "Creating release $TAG"
+            gh release create "$TAG" \
+              --title "$TAG" \
+              --notes-file /tmp/release-notes.md \
+              $PRERELEASE_FLAG \
+              /tmp/artefacts/*
+          fi

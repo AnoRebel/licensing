@@ -6,6 +6,7 @@
  */
 
 import type { Clock, KeyAlg, SignatureBackend, Storage, TransparencyHook } from '../index.ts';
+import type { TokenFormat } from '../token-codec.ts';
 
 export interface HandlerContext {
   /** Storage adapter — any `Storage` implementation works (memory,
@@ -25,6 +26,16 @@ export interface ClientHandlerContext extends HandlerContext {
   readonly tokenTtlSec?: number;
   /** Default signing algorithm. Default `'ed25519'`. */
   readonly defaultAlg?: KeyAlg;
+  /**
+   * Token envelope to issue. Default `'LIC1'`.
+   *
+   * `'LIC2'` emits PASETO v4.public and supports Ed25519 only, so pairing
+   * it with a non-Ed25519 `defaultAlg` is rejected when the handlers are
+   * constructed rather than on the first request. Verification accepts both
+   * formats regardless of what this is set to, so an operator can switch
+   * issuance without invalidating tokens already in the field.
+   */
+  readonly tokenFormat?: TokenFormat;
   /** Signing key passphrase — sourced from KMS/env/vault in prod, never
    *  hardcoded. Required because the core `issueToken` demands it per-call. */
   readonly signingPassphrase: string;

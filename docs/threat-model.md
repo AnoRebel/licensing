@@ -330,9 +330,9 @@ Test coverage:
 
 LIC1 has no built-in public, append-only log of issued tokens
 analogous to Certificate Transparency. Full CT semantics (witness
-servers, gossip protocols, third-party log monitors) are out of scope
-for v0.1.0 — the deployment surface is too heavy for the licensing
-market today.
+servers, gossip protocols, third-party log monitors) remain out of
+scope — the deployment surface is too heavy for the licensing market
+today.
 
 A **lightweight opt-in mitigation** ships in both ports: a transparency
 hook on the token-issue path. When the operator wires

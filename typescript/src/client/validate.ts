@@ -21,7 +21,15 @@
  */
 
 import type { AlgorithmRegistry, KeyAlgBindings, KeyRecord } from '../crypto/index.ts';
-import { decodeUnverified, type LIC1DecodedParts, verify } from '../lic1.ts';
+import { decodeUnverified, verify } from '../lic1.ts';
+// Registers the LIC2 codec. Required, not incidental: this module reaches
+// the codec registry through `verify`/`decodeUnverified`, and a client that
+// imports only `@anorebel/licensing/client` would otherwise have no LIC2
+// codec registered — a LIC2 token would fail with `unsupported token
+// format prefix: "v4."` on the device, which is exactly the offline path
+// LIC2 exists to serve.
+import '../lic2.ts';
+import type { DecodedEnvelope } from '../token-codec.ts';
 
 import { clientErrors } from './errors.ts';
 import type { JtiLedger } from './jti-ledger.ts';
@@ -100,7 +108,7 @@ export async function validate(token: string, opts: ValidateOptions): Promise<Va
   // 1. Parse + cryptographic verify. `verify` already gates on kid binding
   //    (alg-confusion), unknown kid, and signature validity — we translate
   //    those core errors into client-facing codes below.
-  let parts: LIC1DecodedParts;
+  let parts: DecodedEnvelope;
   try {
     parts = await verify(token, {
       registry: opts.registry,
@@ -263,7 +271,7 @@ export interface PeekResult {
 
 // ---------- internals ----------
 
-/** Narrow validated-claims view over the opaque `LIC1Payload`. */
+/** Narrow validated-claims view over the opaque decoded payload. */
 interface RequiredClaims {
   readonly jti: string;
   readonly iat: number;

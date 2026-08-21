@@ -35,7 +35,13 @@ type IssueTokenInput struct {
 	TransparencyHook  TransparencyHook
 	Alg               KeyAlg
 	SigningPassphrase string
-	TTLSeconds        int
+	// TokenFormat selects the envelope to emit. Zero value means LIC1.
+	//
+	// FormatLIC2 emits PASETO v4.public, which supports Ed25519 only —
+	// pairing it with any other Alg fails before a token is produced. LIC1
+	// remains the default indefinitely; LIC2 is opt-in.
+	TokenFormat TokenFormat
+	TTLSeconds  int
 }
 
 // TransparencyHook is the signature of the post-issue callback. The
@@ -49,10 +55,18 @@ type TransparencyHook func(event TokenIssuedEvent)
 // lowercase-hex SHA-256 of the full wire-token string (i.e. the same
 // bytes the consumer receives), 64 chars.
 type TokenIssuedEvent struct {
-	Jti         string
-	LicenseID   string
-	UsageID     string
-	Kid         string
+	Jti       string
+	LicenseID string
+	UsageID   string
+	Kid       string
+	// TokenFormat is the envelope this token was issued in (LIC1 or LIC2).
+	//
+	// Token issuance is not written to the audit log — only the token hash
+	// leaves the process — so without this an operator who switches a
+	// deployment to LIC2 has no record of which devices hold which
+	// envelope, which is precisely the question that matters during a
+	// rollback.
+	TokenFormat TokenFormat
 	TokenSHA256 string
 	Iat         int64
 	Exp         int64
@@ -219,9 +233,25 @@ func IssueToken(
 		return nil, err
 	}
 
-	header := LIC1Header{V: 1, Typ: "lic", Alg: input.Alg, Kid: signing.Kid}
-	token, err := Encode(EncodeOptions{
-		Header:     header,
+	// Dispatch on the requested envelope. Selecting the codec by name here
+	// is what keeps the rest of issuance format-agnostic: claim assembly,
+	// key resolution, and the transparency hook are identical either way.
+	format := input.TokenFormat
+	if format == "" {
+		format = FormatLIC1
+	}
+	codec, err := CodecForFormat(format)
+	if err != nil {
+		return nil, err
+	}
+	if !codec.SupportsAlg(input.Alg) {
+		return nil, newError(CodeUnsupportedAlgorithm,
+			fmt.Sprintf("token format %s does not support alg=%s", format, input.Alg),
+			map[string]any{"format": string(format), "alg": string(input.Alg)})
+	}
+	token, err := codec.Encode(CodecEncodeInput{
+		Alg:        input.Alg,
+		Kid:        signing.Kid,
 		Payload:    payload,
 		PrivateKey: handle,
 		Backend:    backend,
@@ -241,6 +271,7 @@ func IssueToken(
 			LicenseID:   input.License.ID,
 			UsageID:     input.Usage.ID,
 			Kid:         signing.Kid,
+			TokenFormat: format,
 			Iat:         iat,
 			Exp:         exp,
 			TokenSHA256: hex.EncodeToString(sum[:]),

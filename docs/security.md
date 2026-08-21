@@ -208,7 +208,7 @@ application code. `DELETE FROM audit_log` issued as a superuser fails.
 
 ## What the admin UI still lacks (tracked)
 
-These are intentionally deferred to post-v0.1.0:
+These are known gaps, intentionally deferred rather than overlooked:
 
 - **Content-Security-Policy headers.** The admin UI has no CSP. Acceptable
   for an internal ops tool deployed behind SSO; revisit before any

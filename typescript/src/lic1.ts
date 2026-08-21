@@ -9,10 +9,10 @@
  * — i.e. the first two segments joined by a dot, in ASCII, with NO trailing
  * newline.
  *
- * The format registry below dispatches on the ASCII prefix ("LIC1", "LIC2",
- * "v4.public.", etc.). Only LIC1 is registered today; unknown prefixes fail
- * fast with `UnsupportedTokenFormat`, guaranteeing forward-compat seams
- * (PASETO, a future LIC2) cannot be exploited by a tampered header.
+ * Dispatch lives in `token-codec.ts`: this module registers LIC1 as a codec
+ * under the `LIC1.` prefix and never sees a token belonging to another
+ * format. Unknown prefixes fail fast with `UnsupportedTokenFormat` before
+ * any byte is decoded.
  */
 
 import { decode as b64urlDecode, encode as b64urlEncode } from './base64url.ts';
@@ -25,8 +25,15 @@ import type {
   PublicKeyHandle,
   SignatureBackend,
 } from './crypto/types.ts';
-import { errors, TokenFormatError } from './errors.ts';
+import { errors } from './errors.ts';
 import { StrictJsonError, strictParse } from './strict-json.ts';
+import {
+  type CodecEncodeInput,
+  codecFor,
+  type DecodedEnvelope,
+  registerCodec,
+  type TokenCodec,
+} from './token-codec.ts';
 import type { KeyAlg } from './types.ts';
 
 const TEXT_DECODER = new TextDecoder('utf-8', { fatal: true });
@@ -70,13 +77,40 @@ export async function encode(opts: EncodeOptions): Promise<string> {
   return `LIC1.${headerB64}.${payloadB64}.${b64urlEncode(sig)}`;
 }
 
-/** Shallow parse without signature verification. Rejects unknown format
- *  prefixes and malformed segment layout. */
-export function decodeUnverified(token: string): LIC1DecodedParts {
-  dispatchFormat(token); // throws UnsupportedTokenFormat for non-LIC1
+/**
+ * Shallow parse without signature verification.
+ *
+ * Routes through the codec registry: a token whose prefix belongs to
+ * another format is decoded by that format's codec, and an unregistered
+ * prefix is rejected before any bytes are touched. Only a token bearing
+ * the `LIC1.` prefix reaches `decodeLIC1` below.
+ */
+export function decodeUnverified(token: string): DecodedEnvelope {
+  return codecFor(token).decode(token);
+}
+
+/**
+ * Parse a LIC1 token into its full LIC1-specific parts, including the `v`
+ * and `typ` header fields that the common envelope omits. Throws if the
+ * token is not LIC1.
+ */
+export function decodeLIC1Parts(token: string): LIC1DecodedParts {
+  const codec = codecFor(token);
+  if (codec.prefix !== LIC1_PREFIX) {
+    throw errors.unsupportedTokenFormat(
+      `${codec.prefix} — decodeLIC1Parts only accepts LIC1 tokens; use decodeUnverified for any format`,
+    );
+  }
+  return decodeLIC1(token);
+}
+
+/** LIC1-specific parse. Assumes the prefix has already been matched. */
+function decodeLIC1(token: string): LIC1DecodedParts {
   const parts = token.split('.');
   if (parts.length !== 4) {
-    throw errors.tokenMalformed(`expected 4 dot-separated segments, got ${parts.length}`);
+    throw errors.tokenMalformed(
+      `LIC1 token has ${parts.length} dot-separated segments, expected 4`,
+    );
   }
   const [, headerB64, payloadB64, sigB64] = parts as [string, string, string, string];
   const headerBytes = b64urlDecode(headerB64);
@@ -94,9 +128,14 @@ export interface VerifyOptions {
   readonly keys: ReadonlyMap<string, KeyRecord>;
 }
 
-/** Parse + verify. On success returns the decoded parts; on failure throws
- *  a typed `LicensingError` (TokenFormatError / CryptoError subtree). */
-export async function verify(token: string, opts: VerifyOptions): Promise<LIC1DecodedParts> {
+/**
+ * Parse + verify. On success returns the decoded envelope; on failure throws
+ * a typed `LicensingError` (TokenFormatError / CryptoError subtree).
+ *
+ * The signing input comes from the codec that owns the token's prefix, so a
+ * signature valid only under a different format's construction is rejected.
+ */
+export async function verify(token: string, opts: VerifyOptions): Promise<DecodedEnvelope> {
   const parts = decodeUnverified(token);
   // Algorithm-confusion guard: MUST come before any backend call.
   opts.bindings.expect(parts.header.kid, parts.header.alg);
@@ -112,59 +151,55 @@ export async function verify(token: string, opts: VerifyOptions): Promise<LIC1De
   return parts;
 }
 
-// ---------- format dispatch ----------
+// ---------- codec registration ----------
+
+/** ASCII prefix this codec owns. */
+export const LIC1_PREFIX = 'LIC1.';
+
+/** Algorithms LIC1 can carry. */
+const LIC1_ALGS: ReadonlySet<KeyAlg> = new Set<KeyAlg>(['ed25519', 'rs256-pss', 'hs256']);
 
 /**
- * Minimal format-prefix ALLOWLIST. The only entry today is `LIC1.`; any
- * other prefix (`v4.public.`, JWT-style `eyJ...`, `LIC2.`, anything else)
- * is rejected before we touch the bytes.
+ * LIC1 as a registered codec.
  *
- * This registry is intentionally prefix-only — it does NOT route to
- * different parsers. `decodeUnverified` below is the only parser, and it
- * is LIC1-specific. Adding `v4.public.` here would let a PASETO-shaped
- * token *reach* the LIC1 parser, which would then fail with a wrong
- * `TokenMalformed` code. So: do NOT register a non-LIC1 prefix here until
- * the broader token-codec refactor lands (see note below).
- *
- * ─────────────────────────────────────────────────────────────────────
- * Future LIC2 / PASETO seam:
- * When we add a second token format, lift `LIC1DecodedParts` to an
- * interface that each codec implements, and turn this allowlist into an
- * actual parser router: `registerFormat(prefix, parseFn)` where `parseFn`
- * returns the common envelope type. `verify()` will also need its own
- * dispatch because the signing-input construction differs per codec
- * (LIC1 concatenates `<h>.<p>` ASCII; PASETO uses PAE).
- * ─────────────────────────────────────────────────────────────────────
+ * `decode` assumes the prefix has already been matched by the router, so a
+ * token belonging to another format never reaches the LIC1 parser and can
+ * never fail with a misleading LIC1-shaped `TokenMalformed`.
  */
+export const lic1Codec: TokenCodec = {
+  prefix: LIC1_PREFIX,
+  supportedAlgs: LIC1_ALGS,
+  decode(token: string): DecodedEnvelope {
+    // Returns the full LIC1 parts. DecodedEnvelope requires `alg` and
+    // `kid`; LIC1 additionally carries `v` and `typ`, and callers depend on
+    // reading them off verify() output, so they are deliberately not
+    // stripped here.
+    return decodeLIC1(token);
+  },
+  async encode(input: CodecEncodeInput): Promise<string> {
+    return encode({
+      header: { v: 1, typ: 'lic', alg: input.alg, kid: input.kid },
+      payload: input.payload,
+      privateKey: input.privateKey,
+      backend: input.backend,
+    });
+  },
+};
 
-const formatPrefixes: string[] = [];
+registerCodec(lic1Codec);
 
-export function registerFormat(prefix: string): void {
-  // Enforce uniqueness to prevent accidental overrides.
-  if (formatPrefixes.includes(prefix)) {
-    throw new TokenFormatError(
-      'UnsupportedTokenFormat',
-      `format prefix already registered: ${prefix}`,
-    );
-  }
-  formatPrefixes.push(prefix);
-}
-
-/** Built-in LIC1 prefix (idempotent). */
-if (!formatPrefixes.includes('LIC1.')) {
-  registerFormat('LIC1.');
-}
-
-function dispatchFormat(token: string): void {
-  for (const p of formatPrefixes) {
-    if (token.startsWith(p)) return;
-  }
-  // Extract a plausible prefix for the error message — everything up to the
-  // first dot, capped to avoid throwing MBs back at a caller if someone
-  // pastes a binary blob.
-  const firstDot = token.indexOf('.');
-  const prefix = firstDot >= 0 ? token.slice(0, firstDot + 1) : token.slice(0, 16);
-  throw errors.unsupportedTokenFormat(prefix);
+/**
+ * Back-compat shim for the previous prefix-allowlist API.
+ *
+ * The old `registerFormat(prefix)` only recorded a permitted prefix; it had
+ * no parser to route to. A prefix with no codec behind it is exactly the
+ * hazard the router removes, so this now throws rather than accepting a
+ * registration it cannot honour. Register a `TokenCodec` instead.
+ */
+export function registerFormat(prefix: string): never {
+  throw errors.unsupportedTokenFormat(
+    `${prefix} — registerFormat() no longer takes a bare prefix; register a TokenCodec via registerCodec()`,
+  );
 }
 
 // ---------- header / payload parsing ----------

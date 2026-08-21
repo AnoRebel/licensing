@@ -9,6 +9,7 @@ export default defineConfig({
     './src/canonical-json.ts',
     './src/base64url.ts',
     './src/lic1.ts',
+    './src/lic2.ts',
     './src/errors.ts',
     './src/encrypted-pkcs8.ts',
     './src/id.ts',

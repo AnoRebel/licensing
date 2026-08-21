@@ -33,8 +33,8 @@ human gate before publish fires.
 ### One-time bootstrap (before the first tag is ever pushed)
 
 npm and JSR both require the package to exist on the registry before
-they'll accept an OIDC publish. This is a chicken-and-egg for v0.1.0-rc.0
-only; every subsequent release skips these steps entirely.
+they'll accept an OIDC publish. This was a chicken-and-egg for v0.1.0-rc.0 <!-- doc-version: historical -->
+only; it is done, and every subsequent release skips these steps entirely.
 
 **1. npm (one-shot token publish):**
 
@@ -79,35 +79,55 @@ tokenless and fully automated from every subsequent `git push origin v*`.
 
 ## Cutting a release
 
-### 1. Open a release PR
+### 1. Merge the release PR
 
-On a fresh branch from `main`:
+**release-please opens the PR for you.** It watches `main`, reads
+conventional-commit history, and keeps an open "chore: release main" PR
+proposing the next version. There is no manual VERSION edit and no manual
+CHANGELOG authoring in the normal path.
+
+What the PR contains:
+
+- `VERSION` bumped to the computed version.
+- `CHANGELOG.md` with a generated section for that version.
+- `.release-please-manifest.json` updated to the new baseline.
+- A follow-up commit syncing the seven derived manifests, pushed
+  automatically by the workflow. release-please does not own those files —
+  see the ownership table in [`docs/versioning.md`](docs/versioning.md) —
+  so without this step the PR would fail its own `version:check` gate.
+
+Before merging, check that the proposed version is the one you expect. The
+bump follows conventional-commit types: `feat` → minor, `fix` → patch, a
+`!` or `BREAKING CHANGE` footer → major (or minor while `MAJOR == 0`).
+
+Wait for CI to go green, then merge. **Squash or rebase**, not merge
+commits — the tag needs a single, clean commit to point at.
+
+<details>
+<summary>Manual path (recovery only)</summary>
+
+If release-please is unavailable and a release cannot wait, the version can
+be bumped by hand:
 
 ```bash
-# Pick the next version per docs/versioning.md semver rules.
-# Pre-release candidate: v0.1.0-rc.1
-# Final:                 v0.1.0
-echo 0.1.0-rc.1 > VERSION
-
-# Rewrite every manifest (package.json, jsr.json, licensing/version.go)
-bun run version:sync
-
-# CI gate — must pass before PR merges
-bun run version:check
-
-# Update CHANGELOG.md — move [Unreleased] items under a new dated section
-$EDITOR CHANGELOG.md
-
-git add VERSION typescript/package.json typescript/jsr.json \
-        admin/package.json examples/ts/package.json tools/*/package.json \
-        licensing/version.go CHANGELOG.md
-git commit -m "release: v0.1.0-rc.1"
-git push -u origin release/v0.1.0-rc.1
-gh pr create --title "release: v0.1.0-rc.1" --body "See CHANGELOG.md"
+echo 1.2.3 > VERSION
+bun run version:sync     # rewrites the derived manifests
+bun run version:check    # CI gate; must pass
+$EDITOR CHANGELOG.md     # add a "## [1.2.3] — <date>" section by hand
+git commit -am "chore(release): 1.2.3"
 ```
 
-Wait for CI to go green, then merge. **Squash or rebase**, not merge commits —
-the tag needs a single, clean commit to point at.
+**Consequence, and the step that must follow.** release-please derives its
+baseline from published GitHub Releases, so a manual tag is invisible to it
+until `release.yml` publishes the Release for that tag. Confirm the Release
+appears before expecting the next automated proposal to be correct — a
+missing Release is what previously caused it to recompute from an empty
+history and propose a wrong version.
+
+Also update `.release-please-manifest.json` to the released version, since
+`version:sync` deliberately no longer writes it.
+
+</details>
 
 ### 2. Tag the merge commit on `main`
 
@@ -147,6 +167,26 @@ republishing a version. Instead:
 - Bump to the next pre-release (`v0.1.0-rc.2`) and retag.
 
 ### 4. Verify the release landed
+
+First confirm the GitHub Release exists — it is both what consumers
+download and the baseline release-please reads for the next proposal:
+
+```bash
+gh release view "$TAG" --json tagName,isPrerelease,assets \
+  --jq '{tag: .tagName, prerelease: .isPrerelease, assets: [.assets[].name]}'
+
+# Verify the attached artefacts the way a consumer would
+mkdir /tmp/rel && cd /tmp/rel
+gh release download "$TAG" --repo AnoRebel/licensing
+sha256sum -c SHA256SUMS.txt
+```
+
+A stable tag should report `prerelease: false` and carry the npm tarball,
+the Go module zip, and `SHA256SUMS.txt`. A tag with a `-rc.N` suffix
+should report `prerelease: true` and must not be the repository's latest
+release.
+
+Then the registries:
 
 ```bash
 # npm
@@ -195,6 +235,31 @@ bun run version:check
 # CHANGELOG: move Unreleased → [0.1.0] with today's date
 # PR → merge → tag v0.1.0 → push → release.yml runs
 ```
+
+---
+
+## Major versions
+
+Work constituting a new major version is developed on a branch named for
+that major — `v1`, `v2` — and merged back into `main` when complete.
+`main` remains the canonical branch; the tag is cut from `main` after the
+merge, never from the version branch.
+
+```
+main ──●─────────────────●──●─  (patches keep shipping)
+        \               /
+  v1     ●──●──●──●──●──●        merged, then tagged v1.0.0 from main
+         refactor  feature
+```
+
+The version branch is **retained** after the merge, as a checkpoint
+identifying the work that made up that major. It is not deleted and not
+developed on further; the next major gets its own branch.
+
+Why a branch rather than landing directly on `main`: a major typically
+carries a multi-step refactor, and `main` needs to stay releasable for
+patches to the current version throughout. Without the branch there is no
+clean commit to cut a patch from while the refactor is mid-flight.
 
 ---
 

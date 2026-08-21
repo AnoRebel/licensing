@@ -20,13 +20,14 @@
  * the interop loop.
  */
 
-import { canonicalize } from '@anorebel/licensing/canonical-json';
 import {
   ed25519Backend,
   hmacBackend,
   rsaPssBackend,
   type SignatureBackend,
 } from '@anorebel/licensing/crypto';
+import { encode } from '@anorebel/licensing/lic1';
+import { lic2Codec } from '@anorebel/licensing/lic2';
 
 import { runCli } from '../src/io.ts';
 import { type KeyAlg, type KeyRef, loadFixtureKey } from '../src/keys.ts';
@@ -37,6 +38,9 @@ interface SignInput {
   kid: string;
   header: Record<string, unknown>;
   payload: Record<string, unknown>;
+  /** Envelope to emit. Defaults to LIC1 when absent, so existing callers
+   *  are unaffected. */
+  format?: 'LIC1' | 'LIC2';
 }
 
 function backendFor(alg: KeyAlg): SignatureBackend {
@@ -50,10 +54,6 @@ function backendFor(alg: KeyAlg): SignatureBackend {
   }
 }
 
-function b64url(buf: Uint8Array): string {
-  return Buffer.from(buf).toString('base64url');
-}
-
 await runCli(async (raw) => {
   const input = raw as SignInput;
   if (!input.alg || !input.key_ref || !input.kid || !input.header || !input.payload) {
@@ -63,12 +63,27 @@ await runCli(async (raw) => {
   const backend = backendFor(input.alg);
   const priv = await backend.importPrivate(record.alg === 'hs256' ? record.raw : record);
 
-  const headerBytes = canonicalize(input.header);
-  const payloadBytes = canonicalize(input.payload);
-  const headerB64 = b64url(headerBytes);
-  const payloadB64 = b64url(payloadBytes);
-  const signingInput = Buffer.from(`${headerB64}.${payloadB64}`, 'utf8');
-  const sig = await backend.sign(priv, signingInput);
-  const token = `LIC1.${headerB64}.${payloadB64}.${b64url(sig)}`;
+  // Drive the SHIPPED encoder. This harness previously rebuilt the token
+  // inline — canonicalize, base64, concatenate — which meant the Go-side
+  // interop suite compared Go's output against a *copy* of the TS algorithm
+  // rather than against the TS implementation. A regression in the real
+  // encode() passed the whole suite.
+  if (input.format === 'LIC2') {
+    const token = await lic2Codec.encode({
+      alg: input.alg,
+      kid: input.kid,
+      payload: input.payload,
+      privateKey: priv,
+      backend,
+    });
+    return { token };
+  }
+
+  const token = await encode({
+    header: input.header as never,
+    payload: input.payload,
+    privateKey: priv,
+    backend,
+  });
   return { token };
 });

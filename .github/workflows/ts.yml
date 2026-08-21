@@ -42,6 +42,12 @@ jobs:
       - name: VERSION sync drift check
         run: bun run version:check
 
+      # Catches a shipped doc still claiming an old version. The 0.2.0
+      # release went out with the README announcing "pre-release, tracking
+      # v0.1.0" because nothing checked.
+      - name: Doc version drift check
+        run: bun run docs:check
+
   postgres:
     name: storage/postgres tests (Postgres 18)
     runs-on: ubuntu-latest
