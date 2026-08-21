@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"regexp"
+	"strings"
 	"sync"
 	"testing"
 
@@ -286,5 +287,59 @@ func TestTransparencyHook_ConcurrentIssuesDeliverDistinctEvents(t *testing.T) {
 
 	if len(seen) != N {
 		t.Fatalf("expected %d distinct jtis, got %d", N, len(seen))
+	}
+}
+
+// The hook must report which envelope was issued.
+//
+// Token issuance is not written to the audit log — only the token hash
+// leaves the process — so this event is the only record an operator has of
+// which devices hold which format. That is the question that matters
+// during a rollback after switching a deployment to LIC2.
+func TestTransparencyHook_ReportsIssuedTokenFormat(t *testing.T) {
+	cases := []struct {
+		name     string
+		format   lic.TokenFormat
+		expected lic.TokenFormat
+		prefix   string
+	}{
+		{name: "default is LIC1", format: "", expected: lic.FormatLIC1, prefix: lic.LIC1Prefix},
+		{name: "explicit LIC1", format: lic.FormatLIC1, expected: lic.FormatLIC1, prefix: lic.LIC1Prefix},
+		{name: "explicit LIC2", format: lic.FormatLIC2, expected: lic.FormatLIC2, prefix: lic.LIC2Prefix},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			storage, reg, license, usage, passphrase := freshFixture(t)
+			clk := lic.SystemClock{}
+
+			var captured []lic.TokenIssuedEvent
+			hook := func(ev lic.TokenIssuedEvent) { captured = append(captured, ev) }
+
+			res, err := lic.IssueToken(storage, clk, reg, lic.IssueTokenInput{
+				License:           license,
+				Usage:             usage,
+				TTLSeconds:        3600,
+				Alg:               lic.AlgEd25519,
+				SigningPassphrase: passphrase,
+				TokenFormat:       tc.format,
+				TransparencyHook:  hook,
+			})
+			if err != nil {
+				t.Fatalf("issue: %v", err)
+			}
+			if len(captured) != 1 {
+				t.Fatalf("hook should fire exactly once; got %d", len(captured))
+			}
+			if got := captured[0].TokenFormat; got != tc.expected {
+				t.Errorf("hook reported format %q, want %q", got, tc.expected)
+			}
+			// The reported format must match the token actually produced,
+			// not merely echo the request.
+			if !strings.HasPrefix(res.Token, tc.prefix) {
+				t.Errorf("token prefix %.12s... does not match reported format %q",
+					res.Token, captured[0].TokenFormat)
+			}
+		})
 	}
 }

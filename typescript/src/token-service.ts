@@ -136,13 +136,22 @@ export interface TokenIssuedEvent {
   readonly licenseId: string;
   readonly usageId: string;
   readonly kid: string;
+  /**
+   * The envelope this token was issued in (`'LIC1'` or `'LIC2'`).
+   *
+   * Token issuance is not written to the audit log — only the token hash
+   * leaves the process — so without this an operator who switches a
+   * deployment to LIC2 has no record of which devices hold which envelope,
+   * which is precisely the question that matters during a rollback.
+   */
+  readonly tokenFormat: TokenFormat;
   readonly iat: number;
   readonly exp: number;
   readonly tokenSha256: string;
 }
 
 export interface IssueTokenResult {
-  /** The encoded LIC1 token — safe to hand to a client for offline use. */
+  /** The encoded token — safe to hand to a client for offline use. */
   readonly token: string;
   /** The signing key used (`kid`, `alg`) — handy for logging. */
   readonly kid: string;
@@ -308,6 +317,7 @@ export async function issueToken(
       licenseId: input.license.id,
       usageId: input.usage.id,
       kid: signing.kid,
+      tokenFormat: format,
       iat,
       exp,
       tokenSha256,

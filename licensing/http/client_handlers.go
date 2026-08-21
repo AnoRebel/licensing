@@ -83,7 +83,7 @@ func isoOf(unixSec int64) string {
 	return time.Unix(unixSec, 0).UTC().Format(time.RFC3339)
 }
 
-// verifyClientToken verifies the signature on a client-presented LIC1 token
+// verifyClientToken verifies the signature on a client-presented token
 // against the kid's public key loaded from storage, then enforces nbf/exp
 // with an optional past-exp grace.
 //
@@ -98,12 +98,16 @@ func isoOf(unixSec int64) string {
 // This function is the single gatekeeper between "untrusted bytes in the
 // request body" and "payload claims we act on" — the caller must never read
 // license_id/usage_id from DecodeUnverified.
-func verifyClientToken(ctx *ClientContext, token string, allowExpiredWithin time.Duration) (lic.LIC1DecodedParts, error) {
-	var zero lic.LIC1DecodedParts
+// Uses the format-agnostic entry points (DecodeEnvelope / VerifyEnvelope)
+// rather than their LIC1-only twins. A server configured to issue LIC2
+// would otherwise mint a token on /activate and then reject that same
+// token on /refresh, /heartbeat, and /deactivate.
+func verifyClientToken(ctx *ClientContext, token string, allowExpiredWithin time.Duration) (lic.DecodedEnvelope, error) {
+	var zero lic.DecodedEnvelope
 
-	// Peek at the header to learn which kid signed this. DecodeUnverified
-	// only parses structure; trust is established by the Verify call below.
-	head, err := lic.DecodeUnverified(token)
+	// Peek to learn which kid signed this. DecodeEnvelope only parses
+	// structure; trust is established by the verify call below.
+	head, err := lic.DecodeEnvelope(token)
 	if err != nil {
 		return zero, err
 	}
@@ -127,7 +131,7 @@ func verifyClientToken(ctx *ClientContext, token string, allowExpiredWithin time
 		return zero, err
 	}
 
-	parts, err := lic.Verify(token, lic.VerifyOptions{
+	parts, err := lic.VerifyEnvelope(token, lic.VerifyOptions{
 		Registry: ctx.Backends,
 		Bindings: bindings,
 		Keys: map[string]lic.KeyRecord{

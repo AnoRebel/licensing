@@ -204,6 +204,40 @@ switching issuance does not invalidate tokens already on devices. Pairing
 LIC2 with a non-Ed25519 algorithm fails before a token is produced rather
 than yielding one nothing can verify.
 
+#### Configuring a server to issue LIC2
+
+`Issuer` / `easy.Issuer` create **licenses**; tokens are minted by the
+`/activate` and `/refresh` handlers. So a deployment selects its envelope
+on the handler context, once, rather than per call:
+
+```ts
+import { clientRoutes, createRouter } from '@anorebel/licensing/http';
+
+const routes = clientRoutes(
+  {
+    storage,
+    clock,
+    backends,
+    signingPassphrase: process.env.LICENSING_SIGNING_PW!,
+    tokenFormat: 'LIC2', // omit for LIC1
+  },
+  '/api/licensing/v1',
+);
+```
+
+```go
+handler := lichttp.NewClientHandler(&lichttp.ClientContext{
+    Storage:           storage,
+    Clock:             clock,
+    Backends:          registry,
+    SigningPassphrase: os.Getenv("LICENSING_SIGNING_PW"),
+    TokenFormat:       lic.FormatLIC2, // omit for LIC1
+}, "/api/licensing/v1")
+```
+
+Every token that deployment issues is then LIC2, and the same handlers
+keep accepting LIC1 tokens issued before the switch.
+
 See [`docs/token-format.md` §9](docs/token-format.md) for the envelope,
 the PAE signing input, and why PASETO's symmetric `v4.local` mode is
 deliberately excluded.

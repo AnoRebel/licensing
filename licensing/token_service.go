@@ -55,10 +55,18 @@ type TransparencyHook func(event TokenIssuedEvent)
 // lowercase-hex SHA-256 of the full wire-token string (i.e. the same
 // bytes the consumer receives), 64 chars.
 type TokenIssuedEvent struct {
-	Jti         string
-	LicenseID   string
-	UsageID     string
-	Kid         string
+	Jti       string
+	LicenseID string
+	UsageID   string
+	Kid       string
+	// TokenFormat is the envelope this token was issued in (LIC1 or LIC2).
+	//
+	// Token issuance is not written to the audit log — only the token hash
+	// leaves the process — so without this an operator who switches a
+	// deployment to LIC2 has no record of which devices hold which
+	// envelope, which is precisely the question that matters during a
+	// rollback.
+	TokenFormat TokenFormat
 	TokenSHA256 string
 	Iat         int64
 	Exp         int64
@@ -263,6 +271,7 @@ func IssueToken(
 			LicenseID:   input.License.ID,
 			UsageID:     input.Usage.ID,
 			Kid:         signing.Kid,
+			TokenFormat: format,
 			Iat:         iat,
 			Exp:         exp,
 			TokenSHA256: hex.EncodeToString(sum[:]),
