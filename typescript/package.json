@@ -270,13 +270,13 @@
     }
   },
   "devDependencies": {
-    "@types/bun": "^1.3.14",
+    "@types/bun": "^1.4.0",
     "@types/express": "^5.0.6",
     "@types/pg": "^8.23.1",
     "express": "^5.2.1",
-    "fastify": "^5.12.0",
-    "hono": "^4.13.3",
-    "paseto-ts": "2.0.6",
+    "fastify": "^5.12.1",
+    "hono": "^4.13.5",
+    "paseto-ts": "2.0.7",
     "pg": "^8.23.0"
   }
 }
