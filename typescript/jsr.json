@@ -7,6 +7,7 @@
     "./canonical-json": "./src/canonical-json.ts",
     "./base64url": "./src/base64url.ts",
     "./lic1": "./src/lic1.ts",
+    "./lic2": "./src/lic2.ts",
     "./errors": "./src/errors.ts",
     "./encrypted-pkcs8": "./src/encrypted-pkcs8.ts",
     "./id": "./src/id.ts",
