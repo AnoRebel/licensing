@@ -321,7 +321,7 @@ func typeOf(v any) string {
 	case int, int32, int64:
 		return "integer"
 	case float64:
-		// yaml.v3 produces int for integer-valued yaml but float64 for decimals.
+		// yaml v4 produces int for integer-valued yaml but float64 for decimals.
 		if n == float64(int64(n)) {
 			return "integer"
 		}

@@ -9,7 +9,7 @@ cd /path/to/licensing/golang
 go mod download
 ```
 
-Go 1.26+.
+Go 1.27+.
 
 ## Files
 
