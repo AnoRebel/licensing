@@ -77,7 +77,21 @@ export default defineNuxtConfig({
   css: ['~~/assets/css/tailwind.css'],
 
   vite: {
-    plugins: [tailwindcss()],
+    plugins: [
+      tailwindcss(),
+      {
+        // @unovis/ts's map module references its maplibre worker via
+        // `new URL(…, import.meta.url)`, which makes Vite emit the ~485 KB
+        // worker even though tree-shaking drops the map. We render no maps.
+        // If the pattern ever stops matching, the worker just comes back.
+        name: 'drop-unovis-maplibre-worker',
+        enforce: 'pre',
+        transform(code, id) {
+          if (!id.includes('/@unovis/ts/components/leaflet-map/modules/map.js')) return;
+          return code.replace('new URL("./maplibre-gl-worker.js", import.meta.url).href', '""');
+        },
+      },
+    ],
   },
 
   shadcn: {
