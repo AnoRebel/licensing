@@ -4,9 +4,25 @@ Nuxt 4 admin console for the licensing platform. Talks to either the Go
 (`licensing/http`) or TS (`typescript/src/http`) backend
 over the contract defined by `openapi/licensing-admin.yaml`.
 
+## Screenshots
+
+Captured from a production build against the smoke-test stub upstream
+(`tests/smoke/stub-server.ts`), so every record shown is fixture data.
+
+| | |
+| --- | --- |
+| ![Dashboard](docs/screenshots/dashboard.png) | ![Licenses](docs/screenshots/licenses.png) |
+| **Dashboard** — counts, status mix, expiring licenses, activations, seat utilisation | **Licenses** — server-side filters plus in-page filter, sort and column toggles |
+| ![License detail](docs/screenshots/license-detail.png) | ![Signing keys](docs/screenshots/keys.png) |
+| **License detail** — lifecycle actions, usages, owner and template panels | **Signing keys** — key hierarchy with rotation |
+| ![Templates](docs/screenshots/templates.png) | ![Audit log](docs/screenshots/audit.png) |
+| **Templates** | **Audit log** |
+| ![Sign in](docs/screenshots/sign-in.png) | |
+| **Sign in** — the bearer token is sealed into an httpOnly cookie | |
+
 ## Stack
 
-- Nuxt 4.5 (`future.compatibilityVersion: 5`)
+- Nuxt 4.6 (`future.compatibilityVersion: 5`)
 - shadcn-vue via `shadcn-nuxt` + Tailwind v4 (`@tailwindcss/vite`)
 - `@tanstack/vue-table` v9 behind a shared `DataTable` — see
   "Adding a list view" below
