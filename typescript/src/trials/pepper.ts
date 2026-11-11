@@ -15,7 +15,7 @@
  * primitive. HMAC removes that dependency, so a future caller cannot turn
  * this into a real forgery by treating the digest as an authenticator.
  *
- * The pepper is **operator-managed** — same model as `NUXT_SESSION_PASSWORD`
+ * The pepper is **operator-managed** — same model as `NUXT_APP_SECRET`
  * in the admin UI. We deliberately do NOT persist it inside the licensing
  * database, because:
  *

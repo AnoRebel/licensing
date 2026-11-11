@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 import type { Page } from 'bunwright';
 import { browser } from 'bunwright';
-import { configureBrowser } from './browser';
+import { configureBrowser, signIn } from './browser';
 import { expectedScopeSlugsAsc, servedScopeSlugs, startStubServer } from './stub-server';
 
 /**
@@ -81,7 +81,7 @@ beforeAll(async () => {
       // LICENSING_UPSTREAM_BASE_URL is already resolved by then. Nitro's
       // NUXT_<KEY> convention is what overrides it at runtime.
       NUXT_UPSTREAM_BASE_URL: stub.baseUrl,
-      NUXT_SESSION_PASSWORD: 'smoke-test-session-password-at-least-32-chars',
+      NUXT_APP_SECRET: 'smoke-test-app-secret-at-least-32-characters',
     },
     stdout: 'pipe',
     stderr: 'pipe',
@@ -92,10 +92,7 @@ beforeAll(async () => {
   page = await browser.newPage();
 
   // Sign in once: every list view is behind the session cookie.
-  await page.navigate(`${appUrl}/sign-in`, { waitForLoadState: 'load' });
-  await page.type('css:#token', 'smoke-token');
-  await page.click("css:button[type='submit']");
-  await page.waitForURL(/\/(?!sign-in)/, { timeout: 30_000 });
+  await signIn(page, appUrl);
   // Booting Nitro + launching a browser comfortably exceeds bun's 5s
   // default hook timeout.
 }, 180_000);
@@ -132,11 +129,11 @@ async function goto(p: Page, path: string): Promise<void> {
   // error branch — which no amount of waiting will turn into a table.
   let lastErr: unknown;
   for (let attempt = 0; attempt < 3; attempt++) {
-    await p.navigate(`${appUrl}${path}`, { waitForLoadState: 'networkidle' });
-    // Re-installed per navigation: a full page load discards the previous
-    // collector, so this both arms it and resets the buffer.
-    await p.evaluate(new Function(ERROR_COLLECTOR) as () => void);
     try {
+      await p.navigate(`${appUrl}${path}`, { waitForLoadState: 'networkidle' });
+      // Re-installed per navigation: a full page load discards the previous
+      // collector, so this both arms it and resets the buffer.
+      await p.evaluate(new Function(ERROR_COLLECTOR) as () => void);
       await p.waitForSelector('css:table', { timeout: 10_000 });
       return;
     } catch (err) {
