@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v4"
 	_ "modernc.org/sqlite"
 
 	lic "github.com/AnoRebel/licensing/licensing"
@@ -68,7 +68,7 @@ func loadSpecOrSkip(t *testing.T) *openAPIDoc {
 	return doc
 }
 
-// normalizeYAML converts yaml.v3's map[any]any / []any into the
+// normalizeYAML converts yaml v4's map[any]any / []any into the
 // map[string]any shape the validator expects.
 func normalizeYAML(v any) any {
 	switch x := v.(type) {
