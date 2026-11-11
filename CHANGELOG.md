@@ -8,6 +8,36 @@ Three artefacts are released in lockstep — `@anorebel/licensing` on npm,
 `@anorebel/licensing` on jsr.io, and `github.com/AnoRebel/licensing` on
 pkg.go.dev. A single entry below describes all three.
 
+## [1.0.1] — 2026-11-12
+
+Maintenance release. No API, token-format, OpenAPI or storage-schema
+changes in either port.
+
+### Fixed
+
+- **JSR**: `@anorebel/licensing/lic2` is now exported on jsr.io. It was
+  only in the npm export map, so JSR users could not import the LIC2 codec
+  directly. A test now keeps the two export maps identical.
+- **Security**: dependency updates clear every open advisory. On the Go
+  side these are in echo (route-level access bypasses, open redirect, XSS)
+  and in chi (IP spoofing in `RealIP` / `ClientIPFromXFF`), which back the
+  optional `middleware/echo` and `middleware/chi` guards. On the
+  JavaScript side, lockfile-only bumps clear transitive advisories
+  (fast-uri, node-forge, tar and others).
+
+### Changed
+
+- **Go**: the module now requires Go 1.27.4. Dependencies were updated
+  (chi 5.5, echo 5.4.4, pgx 5.12, modernc sqlite 1.62), and the archived
+  `gopkg.in/yaml.v3`, which only tests import, was replaced by
+  `go.yaml.in/yaml/v4`.
+- **Admin UI** (not published; affects self-hosted deployments only):
+  - Upgraded to Nuxt 4.6 with its compatibility-version-5 server APIs.
+  - The session secret is now `NUXT_APP_SECRET` (at least 32 characters).
+    `NUXT_SESSION_PASSWORD` is ignored, and every user is signed out once
+    after upgrading.
+  - The build no longer ships the unused ~485 KB maplibre worker.
+
 ## [1.0.0] — 2026-08-21
 
 First stable release. The compatibility promise in
@@ -320,7 +350,8 @@ passphrases and never accepts passphrases via argv.
   (hypothetical `LIC2`) is an anticipated future release; the dispatch
   registry leaves the path open without shipping any PASETO code today.
 
-[Unreleased]: https://github.com/AnoRebel/licensing/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/AnoRebel/licensing/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/AnoRebel/licensing/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/AnoRebel/licensing/compare/v0.2.0...v1.0.0
 [0.2.0]: https://github.com/AnoRebel/licensing/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/AnoRebel/licensing/releases/tag/v0.1.0

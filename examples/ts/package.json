@@ -1,6 +1,6 @@
 {
   "name": "@licensing/examples-ts",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "Runnable TypeScript examples for @anorebel/licensing and @anorebel/licensing/client.",
   "license": "Apache-2.0",
