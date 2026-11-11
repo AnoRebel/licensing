@@ -54,3 +54,72 @@ export function configureBrowser(): void {
     console: true,
   });
 }
+
+type Page = Awaited<ReturnType<typeof browser.newPage>>;
+
+/**
+ * Signs in through the real form and waits until the app has left /sign-in.
+ *
+ * Waits for the token field's input listener first. Typing into SSR markup
+ * before hydration is lost: the form state stays empty, so submit does
+ * nothing. `#__nuxt.__vue_app__` is not enough — it is set when the root
+ * mounts, while the page's async setup can still be pending under
+ * <Suspense>. Vue keeps an element's bound listeners under `Symbol('_vei')`.
+ */
+export async function signIn(page: Page, appUrl: string): Promise<void> {
+  await page.navigate(`${appUrl}/sign-in`, { waitForLoadState: 'load' });
+  const deadline = Date.now() + 30_000;
+  while (
+    !(await page.evaluate(() => {
+      const el = document.querySelector('#token');
+      if (!el) return false;
+      const key = Object.getOwnPropertySymbols(el).find((k) => k.description === '_vei');
+      return Boolean(key && (el as unknown as Record<symbol, { onInput?: unknown }>)[key]?.onInput);
+    }))
+  ) {
+    if (Date.now() > deadline) throw new Error('sign-in form never hydrated');
+    await Bun.sleep(100);
+  }
+  // Even with the listener bound, the typed text is occasionally lost (the
+  // field comes back empty and fails validation), so retype and resubmit
+  // whenever the field is empty and we have not left /sign-in yet.
+  const onSignIn = async () => (await page.evaluate(() => location.pathname)) === '/sign-in';
+  const tokenEmpty = () =>
+    page.evaluate(() => !(document.querySelector('#token') as HTMLTextAreaElement | null)?.value);
+  // Read the pathname in-page: sign-in redirects with a client-side
+  // navigation, which bunwright's tracked URL (and so `waitForURL`) misses.
+  const left = Date.now() + 30_000;
+  let nextSubmit = 0;
+  while (await onSignIn()) {
+    if (Date.now() >= nextSubmit) {
+      if (await tokenEmpty()) await page.type('css:#token', 'smoke-token');
+      await page.click("css:button[type='submit']");
+      nextSubmit = Date.now() + 5_000;
+    }
+    if (Date.now() > left) {
+      const state = await page.evaluate(() =>
+        JSON.stringify({
+          token: (document.querySelector('#token') as HTMLTextAreaElement | null)?.value,
+          alerts: Array.from(document.querySelectorAll('[role=alert]')).map((e) =>
+            e.textContent?.trim(),
+          ),
+        }),
+      );
+      throw new Error(`still on /sign-in 30s after submitting the token: ${state}`);
+    }
+    await Bun.sleep(100);
+  }
+}
+
+/**
+ * Waits until no element on the page is `aria-busy`. Widgets and cards
+ * fetch after hydration behind an aria-busy skeleton; a fixed sleep races
+ * that and reads the skeleton.
+ */
+export async function waitForSettled(page: Page, timeoutMs = 10_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (await page.evaluate(() => document.querySelector('[aria-busy="true"]') !== null)) {
+    if (Date.now() > deadline) throw new Error(`page still aria-busy after ${timeoutMs}ms`);
+    await Bun.sleep(100);
+  }
+}

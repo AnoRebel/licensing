@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 import type { Page } from 'bunwright';
 import { browser } from 'bunwright';
-import { configureBrowser } from './browser';
+import { configureBrowser, signIn, waitForSettled } from './browser';
 import { listResponseFor } from './openapi-fixtures';
 import { startStubServer } from './stub-server';
 
@@ -55,10 +55,12 @@ async function sectionText(p: Page, headingSel: string): Promise<string> {
 async function gotoLicense(p: Page): Promise<void> {
   let lastErr: unknown;
   for (let attempt = 0; attempt < 3; attempt++) {
-    await p.navigate(`${appUrl}/licenses/${licenseId}`, { waitForLoadState: 'networkidle' });
     try {
+      // Inside the retry: re-navigating to the open page can be superseded
+      // by the app's own navigation (`net::ERR_ABORTED`).
+      await p.navigate(`${appUrl}/licenses/${licenseId}`, { waitForLoadState: 'networkidle' });
       await p.waitForSelector('css:#owner-card-heading', { timeout: 10_000 });
-      await p.waitForTimeout(800);
+      await waitForSettled(p);
       return;
     } catch (err) {
       lastErr = err;
@@ -78,7 +80,7 @@ beforeAll(async () => {
       NITRO_PORT: String(port),
       PORT: String(port),
       NUXT_UPSTREAM_BASE_URL: stub.baseUrl,
-      NUXT_SESSION_PASSWORD: 'smoke-test-session-password-at-least-32-chars',
+      NUXT_APP_SECRET: 'smoke-test-app-secret-at-least-32-characters',
     },
     stdout: 'pipe',
     stderr: 'pipe',
@@ -87,10 +89,7 @@ beforeAll(async () => {
 
   configureBrowser();
   page = await browser.newPage();
-  await page.navigate(`${appUrl}/sign-in`, { waitForLoadState: 'load' });
-  await page.type('css:#token', 'smoke-token');
-  await page.click("css:button[type='submit']");
-  await page.waitForURL(/\/(?!sign-in)/, { timeout: 30_000 });
+  await signIn(page, appUrl);
 }, 180_000);
 
 afterAll(async () => {

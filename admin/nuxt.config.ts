@@ -6,15 +6,6 @@ import tailwindcss from '@tailwindcss/vite';
 // no staleness check needed.
 const OPENAPI_SPEC = fileURLToPath(new URL('../openapi/licensing-admin.yaml', import.meta.url));
 
-// In production the session password MUST come from the environment.
-// The dev placeholder below is only used when NODE_ENV != 'production';
-// a Nitro plugin (server/plugins/require-session-password.ts) fails the
-// server boot if the real secret is missing or too short. Keeping the
-// check in a plugin means `nuxt prepare` / `nuxt build` still work in CI
-// without the runtime secret — only `node .output/server/index.mjs`
-// (the actual prod boot) needs it.
-const sessionPassword = process.env.NUXT_SESSION_PASSWORD ?? 'dev_only_replace_in_prod_00000000';
-
 export default defineNuxtConfig({
   // Cut against 2026-04 — pins Nitro/Nuxt feature defaults so CI behaviour is
   // reproducible regardless of when `bun install` runs.
@@ -96,6 +87,12 @@ export default defineNuxtConfig({
   },
 
   openFetch: {
+    // The module's Nitro plugin imports `defineNitroPlugin` from `#imports`,
+    // which compatibilityVersion 5 no longer auto-imports
+    // (`experimental.nitroAutoImports` is off). Nothing server-side uses the
+    // generated clients — the proxy calls the upstream with plain `fetch` —
+    // so skip the plugin rather than re-enable the auto-import shim.
+    disableNitroPlugin: true,
     // One generated client per upstream. Pointed at the committed yaml so
     // the types always track whatever the Go + TS handlers claim to expose.
     clients: {
@@ -119,12 +116,13 @@ export default defineNuxtConfig({
     // reads session.secure.apiToken from the sealed cookie and forwards.
     upstreamBaseUrl:
       process.env.LICENSING_UPSTREAM_BASE_URL ?? 'http://127.0.0.1:8787/api/licensing/v1',
-    // nuxt-auth-utils session config. `password` is REQUIRED — in prod it
-    // must come from NUXT_SESSION_PASSWORD (>= 32 chars, server-only). We
-    // throw at boot if it's missing in production (see above); the dev
-    // placeholder is only used when NODE_ENV != 'production'.
+    // nuxt-auth-utils session config. The cookie is sealed with a key
+    // derived from `runtimeConfig.appSecret` (NUXT_APP_SECRET, >= 32 chars,
+    // server-only). Dev generates and persists one; production must set it,
+    // and server/plugins/require-app-secret.ts fails the boot otherwise —
+    // a plugin rather than a config-time throw so `nuxt prepare` / `nuxt
+    // build` still run in CI without the runtime secret.
     session: {
-      password: sessionPassword,
       maxAge: 60 * 60 * 8, // 8h admin session; re-auth per working day.
       // Cookie attributes are a defence-in-depth pair with the proxy's
       // Origin/Sec-Fetch-Site check (server/api/proxy/[...].ts). SameSite

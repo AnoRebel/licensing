@@ -1,12 +1,13 @@
 import {
-  getHeader,
-  getMethod,
+  createError,
+  defineEventHandler,
   getQuery,
+  getRequestHeader,
   getRequestHost,
   getRequestProtocol,
-  readRawBody,
-  sendWebResponse,
-} from 'h3';
+  getRouterParam,
+  useRuntimeConfig,
+} from 'nuxt/server';
 
 /**
  * Catch-all proxy for every licensing API call the browser makes.
@@ -46,12 +47,12 @@ const STATE_CHANGING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const SEC_FETCH_SITE_ALLOWED = new Set(['same-origin', 'none']);
 
 export default defineEventHandler(async (event) => {
-  const { upstreamBaseUrl } = useRuntimeConfig(event);
+  const { upstreamBaseUrl } = useRuntimeConfig();
   if (!upstreamBaseUrl) {
-    throw createError({ statusCode: 500, statusMessage: 'upstream not configured' });
+    throw createError({ status: 500, statusText: 'upstream not configured' });
   }
 
-  const method = getMethod(event);
+  const method = event.req.method;
 
   // CSRF defence-in-depth. The session cookie is already `sameSite=strict`
   // (nuxt.config.ts), which by itself defeats every CSRF vector modern
@@ -69,8 +70,8 @@ export default defineEventHandler(async (event) => {
   //   - Origin header matches this server's own origin.
   // Missing both → 403.
   if (STATE_CHANGING.has(method)) {
-    const secFetchSite = getHeader(event, 'sec-fetch-site');
-    const origin = getHeader(event, 'origin');
+    const secFetchSite = getRequestHeader(event, 'sec-fetch-site');
+    const origin = getRequestHeader(event, 'origin');
     const host = getRequestHost(event, { xForwardedHost: false });
     const proto = getRequestProtocol(event, { xForwardedProto: false });
     const selfOrigin = `${proto}://${host}`;
@@ -80,8 +81,8 @@ export default defineEventHandler(async (event) => {
 
     if (!secFetchOK && !originOK) {
       throw createError({
-        statusCode: 403,
-        statusMessage: 'cross-origin request refused',
+        status: 403,
+        statusText: 'cross-origin request refused',
       });
     }
   }
@@ -91,12 +92,13 @@ export default defineEventHandler(async (event) => {
   const { secure } = await requireUserSession(event);
   const apiToken = secure?.apiToken;
   if (!apiToken) {
-    throw createError({ statusCode: 401, statusMessage: 'missing api token in session' });
+    throw createError({ status: 401, statusText: 'missing api token in session' });
   }
 
-  // `event.context.params._` is the wildcard capture, e.g. for
-  // `/api/proxy/admin/licenses/123` → "admin/licenses/123".
-  const upstreamPath = (event.context.params?._ ?? '').replace(/^\/+/, '');
+  // `_` is the wildcard capture, e.g. for
+  // `/api/proxy/admin/licenses/123` → "admin/licenses/123". Left
+  // percent-encoded so an encoded `/` can't widen the upstream path.
+  const upstreamPath = (getRouterParam(event, '_') ?? '').replace(/^\/+/, '');
   const url = new URL(`${upstreamBaseUrl.replace(/\/+$/, '')}/${upstreamPath}`);
   const query = getQuery(event);
   for (const [k, v] of Object.entries(query)) {
@@ -108,9 +110,9 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  const contentType = getHeader(event, 'content-type');
-  const accept = getHeader(event, 'accept') ?? 'application/json';
-  const body = method === 'GET' || method === 'HEAD' ? undefined : await readRawBody(event);
+  const contentType = getRequestHeader(event, 'content-type');
+  const accept = getRequestHeader(event, 'accept') ?? 'application/json';
+  const body = method === 'GET' || method === 'HEAD' ? undefined : await event.req.arrayBuffer();
 
   const upstream = await fetch(url.toString(), {
     method,
@@ -125,8 +127,7 @@ export default defineEventHandler(async (event) => {
     redirect: 'manual',
   });
 
-  // Hand the upstream Response back to h3 verbatim — preserves status,
-  // headers, and streams the body without us having to mirror each piece
-  // manually.
-  return sendWebResponse(event, upstream);
+  // Hand the upstream Response back verbatim — preserves status, headers,
+  // and streams the body without us having to mirror each piece manually.
+  return upstream;
 });

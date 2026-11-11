@@ -215,5 +215,7 @@ in short: bearer lives in a sealed httpOnly session cookie
 `server/api/proxy/[...]` which enforces `Sec-Fetch-Site` / `Origin`
 same-origin on state-changing methods as CSRF defence-in-depth.
 
-`NUXT_SESSION_PASSWORD` MUST be set in production (≥ 32 bytes). The dev
-fallback fails the server boot when `NODE_ENV=production`.
+`NUXT_APP_SECRET` MUST be set in production (≥ 32 chars; generate with
+`openssl rand -base64 32`). The session key is derived from it, and the
+server refuses to boot without it when `NODE_ENV=production`. In dev Nuxt
+generates and persists one.

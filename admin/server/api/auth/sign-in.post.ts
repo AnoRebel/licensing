@@ -1,3 +1,4 @@
+import { createError, defineEventHandler, readBody, useRuntimeConfig } from 'nuxt/server';
 import * as v from 'valibot';
 import { SignInSchema } from '../../../shared/schemas/auth';
 
@@ -18,14 +19,14 @@ import { SignInSchema } from '../../../shared/schemas/auth';
  * it can't drive anything else in this UI either.
  */
 export default defineEventHandler(async (event) => {
-  const { upstreamBaseUrl } = useRuntimeConfig(event);
+  const { upstreamBaseUrl } = useRuntimeConfig();
 
   const raw = await readBody(event);
   const parsed = v.safeParse(SignInSchema, raw);
   if (!parsed.success) {
     throw createError({
-      statusCode: 400,
-      statusMessage: 'invalid request',
+      status: 400,
+      statusText: 'invalid request',
       data: {
         error: {
           code: 'InvalidRequest',
@@ -47,8 +48,8 @@ export default defineEventHandler(async (event) => {
     // prevents a response from existing at all. Surface as 502 so the UI
     // blames the upstream, not the operator's token.
     throw createError({
-      statusCode: 502,
-      statusMessage: 'upstream unavailable',
+      status: 502,
+      statusText: 'upstream unavailable',
       data: {
         error: {
           code: 'UpstreamUnavailable',
@@ -61,8 +62,8 @@ export default defineEventHandler(async (event) => {
 
   if (probe.status === 401 || probe.status === 403) {
     throw createError({
-      statusCode: 401,
-      statusMessage: 'invalid token',
+      status: 401,
+      statusText: 'invalid token',
       data: { error: { code: 'InvalidToken', message: 'Upstream rejected the provided token.' } },
     });
   }
@@ -71,8 +72,8 @@ export default defineEventHandler(async (event) => {
     // Upstream reachable but returned 4xx/5xx other than auth — almost
     // always a server-side problem we can't fix from the UI.
     throw createError({
-      statusCode: 502,
-      statusMessage: 'upstream unavailable',
+      status: 502,
+      statusText: 'upstream unavailable',
       data: {
         error: { code: 'UpstreamUnavailable', message: `Upstream responded ${probe.status}.` },
       },

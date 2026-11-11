@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, test } from 'bun:test';
 import type { Page } from 'bunwright';
 import { browser } from 'bunwright';
-import { configureBrowser } from './browser';
+import { configureBrowser, signIn, waitForSettled } from './browser';
 import { startStubServer } from './stub-server';
 
 /**
@@ -51,16 +51,23 @@ async function waitForServer(url: string, timeoutMs = 120_000): Promise<void> {
   throw new Error(`Admin app did not start within ${timeoutMs}ms at ${url}`);
 }
 
-/** Navigates to the dashboard, retrying past a still-settling session. */
-async function gotoDashboard(p: Page): Promise<void> {
+/**
+ * Navigates to the dashboard, retrying past a still-settling session.
+ *
+ * The navigation itself is inside the retry: re-navigating to the page
+ * already open can be superseded by the app's own client-side navigation,
+ * which surfaces as `net::ERR_ABORTED`.
+ */
+async function gotoDashboard(
+  p: Page,
+  ready = 'css:[aria-label="License overview"]',
+): Promise<void> {
   let lastErr: unknown;
   for (let attempt = 0; attempt < 3; attempt++) {
-    await p.navigate(`${appUrl}/`, { waitForLoadState: 'networkidle' });
     try {
-      await p.waitForSelector('css:[aria-label="License overview"]', { timeout: 10_000 });
-      // Widgets resolve their own fetches after hydration; give the slowest
-      // a moment so an assertion does not race a pending skeleton.
-      await p.waitForTimeout(800);
+      await p.navigate(`${appUrl}/`, { waitForLoadState: 'networkidle' });
+      await p.waitForSelector(ready, { timeout: 10_000 });
+      await waitForSettled(p);
       return;
     } catch (err) {
       lastErr = err;
@@ -105,7 +112,7 @@ beforeAll(async () => {
       NITRO_PORT: String(port),
       PORT: String(port),
       NUXT_UPSTREAM_BASE_URL: stub.baseUrl,
-      NUXT_SESSION_PASSWORD: 'smoke-test-session-password-at-least-32-chars',
+      NUXT_APP_SECRET: 'smoke-test-app-secret-at-least-32-characters',
     },
     stdout: 'pipe',
     stderr: 'pipe',
@@ -115,10 +122,7 @@ beforeAll(async () => {
   configureBrowser();
   page = await browser.newPage();
 
-  await page.navigate(`${appUrl}/sign-in`, { waitForLoadState: 'load' });
-  await page.type('css:#token', 'smoke-token');
-  await page.click("css:button[type='submit']");
-  await page.waitForURL(/\/(?!sign-in)/, { timeout: 30_000 });
+  await signIn(page, appUrl);
 }, 180_000);
 
 afterAll(async () => {
@@ -182,8 +186,9 @@ test(
     // other endpoints stay put.
     stub.failEndpoint('/admin/stats/licenses');
     try {
-      await page.navigate(`${appUrl}/`, { waitForLoadState: 'networkidle' });
-      await page.waitForTimeout(1200);
+      // That stats widget is what gotoDashboard normally waits on, so wait on
+      // the page heading instead.
+      await gotoDashboard(page, 'css:h1');
 
       // The page still rendered: its heading is present.
       const heading = await page.evaluate(

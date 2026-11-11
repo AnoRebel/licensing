@@ -196,9 +196,9 @@ cookie is even read. This layer exists because:
 2. The proxy may one day front programmatic callers (CLI, CI). Explicit
    origin policy is cheaper to reason about than implicit cookie policy.
 
-The session cookie password MUST be set in production via
-`NUXT_SESSION_PASSWORD` (≥ 32 bytes). The dev fallback in
-`nuxt.config.ts` is refused by `nuxt-auth-utils` at production startup.
+The session cookie is sealed with a key derived from `NUXT_APP_SECRET`,
+which MUST be set in production (≥ 32 chars). The admin server refuses to
+boot without it when `NODE_ENV=production`; only dev generates one.
 
 ## Audit immutability
 
