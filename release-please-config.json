@@ -63,12 +63,8 @@
     ".": {
       "component": "licensing",
       "changelog-path": "CHANGELOG.md",
-      "extra-files": [
-        {
-          "type": "generic",
-          "path": "VERSION"
-        }
-      ]
+      "include-component-in-tag": false,
+      "version-file": "VERSION"
     }
   }
 }

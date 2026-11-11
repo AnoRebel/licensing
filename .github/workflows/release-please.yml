@@ -6,8 +6,8 @@ name: release-please
 # Commit messages since the last tag and computes the next semver. On merge,
 # release-please:
 #   1. Writes CHANGELOG.md
-#   2. Bumps VERSION, typescript/**/package.json, jsr.json, licensing/version.go
-#      (see release-please-config.json → extra-files)
+#   2. Bumps VERSION (release-please-config.json → version-file); the sync
+#      step below then rewrites the derived manifests to match
 #   3. Creates a GitHub Release + pushes the tag vX.Y.Z
 #
 # The tag push triggers `.github/workflows/release.yml`, which publishes to
