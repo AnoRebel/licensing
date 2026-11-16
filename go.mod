@@ -5,8 +5,8 @@ go 1.27.4
 require (
 	github.com/gin-gonic/gin v1.12.0
 	github.com/go-chi/chi/v5 v5.5.0
-	github.com/jackc/pgx/v5 v5.12.0
-	github.com/labstack/echo/v5 v5.4.4
+	github.com/jackc/pgx/v5 v5.13.0
+	github.com/labstack/echo/v5 v5.4.5
 	go.yaml.in/yaml/v4 v4.0.0
 	modernc.org/sqlite v1.62.0
 )
